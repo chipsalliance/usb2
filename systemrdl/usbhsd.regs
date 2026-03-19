@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<crr:UniversalDevice xmlns:crr="http://apif.freescale.net/schemas/regs/1.4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://apif.freescale.net/schemas/regs/1.4 http://apif.freescale.net/schemas/regs/1.4/regs.xsd">
+  <!-- Created by svd2crr conversion script, version 1.0 -->
+  <creation_info author="$Author: nxp32927 $" date="$Date: Tue Jul 17 21:49:34 2018 $" revision="$Revision: 1.1 $" source="$Source: /ds/vault/18757/server_vault/Projects/production_final/D_SSL_USB_HS_HOSTDEVICE_SYN/spec_source/regs/usbhsd.regs.rca $"/>
+  <GeneralPeriphery>
+    <GeneralParameters>
+      <instance_header>
+        <instance_description>LPC54S60x/LPC5460x USB1 High-speed Device Controller</instance_description>
+        <template_parameters/>
+      </instance_header>
+      <general_parameter_defs>
+        <string_general_parameter name="peripheralType" value="USBHSD" description="Peripheral/Component Type"/>
+      </general_parameter_defs>
+    </GeneralParameters>
+    <dynamic_parameters/>
+    <register_defs>
+      <address_block name="USB_HSD" byte_order="littleEndian" lau="32">
+        <base_address/>
+        <bit_order order="lsb0"/>
+        <register_def id="DEVCMDSTAT" name="DEVCMDSTAT" width="32">
+          <brief_description>USB Device Command/Status register</brief_description>
+          <address offset="0x0"/>
+          <reset_value value="0x800" mask="0xF7DBFFFF"/>
+          <bit_field id="DEV_ADDR" name="DEV_ADDR" position="0" width="7" access="RW">
+            <brief_description>USB device address.</brief_description>
+          </bit_field>
+          <bit_field id="DEV_EN" name="DEV_EN" position="7" width="1" access="RW">
+            <brief_description>USB device enable.</brief_description>
+          </bit_field>
+          <bit_field id="SETUP" name="SETUP" position="8" width="1" access="RW">
+            <brief_description>SETUP token received.</brief_description>
+          </bit_field>
+          <bit_field id="FORCE_NEEDCLK" name="FORCE_NEEDCLK" position="9" width="1" access="RW">
+            <brief_description>Forces the NEEDCLK output to always be on:.</brief_description>
+          </bit_field>
+          <bit_field id="FORCE_VBUS" name="FORCE_VBUS" position="10" width="1" access="RW">
+            <brief_description>If this bit is set to 1, the VBUS voltage indicators from the PHY are overruled.</brief_description>
+          </bit_field>
+          <bit_field id="LPM_SUP" name="LPM_SUP" position="11" width="1" access="RW">
+            <brief_description>LPM Supported:.</brief_description>
+          </bit_field>
+          <bit_field id="INTONNAK_AO" name="INTONNAK_AO" position="12" width="1" access="RW">
+            <brief_description>Interrupt on NAK for interrupt and bulk OUT EP:.</brief_description>
+          </bit_field>
+          <bit_field id="INTONNAK_AI" name="INTONNAK_AI" position="13" width="1" access="RW">
+            <brief_description>Interrupt on NAK for interrupt and bulk IN EP:.</brief_description>
+          </bit_field>
+          <bit_field id="INTONNAK_CO" name="INTONNAK_CO" position="14" width="1" access="RW">
+            <brief_description>Interrupt on NAK for control OUT EP:.</brief_description>
+          </bit_field>
+          <bit_field id="INTONNAK_CI" name="INTONNAK_CI" position="15" width="1" access="RW">
+            <brief_description>Interrupt on NAK for control IN EP:.</brief_description>
+          </bit_field>
+          <bit_field id="DCON" name="DCON" position="16" width="1" access="RW">
+            <brief_description>Device status - connect.</brief_description>
+          </bit_field>
+          <bit_field id="DSUS" name="DSUS" position="17" width="1" access="RW">
+            <brief_description>Device status - suspend.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="18" width="1" access="RO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+          <bit_field id="LPM_SUS" name="LPM_SUS" position="19" width="1" access="RW">
+            <brief_description>Device status - LPM Suspend.</brief_description>
+          </bit_field>
+          <bit_field id="LPM_REWP" name="LPM_REWP" position="20" width="1" access="RO">
+            <brief_description>LPM Remote Wake-up Enabled by USB host.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="21" width="1" access="RW">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+          <bit_field id="Speed" name="Speed" position="22" width="2" access="RO">
+            <brief_description>This field indicates the speed at which the device operates: 00b: reserved 01b: full-speed 10b: high-speed 11b: super-speed (reserved for future use).</brief_description>
+          </bit_field>
+          <bit_field id="DCON_C" name="DCON_C" position="24" width="1" access="RW">
+            <brief_description>Device status - connect change.</brief_description>
+          </bit_field>
+          <bit_field id="DSUS_C" name="DSUS_C" position="25" width="1" access="RW">
+            <brief_description>Device status - suspend change.</brief_description>
+          </bit_field>
+          <bit_field id="DRES_C" name="DRES_C" position="26" width="1" access="RW">
+            <brief_description>Device status - reset change.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="27" width="1" access="RO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+          <bit_field id="VBUS_DEBOUNCED" name="VBUS_DEBOUNCED" position="28" width="1" access="RO">
+            <brief_description>This bit indicates if VBUS is detected or not.</brief_description>
+          </bit_field>
+          <bit_field id="PHY_TEST_MODE" name="PHY_TEST_MODE" position="29" width="3" access="RW">
+            <brief_description>This field is written by firmware to put the PHY into a test mode as defined by the USB2.</brief_description>
+          </bit_field>
+        </register_def>
+        <register_def id="INFO" name="INFO" width="32">
+          <brief_description>USB Info register</brief_description>
+          <address offset="0x4"/>
+          <reset_value value="0x2000000" mask="0xFFFF7FFF"/>
+          <bit_field id="FRAME_NR" name="FRAME_NR" position="0" width="11" access="RO">
+            <brief_description>Frame number.</brief_description>
+          </bit_field>
+          <bit_field id="ERR_CODE" name="ERR_CODE" position="11" width="4" access="RO">
+            <brief_description>The error code which last occurred:.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="15" width="1" access="RO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+          <bit_field id="Minrev" name="Minrev" position="16" width="8" access="RO">
+            <brief_description>Minor revision.</brief_description>
+          </bit_field>
+          <bit_field id="Majrev" name="Majrev" position="24" width="8" access="RO">
+            <brief_description>Major revision.</brief_description>
+          </bit_field>
+        </register_def>
+        <register_def id="EPLISTSTART" name="EPLISTSTART" width="32">
+          <brief_description>USB EP Command/Status List start address</brief_description>
+          <address offset="0x8"/>
+          <reset_value value="0x0" mask="0xFFFFFF00"/>
+          <reserved_bit_field position="0" width="8" access="RO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+          <bit_field id="EP_LIST_PRG" name="EP_LIST_PRG" position="8" width="12" access="RW">
+            <brief_description>Programmable portion of the USB EP Command/Status List address.</brief_description>
+          </bit_field>
+          <bit_field id="EP_LIST_FIXED" name="EP_LIST_FIXED" position="20" width="12" access="RO">
+            <brief_description>Fixed portion of USB EP Command/Status List address.</brief_description>
+          </bit_field>
+        </register_def>
+        <register_def id="DATABUFSTART" name="DATABUFSTART" width="32">
+          <brief_description>USB Data buffer start address</brief_description>
+          <address offset="0xC"/>
+          <reset_value value="0x41000000" mask="0xFFFFFFFF"/>
+          <bit_field id="DA_BUF" name="DA_BUF" position="18" width="14" access="RW">
+            <brief_description>Start address of the memory page where all endpoint data buffers are located.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="0" width="18" access="RO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+        </register_def>
+        <register_def id="LPM" name="LPM" width="32">
+          <brief_description>USB Link Power Management register</brief_description>
+          <address offset="0x10"/>
+          <reset_value value="0x0" mask="0x000001FF"/>
+          <bit_field id="HIRD_HW" name="HIRD_HW" position="0" width="4" access="RO">
+            <brief_description>Host Initiated Resume Duration - HW.</brief_description>
+          </bit_field>
+          <bit_field id="HIRD_SW" name="HIRD_SW" position="4" width="4" access="RW">
+            <brief_description>Host Initiated Resume Duration - SW.</brief_description>
+          </bit_field>
+          <bit_field id="DATA_PENDING" name="DATA_PENDING" position="8" width="1" access="RW">
+            <brief_description>As long as this bit is set to one and LPM supported bit is set to one, HW will return a NYET handshake on every LPM token it receives.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="9" width="23" access="RO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+        </register_def>
+        <register_def id="EPSKIP" name="EPSKIP" width="32">
+          <brief_description>USB Endpoint skip</brief_description>
+          <address offset="0x14"/>
+          <reset_value value="0x0" mask="0x00000FFF"/>
+          <bit_field id="SKIP" name="SKIP" position="0" width="12" access="RW">
+            <brief_description>Endpoint skip: Writing 1 to one of these bits, will indicate to HW that it must deactivate the buffer assigned to this endpoint and return control back to software.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="12" width="20" access="WO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+        </register_def>
+        <register_def id="EPINUSE" name="EPINUSE" width="32">
+          <brief_description>USB Endpoint Buffer in use</brief_description>
+          <address offset="0x18"/>
+          <reset_value value="0x0" mask="0x00000FFC"/>
+          <reserved_bit_field position="0" width="2" access="WO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+          <bit_field id="BUF" name="BUF" position="2" width="10" access="RW">
+            <brief_description>Buffer in use: This register has one bit per physical endpoint.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="12" width="20" access="WO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+        </register_def>
+        <register_def id="EPBUFCFG" name="EPBUFCFG" width="32">
+          <brief_description>USB Endpoint Buffer Configuration register</brief_description>
+          <address offset="0x1C"/>
+          <reset_value value="0x0" mask="0x00000FFC"/>
+          <reserved_bit_field position="0" width="2" access="WO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+          <bit_field id="BUF_SB" name="BUF_SB" position="2" width="10" access="RW">
+            <brief_description>Buffer usage: This register has one bit per physical endpoint.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="12" width="20" access="WO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+        </register_def>
+        <register_def id="INTSTAT" name="INTSTAT" width="32">
+          <brief_description>USB interrupt status register</brief_description>
+          <address offset="0x20"/>
+          <reset_value value="0x0" mask="0xC0000FFF"/>
+          <bit_field id="EP0OUT" name="EP0OUT" position="0" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the Control EP0 OUT direction.</brief_description>
+          </bit_field>
+          <bit_field id="EP0IN" name="EP0IN" position="1" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the Control EP0 IN direction.</brief_description>
+          </bit_field>
+          <bit_field id="EP1OUT" name="EP1OUT" position="2" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the EP1 OUT direction.</brief_description>
+          </bit_field>
+          <bit_field id="EP1IN" name="EP1IN" position="3" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the EP1 IN direction.</brief_description>
+          </bit_field>
+          <bit_field id="EP2OUT" name="EP2OUT" position="4" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the EP2 OUT direction.</brief_description>
+          </bit_field>
+          <bit_field id="EP2IN" name="EP2IN" position="5" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the EP2 IN direction.</brief_description>
+          </bit_field>
+          <bit_field id="EP3OUT" name="EP3OUT" position="6" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the EP3 OUT direction.</brief_description>
+          </bit_field>
+          <bit_field id="EP3IN" name="EP3IN" position="7" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the EP3 IN direction.</brief_description>
+          </bit_field>
+          <bit_field id="EP4OUT" name="EP4OUT" position="8" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the EP4 OUT direction.</brief_description>
+          </bit_field>
+          <bit_field id="EP4IN" name="EP4IN" position="9" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the EP4 IN direction.</brief_description>
+          </bit_field>
+          <bit_field id="EP5OUT" name="EP5OUT" position="10" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the EP5 OUT direction.</brief_description>
+          </bit_field>
+          <bit_field id="EP5IN" name="EP5IN" position="11" width="1" access="RW">
+            <brief_description>Interrupt status register bit for the EP5 IN direction.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="12" width="18" access="RO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+          <bit_field id="FRAME_INT" name="FRAME_INT" position="30" width="1" access="RW">
+            <brief_description>Frame interrupt.</brief_description>
+          </bit_field>
+          <bit_field id="DEV_INT" name="DEV_INT" position="31" width="1" access="RW">
+            <brief_description>Device status interrupt.</brief_description>
+          </bit_field>
+        </register_def>
+        <register_def id="INTEN" name="INTEN" width="32">
+          <brief_description>USB interrupt enable register</brief_description>
+          <address offset="0x24"/>
+          <reset_value value="0x0" mask="0xC0000FFF"/>
+          <bit_field id="EP_INT_EN" name="EP_INT_EN" position="0" width="12" access="RW">
+            <brief_description>If this bit is set and the corresponding USB interrupt status bit is set, a HW interrupt is generated on the interrupt line.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="12" width="18" access="RO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+          <bit_field id="FRAME_INT_EN" name="FRAME_INT_EN" position="30" width="1" access="RW">
+            <brief_description>If this bit is set and the corresponding USB interrupt status bit is set, a HW interrupt is generated on the interrupt line.</brief_description>
+          </bit_field>
+          <bit_field id="DEV_INT_EN" name="DEV_INT_EN" position="31" width="1" access="RW">
+            <brief_description>If this bit is set and the corresponding USB interrupt status bit is set, a HW interrupt is generated on the interrupt line.</brief_description>
+          </bit_field>
+        </register_def>
+        <register_def id="INTSETSTAT" name="INTSETSTAT" width="32">
+          <brief_description>USB set interrupt status register</brief_description>
+          <address offset="0x28"/>
+          <reset_value value="0x0" mask="0xC0000FFF"/>
+          <bit_field id="EP_SET_INT" name="EP_SET_INT" position="0" width="12" access="RW">
+            <brief_description>If software writes a one to one of these bits, the corresponding USB interrupt status bit is set.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="12" width="18" access="RO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+          <bit_field id="FRAME_SET_INT" name="FRAME_SET_INT" position="30" width="1" access="RW">
+            <brief_description>If software writes a one to one of these bits, the corresponding USB interrupt status bit is set.</brief_description>
+          </bit_field>
+          <bit_field id="DEV_SET_INT" name="DEV_SET_INT" position="31" width="1" access="RW">
+            <brief_description>If software writes a one to one of these bits, the corresponding USB interrupt status bit is set.</brief_description>
+          </bit_field>
+        </register_def>
+        <register_def id="EPTOGGLE" name="EPTOGGLE" width="32">
+          <brief_description>USB Endpoint toggle register</brief_description>
+          <address offset="0x34"/>
+          <reset_value value="0x0" mask="0x3FFFFFFF"/>
+          <bit_field id="TOGGLE" name="TOGGLE" position="0" width="30" access="RO">
+            <brief_description>Endpoint data toggle: This field indicates the current value of the data toggle for the corresponding endpoint.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="30" width="2" access="RO">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+        </register_def>
+        <register_def id="ULPIDEBUG" name="ULPIDEBUG" width="32">
+          <brief_description>UTMI/ULPI debug register</brief_description>
+          <address offset="0x3C"/>
+          <reset_value value="0x0" mask="0x83FFFFFF"/>
+          <bit_field id="PHY_ADDR" name="PHY_ADDR" position="0" width="8" access="RW">
+            <brief_description>ULPI mode: Bits 7:0 are used as the address when doing a register access over the ULPI interface.</brief_description>
+          </bit_field>
+          <bit_field id="PHY_WDATA" name="PHY_WDATA" position="8" width="8" access="RW">
+            <brief_description>UTMI+ mode: Reserved.</brief_description>
+          </bit_field>
+          <bit_field id="PHY_RDATA" name="PHY_RDATA" position="16" width="8" access="RW">
+            <brief_description>UTMI+ mode: Bits 7:0 contains the value returned by the VStatus signal on Vendor Interface of UTMI+.</brief_description>
+          </bit_field>
+          <bit_field id="PHY_RW" name="PHY_RW" position="24" width="1" access="RW">
+            <brief_description>UTMI+ mode: Reserved.</brief_description>
+          </bit_field>
+          <bit_field id="PHY_ACCESS" name="PHY_ACCESS" position="25" width="1" access="RW">
+            <brief_description>Software writes this bit to one to start a read or write operation.</brief_description>
+          </bit_field>
+          <reserved_bit_field position="26" width="5" access="RW">
+            <brief_description>Reserved. Read value is undefined, only zero should be written.</brief_description>
+          </reserved_bit_field>
+          <bit_field id="PHY_MODE" name="PHY_MODE" position="31" width="1" access="RW">
+            <brief_description>This bit indicates if the interface between the controller is UTMI+ or ULPI.</brief_description>
+          </bit_field>
+        </register_def>
+      </address_block>
+    </register_defs>
+  </GeneralPeriphery>
+</crr:UniversalDevice>
