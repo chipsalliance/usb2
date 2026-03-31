@@ -1,7 +1,7 @@
 // Copyright (c) 2025 NXP Semiconductors N.V. All rights reserved
 // NXP Confidential Proprietary
 // ----------------------------------------------------------------------------
-// FILE NAME      : ip_xxx_3516_hs_mem_wrapper.v 
+// FILE NAME      : ip_xxx_3516_hs_mem_wrapper.sv 
 // DEPARTMENT     :  
 // AUTHOR         : 
 // AUTHOR'S EMAIL : 
