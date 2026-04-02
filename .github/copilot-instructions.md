@@ -105,3 +105,8 @@ Defined as Verilog parameters in `src/integration/rtl/ip_xxx_3516_hs_mem_wrapper
 ## Reference Documentation
 
 `docs/Usb_Integration_Guide.pdf` — integration methodology, port descriptions, timing, and configuration guidance.
+
+## Rules and Constraints
+
+NEVER run any git commands that will modify the repository (git commit, git reset, git checkout, etc).
+You are allowed to run git commands that review the repository (git log, git diff, git config --get, etc).
