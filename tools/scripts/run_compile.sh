@@ -37,17 +37,20 @@ else
 endif
 
 #Analyze the vhdl usb files
-vhdlan -full64 -f ${USB_CFG_DIR}/usb_lib_filelist.f -kdb
-vhdlan -full64 -f ${USB_CFG_DIR}/usb_ip_3511_filelist.f -kdb
-vhdlan -full64 -f ${USB_CFG_DIR}/usb_ip_3515_filelist.f -kdb
-vhdlan -full64 -f ${USB_CFG_DIR}/usb_ip_3516_filelist.f -kdb
+vhdlan -full64 -f ${USB_CFG_DIR}/usb_lib_filelist.f -kdb -l ${USB_COMPILE_DIR}/analyze_usb_lib.log
+vhdlan -full64 -f ${USB_CFG_DIR}/usb_ip_3511_filelist.f -kdb -l ${USB_COMPILE_DIR}/analyze_usb_ip_3511.log
+vhdlan -full64 -f ${USB_CFG_DIR}/usb_ip_3515_filelist.f -kdb -l ${USB_COMPILE_DIR}/analyze_usb_ip_3515.log
+vhdlan -full64 -f ${USB_CFG_DIR}/usb_ip_3516_filelist.f -kdb -l ${USB_COMPILE_DIR}/analyze_usb_ip_3516.log
 
 #Analyze the verilog top usb wrapper
-vlogan -full64 -sverilog -f ${USB_CFG_DIR}/usb_verilog_top_filelist.f -kdb
+vlogan -full64 -sverilog -f ${USB_CFG_DIR}/usb_verilog_top_filelist.f -kdb -l ${USB_COMPILE_DIR}/analyze_usb_verilog_top.log
 
 #Run elaboration
-vcs -full64 work.ip_xxx_3516_hs_mem_wrapper -debug_access+all -kdb -l ${USB_COMPILE_DIR}/elab.log
+vcs -full64 work.usb_top_tb -timescale=1ns/1ps -debug_access+all -kdb -l ${USB_COMPILE_DIR}/elab.log
 
 #Run the simulation
-./simv
+set MY_GREEN    = '\e[32m'
+set MY_CLR      = '\e[m'
+echo "${MY_GREEN}Running simulation${MY_CLR}"
+./simv -l ${USB_COMPILE_DIR}/sim.log -ucli -i ucli_script +fsdb+all=on
 

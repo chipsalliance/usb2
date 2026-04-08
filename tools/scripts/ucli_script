@@ -1,0 +1,4 @@
+fsdbDumpfile usb_top_tb.fsdb
+fsdbDumpvars 0 usb_top_tb
+fsdbDumpon
+run
