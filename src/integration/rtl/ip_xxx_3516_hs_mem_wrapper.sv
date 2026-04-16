@@ -575,7 +575,7 @@ module ip_xxx_3516_hs_mem_wrapper
       .C_TOGGLE_REG_READABLE(C_TOGGLE_REG_READABLE),
       .C_PLL_ENABLE(0),
       .C_PLL_DIVIDER(7'b0010100),
-      .C_ULPI_SUPPORT(1),
+      .C_ULPI_SUPPORT(0),
       .C_UTMI_SUPPORT(1),
       .C_EXTEND_TX_DELAY(1)
    ) uut (
