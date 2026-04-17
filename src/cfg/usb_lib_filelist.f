@@ -28,3 +28,5 @@ ${USB_ROOT}/ip_xxx_3511/RTL/usb_synchronizer.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_timers_sf.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_tx_sf_dpdm.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_upstreamled.m.vhdl
+${USB_ROOT}/ip_xxx_3516_hs_mem/RTL/usb_ocp_recovery_ep_adapter.e.vhdl
+${USB_ROOT}/ip_xxx_3516_hs_mem/RTL/usb_ocp_recovery_ep_adapter.m.vhdl

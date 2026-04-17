@@ -38,7 +38,20 @@ module ip_xxx_3516_hs_mem_wrapper
   parameter        AXI_USER_WIDTH = 32,
   parameter        AXI_DMA_ADDR_WIDTH = 32,
   parameter        AXI_DEV_ADDR_WIDTH = 32,
-  parameter        AXI_HOST_ADDR_WIDTH = 32
+  parameter        AXI_HOST_ADDR_WIDTH = 32,
+  // -----------------------------------------------------------------
+  // OCP Recovery subsystem (A7 integration)
+  // -----------------------------------------------------------------
+  parameter        AXI_REC_ADDR_WIDTH   = 32,
+  parameter int    REC_CMS_ADDR_W       = 16,
+  parameter int    REC_NUM_CMS          = 2,
+  // PROT_CAP bytes 0..15 (OCP Recovery v1.1 Sec 9.2 cmd 0x22).
+  // Default: ASCII "OCP" magic + protocol version 0x11 + agent byte 0x01
+  // followed by zero capability flags.  SoC should override via parameter
+  // or tie-off when integrating.
+  parameter logic [127:0] REC_PROT_CAP_DEFAULT  =
+      { 104'h0, 8'h01, 8'h11, 24'h50434F }, // little-endian "OCP",0x11,0x01
+  parameter logic [191:0] REC_DEVICE_ID_DEFAULT = 192'h0
  )  
  (
     // ----------------------------------------------------------------
@@ -267,7 +280,67 @@ module ip_xxx_3516_hs_mem_wrapper
 				   output [1:0] 	       host_usb_portindicator,
 				   output 		       host_usb_portpower,
 				   input [6:0] 		       token_length_counter,
-				   output [6:0] 	       usb_token_length
+				   output [6:0] 	       usb_token_length,
+				   // ----------------------------------------------------------------
+				   // OCP Recovery v1.1 - A7 integration (additive, 2026)
+				   // ----------------------------------------------------------------
+				   // AXI4-Lite management port for recovery subsystem.
+				   // Clocked on dev_axi_aclk / dev_axi_aresetn (same SoC clock
+				   // domain as the device AXI subordinate, so the SoC
+				   // interconnect that already crosses into the USB clock for
+				   // dev_axi_* does not need a second CDC for this port).
+				   // AW
+				   input  [AXI_REC_ADDR_WIDTH-1:0]  rec_axi_awaddr,
+				   input  [2:0]                     rec_axi_awprot,
+				   input                             rec_axi_awvalid,
+				   output                            rec_axi_awready,
+				   // W
+				   input  [31:0]                    rec_axi_wdata,
+				   input  [3:0]                     rec_axi_wstrb,
+				   input                             rec_axi_wvalid,
+				   output                            rec_axi_wready,
+				   // B
+				   output [1:0]                     rec_axi_bresp,
+				   output                            rec_axi_bvalid,
+				   input                             rec_axi_bready,
+				   // AR
+				   input  [AXI_REC_ADDR_WIDTH-1:0]  rec_axi_araddr,
+				   input  [2:0]                     rec_axi_arprot,
+				   input                             rec_axi_arvalid,
+				   output                            rec_axi_arready,
+				   // R
+				   output [31:0]                    rec_axi_rdata,
+				   output [1:0]                     rec_axi_rresp,
+				   output                            rec_axi_rvalid,
+				   input                             rec_axi_rready,
+
+				   // CMS external SRAM (from A4, byte-wide)
+				   output [REC_CMS_ADDR_W-1:0]      cms_addr,
+				   output                            cms_wr,
+				   output                            cms_rd,
+				   output [7:0]                     cms_wdata,
+				   input  [7:0]                     cms_rdata,
+
+				   // Sideband inputs (SoC -> recovery FSM)
+				   input                             rec_trigger,
+				   input                             soc_boot_ack,
+
+				   // Sideband outputs (recovery FSM -> SoC)
+				   output                            rec_active,
+				   output                            image_ready,
+				   output                            boot_req,
+				   output                            device_reset_req,
+				   output                            fatal_err,
+				   // ----------------------------------------------------------------
+				   // OCP Recovery v1.1 status pins (architecture proposal 3.7)
+				   // TODO: driven by usb_ocp_regs once the PIE/DMA hooks
+				   //       (usb_ocp_filter, usb_ocp_ep0, usb_ocp_fifo) are
+				   //       wired into usb_pie.m.vhdl and usb_dma.m.vhdl in a
+				   //       follow-up patch.  For this pass the pins are
+				   //       deterministic tie-offs (1'b0).
+				   // ----------------------------------------------------------------
+				   output wire                 ocp_recovery_available,
+				   output wire                 ocp_firmware_activated
 				   );
 
    // ================================================================
@@ -719,6 +792,161 @@ module ip_xxx_3516_hs_mem_wrapper
                .async_disable(1'b0),
                .testmode(1'b0)
    );
+
+   // ================================================================
+   // OCP Recovery v1.1 subsystem (A6: usb_ocp_recovery_top)
+   // ----------------------------------------------------------------
+   // Wires the AXI4-Lite management port, the CMS external SRAM port,
+   // and the sideband handshake to the recovery subsystem.  The PIE
+   // (pie_*) ports of A6 hook into the existing VHDL device's EPCS
+   // channels (usb_pie / usb_dma) as described in A1's EPCS reuse
+   // inventory.  However, those signals are NOT currently exposed on
+   // the existing ip_xxx_3516_hs_mem instance's port list, so the
+   // connections below are STUBBED (TODO).  See bug report
+   //   bugs/bug-ocp-recovery-pie-epcs-not-exposed.md
+   // for the list of signals that must be routed out of
+   // usb_pie.m.vhdl / usb_dma.m.vhdl to the top of
+   // ip_xxx_3516_hs_mem and exposed here before recovery is functional.
+   // With the stubs in place the design compiles and exercises the
+   // management-side paths (AXI-Lite, CMS, sideband) but cannot
+   // transact against the real USB endpoints.
+   // ================================================================
+
+   // ---- Stubbed PIE/EPCS nets (TODO: wire to VHDL device) ----
+   // Outputs from A6 (unused until VHDL routing lands):
+   logic                          a6_pie_ctrl_out_ack;
+   logic                          a6_pie_ctrl_out_nak;
+   logic                          a6_pie_ctrl_in_req;
+   logic [7:0]                    a6_pie_ctrl_in_byte;
+   logic                          a6_pie_ctrl_in_last;
+   logic                          a6_pie_ctrl_stall;
+   logic                          a6_pie_bout_ack;
+   logic                          a6_pie_bout_nak;
+   logic                          a6_pie_bin_req;
+   logic [7:0]                    a6_pie_bin_byte;
+   logic                          a6_pie_bin_last;
+   logic                          a6_pie_bulk_stall;
+
+   // Inputs to A6 (tied to 0 until VHDL routing lands):
+   logic                          a6_pie_setup_received_stub;
+   logic [63:0]                   a6_pie_setup_data_stub;
+   logic                          a6_pie_ctrl_out_req_stub;
+   logic [7:0]                    a6_pie_ctrl_out_byte_stub;
+   logic                          a6_pie_ctrl_out_last_stub;
+   logic                          a6_pie_ctrl_in_ack_stub;
+   logic                          a6_pie_ctrl_xfer_done_stub;
+   logic                          a6_pie_bout_req_stub;
+   logic [7:0]                    a6_pie_bout_byte_stub;
+   logic                          a6_pie_bout_last_stub;
+   logic                          a6_pie_bin_ack_stub;
+   logic                          a6_pie_bulk_xfer_done_stub;
+
+   assign a6_pie_setup_received_stub  = 1'b0;
+   assign a6_pie_setup_data_stub      = '0;
+   assign a6_pie_ctrl_out_req_stub    = 1'b0;
+   assign a6_pie_ctrl_out_byte_stub   = '0;
+   assign a6_pie_ctrl_out_last_stub   = 1'b0;
+   assign a6_pie_ctrl_in_ack_stub     = 1'b0;
+   assign a6_pie_ctrl_xfer_done_stub  = 1'b0;
+   assign a6_pie_bout_req_stub        = 1'b0;
+   assign a6_pie_bout_byte_stub       = '0;
+   assign a6_pie_bout_last_stub       = 1'b0;
+   assign a6_pie_bin_ack_stub         = 1'b0;
+   assign a6_pie_bulk_xfer_done_stub  = 1'b0;
+
+   // ---- Recovery subsystem reset (SV sync active-high). ----
+   // dev_axi_aresetn is AXI-style async active-low; the SoC reset
+   // synchroniser upstream of dev_axi_aresetn already deasserts it
+   // synchronously to dev_axi_aclk, so a plain inversion is safe here.
+   logic rec_rst;
+   assign rec_rst = ~dev_axi_aresetn;
+
+   usb_ocp_recovery_top #(
+       .CTRL_EP_NR        (0),
+       .BULK_OUT_EP_NR    (1),
+       .BULK_IN_EP_NR     (1),
+       .CMS_ADDR_W        (REC_CMS_ADDR_W),
+       .NUM_CMS           (REC_NUM_CMS),
+       .PROT_CAP_DEFAULT  (REC_PROT_CAP_DEFAULT),
+       .DEVICE_ID_DEFAULT (REC_DEVICE_ID_DEFAULT),
+       .AXIL_AW           (AXI_REC_ADDR_WIDTH),
+       .AXIL_DW           (32)
+   ) u_ocp_recovery (
+       .clk  (dev_axi_aclk),
+       .rst  (rec_rst),
+
+       // PIE-side (TODO: wire to VHDL usb_pie / usb_dma)
+       .pie_setup_received (a6_pie_setup_received_stub),
+       .pie_setup_data     (a6_pie_setup_data_stub),
+       .pie_ctrl_out_req   (a6_pie_ctrl_out_req_stub),
+       .pie_ctrl_out_byte  (a6_pie_ctrl_out_byte_stub),
+       .pie_ctrl_out_last  (a6_pie_ctrl_out_last_stub),
+       .pie_ctrl_out_ack   (a6_pie_ctrl_out_ack),
+       .pie_ctrl_out_nak   (a6_pie_ctrl_out_nak),
+       .pie_ctrl_in_req    (a6_pie_ctrl_in_req),
+       .pie_ctrl_in_byte   (a6_pie_ctrl_in_byte),
+       .pie_ctrl_in_last   (a6_pie_ctrl_in_last),
+       .pie_ctrl_in_ack    (a6_pie_ctrl_in_ack_stub),
+       .pie_ctrl_stall     (a6_pie_ctrl_stall),
+       .pie_ctrl_xfer_done (a6_pie_ctrl_xfer_done_stub),
+       .pie_bout_req       (a6_pie_bout_req_stub),
+       .pie_bout_byte      (a6_pie_bout_byte_stub),
+       .pie_bout_last      (a6_pie_bout_last_stub),
+       .pie_bout_ack       (a6_pie_bout_ack),
+       .pie_bout_nak       (a6_pie_bout_nak),
+       .pie_bin_req        (a6_pie_bin_req),
+       .pie_bin_byte       (a6_pie_bin_byte),
+       .pie_bin_last       (a6_pie_bin_last),
+       .pie_bin_ack        (a6_pie_bin_ack_stub),
+       .pie_bulk_stall     (a6_pie_bulk_stall),
+       .pie_bulk_xfer_done (a6_pie_bulk_xfer_done_stub),
+
+       // AXI4-Lite management port
+       .s_axil_awaddr   (rec_axi_awaddr),
+       .s_axil_awprot   (rec_axi_awprot),
+       .s_axil_awvalid  (rec_axi_awvalid),
+       .s_axil_awready  (rec_axi_awready),
+       .s_axil_wdata    (rec_axi_wdata),
+       .s_axil_wstrb    (rec_axi_wstrb),
+       .s_axil_wvalid   (rec_axi_wvalid),
+       .s_axil_wready   (rec_axi_wready),
+       .s_axil_bresp    (rec_axi_bresp),
+       .s_axil_bvalid   (rec_axi_bvalid),
+       .s_axil_bready   (rec_axi_bready),
+       .s_axil_araddr   (rec_axi_araddr),
+       .s_axil_arprot   (rec_axi_arprot),
+       .s_axil_arvalid  (rec_axi_arvalid),
+       .s_axil_arready  (rec_axi_arready),
+       .s_axil_rdata    (rec_axi_rdata),
+       .s_axil_rresp    (rec_axi_rresp),
+       .s_axil_rvalid   (rec_axi_rvalid),
+       .s_axil_rready   (rec_axi_rready),
+
+       // CMS external SRAM passthrough
+       .cms_addr  (cms_addr),
+       .cms_wr    (cms_wr),
+       .cms_rd    (cms_rd),
+       .cms_wdata (cms_wdata),
+       .cms_rdata (cms_rdata),
+
+       // Static capability tie-offs (from parameters)
+       .prot_cap_in  (REC_PROT_CAP_DEFAULT),
+       .device_id_in (REC_DEVICE_ID_DEFAULT),
+
+       // Sideband
+       .rec_trigger      (rec_trigger),
+       .soc_boot_ack     (soc_boot_ack),
+       .recovery_active  (rec_active),
+       .image_ready      (image_ready),
+       .boot_req         (boot_req),
+       .device_reset_req (device_reset_req),
+       .fatal_err        (fatal_err)
+   );
+
+   // Legacy top-level status pins: repurpose as a summary view of the
+   // recovery FSM so downstream SoC glue sees consistent behaviour.
+   assign ocp_recovery_available = rec_active;
+   assign ocp_firmware_activated = image_ready;
 
 endmodule
 

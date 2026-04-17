@@ -18,5 +18,12 @@ ${USB_COMPILE_DIR}/../../src/integration/rtl/axi_to_ahb.sv
 // Top-level wrapper
 ${USB_COMPILE_DIR}/../../src/integration/rtl/ip_xxx_3516_hs_mem_wrapper.sv
 
+// OCP Recovery v1.1 over USB
+${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_ctrl_decode.sv
+${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_regs.sv
+${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_cms_fifo.sv
+${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_fsm.sv
+${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_top.sv
+
 // Top-tb
 ${USB_COMPILE_DIR}/../../src/integration/tb/usb_top_tb.sv
