@@ -55,9 +55,9 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-LIBRARY usb_lib;
-USE usb_lib.usb_general_subcmp_pkg.all;
-USE usb_lib.usb_subcmp_pkg.all;
+LIBRARY rtl;
+USE rtl.usb_general_subcmp_pkg.all;
+USE rtl.usb_subcmp_pkg.all;
 
 entity usb_clkrec is
 

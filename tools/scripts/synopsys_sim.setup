@@ -1,5 +1,2 @@
-usb_lib : $USB_COMPILE_DIR/usb_lib
-lib_usb_ip_3511 : $USB_COMPILE_DIR/lib_usb_ip_3511
-lib_usb_ip_3515 : $USB_COMPILE_DIR/lib_usb_ip_3515
-lib_usb_ip_3516 : $USB_COMPILE_DIR/lib_usb_ip_3516
+rtl : $USB_COMPILE_DIR/rtl
 work : $USB_COMPILE_DIR/work

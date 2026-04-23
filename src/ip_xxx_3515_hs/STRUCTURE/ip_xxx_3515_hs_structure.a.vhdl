@@ -114,8 +114,8 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-LIBRARY usb_lib;
-USE usb_lib.usb_general_subcmp_pkg.all;
+LIBRARY rtl;
+USE rtl.usb_general_subcmp_pkg.all;
 
 architecture structure of ip_xxx_3515_hs is
 
@@ -1623,27 +1623,27 @@ dataline_low_power_en <= '1' when pie_lowpower_n = '0' and ulpi_dir_sss = '1' an
 end structure;
 
 ----------------------------------------------------------------------
-LIBRARY usb_lib;
+LIBRARY rtl;
 
 configuration ip_xxx_3515_hs_structure_cfg of ip_xxx_3515_hs is
   for structure
     for usb_host_pie_1: usb_host_pie
-      use entity usb_lib.usb_host_pie(rtl);
+      use entity rtl.usb_host_pie(rtl);
     end for;
     for usb_host_synchronizer_1: usb_host_synchronizer
-      use entity usb_lib.usb_host_synchronizer(rtl);
+      use entity rtl.usb_host_synchronizer(rtl);
     end for;
     for usb_host_reg_if_1 : usb_host_reg_if
-      use entity usb_lib.usb_host_reg_if(rtl);
+      use entity rtl.usb_host_reg_if(rtl);
     end for;
     for usb_host_dma_1 : usb_host_dma
-      use entity usb_lib.usb_host_dma(rtl);
+      use entity rtl.usb_host_dma(rtl);
     end for;
     for usb_ahb_slave_1 : usb_ahb_slave
-      use entity usb_lib.usb_ahb_slave(rtl);
+      use entity rtl.usb_ahb_slave(rtl);
     end for;
     for usb_host_sof_timer_1 : usb_host_sof_timer
-      use entity usb_lib.usb_host_sof_timer(rtl);
+      use entity rtl.usb_host_sof_timer(rtl);
     end for;
   end for;
 end ip_xxx_3515_hs_structure_cfg;

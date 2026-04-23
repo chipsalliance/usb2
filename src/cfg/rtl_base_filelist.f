@@ -1,4 +1,4 @@
--work usb_lib
+-work rtl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_general_subcmp_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_subcmp_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_fs_emb_dev_pkg.p.vhdl

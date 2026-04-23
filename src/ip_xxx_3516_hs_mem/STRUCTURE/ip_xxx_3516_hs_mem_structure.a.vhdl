@@ -82,13 +82,7 @@ library ieee;
 use ieee.numeric_std.all;
 use ieee.std_logic_1164.all;
 
-library lib_usb_ip_3516;
-
-library usb_lib;
-
-library lib_usb_ip_3515;
-
-library lib_usb_ip_3511;
+library rtl;
 
 
 architecture structure of ip_xxx_3516_hs_mem is
@@ -877,22 +871,18 @@ library ieee;
 use ieee.numeric_std.all;
 use ieee.std_logic_1164.all;
 
-library lib_usb_ip_3516;
-
-library lib_usb_ip_3515;
-
-library lib_usb_ip_3511;
+library rtl;
 
 configuration ip_xxx_3516_hs_mem_structure_cfg of ip_xxx_3516_hs_mem is
   for structure
     for ip_xxx_3515_hs_inst: ip_xxx_3515_hs
-       use configuration lib_usb_ip_3515.ip_xxx_3515_hs_structure_cfg;
+       use configuration rtl.ip_xxx_3515_hs_structure_cfg;
     end for;
     for ip_xxx_3511_hs_inst: ip_xxx_3511_hs
-       use configuration lib_usb_ip_3511.ip_xxx_3511_hs_structure_cfg;
+       use configuration rtl.ip_xxx_3511_hs_structure_cfg;
     end for;
     for ahb_dma_slave_1 : ahb_dma_slave
-       use entity lib_usb_ip_3516.ahb_dma_slave(rtl);
+       use entity rtl.ahb_dma_slave(rtl);
     end for;
   end for;
 end ip_xxx_3516_hs_mem_structure_cfg;
