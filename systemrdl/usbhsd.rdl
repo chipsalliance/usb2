@@ -1,0 +1,326 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// USB High-Speed Device Controller Register Map
+// Auto-generated from third_party/usb/systemrdl/usbhsd.regs
+
+addrmap usbhsd {
+    default hw = na;
+
+    // USB Device Command/Status register
+    reg devcmdstat_t {
+        field {
+            sw = rw; hw = r;
+            desc = "USB device address.";
+        } DEV_ADDR[6:0] = 7'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "USB device enable.";
+        } DEV_EN[7:7] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "SETUP token received.";
+        } SETUP[8:8] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Forces the NEEDCLK output to always be on:.";
+        } FORCE_NEEDCLK[9:9] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "If this bit is set to 1, the VBUS voltage indicators from the PHY are overruled.";
+        } FORCE_VBUS[10:10] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "LPM Supported:.";
+        } LPM_SUP[11:11] = 1'h1;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt on NAK for interrupt and bulk OUT EP:.";
+        } INTONNAK_AO[12:12] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt on NAK for interrupt and bulk IN EP:.";
+        } INTONNAK_AI[13:13] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt on NAK for control OUT EP:.";
+        } INTONNAK_CO[14:14] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt on NAK for control IN EP:.";
+        } INTONNAK_CI[15:15] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Device status - connect.";
+        } DCON[16:16] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Device status - suspend.";
+        } DSUS[17:17] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Device status - LPM Suspend.";
+        } LPM_SUS[19:19] = 1'h0;
+        field {
+            sw = r; hw = w;
+            desc = "LPM Remote Wake-up Enabled by USB host.";
+        } LPM_REWP[20:20] = 1'h0;
+        field {
+            sw = r; hw = w;
+            desc = "This field indicates the speed at which the device operates: 00b: reserved 01b: full-speed 10b: high-speed 11b: super-speed (reserved for future use).";
+        } Speed[23:22] = 2'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Device status - connect change.";
+        } DCON_C[24:24] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Device status - suspend change.";
+        } DSUS_C[25:25] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Device status - reset change.";
+        } DRES_C[26:26] = 1'h0;
+        field {
+            sw = r; hw = w;
+            desc = "This bit indicates if VBUS is detected or not.";
+        } VBUS_DEBOUNCED[28:28] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "This field is written by firmware to put the PHY into a test mode as defined by the USB2.";
+        } PHY_TEST_MODE[31:29] = 3'h0;
+    };
+    devcmdstat_t DEVCMDSTAT @ 0x0;
+
+    // USB Info register
+    reg info_t {
+        field {
+            sw = r; hw = w;
+            desc = "Frame number.";
+        } FRAME_NR[10:0] = 11'h0;
+        field {
+            sw = r; hw = w;
+            desc = "The error code which last occurred:.";
+        } ERR_CODE[14:11] = 4'h0;
+        field {
+            sw = r; hw = w;
+            desc = "Minor revision.";
+        } Minrev[23:16] = 8'h0;
+        field {
+            sw = r; hw = w;
+            desc = "Major revision.";
+        } Majrev[31:24] = 8'h2;
+    };
+    info_t INFO @ 0x4;
+
+    // USB EP Command/Status List start address
+    reg epliststart_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Programmable portion of the USB EP Command/Status List address.";
+        } EP_LIST_PRG[19:8] = 12'h0;
+        field {
+            sw = r; hw = w;
+            desc = "Fixed portion of USB EP Command/Status List address.";
+        } EP_LIST_FIXED[31:20] = 12'h0;
+    };
+    epliststart_t EPLISTSTART @ 0x8;
+
+    // USB Data buffer start address
+    reg databufstart_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Start address of the memory page where all endpoint data buffers are located.";
+        } DA_BUF[31:18] = 14'h1040;
+    };
+    databufstart_t DATABUFSTART @ 0xC;
+
+    // USB Link Power Management register
+    reg lpm_t {
+        field {
+            sw = r; hw = w;
+            desc = "Host Initiated Resume Duration - HW.";
+        } HIRD_HW[3:0] = 4'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Host Initiated Resume Duration - SW.";
+        } HIRD_SW[7:4] = 4'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "As long as this bit is set to one and LPM supported bit is set to one, HW will return a NYET handshake on every LPM token it receives.";
+        } DATA_PENDING[8:8] = 1'h0;
+    };
+    lpm_t LPM @ 0x10;
+
+    // USB Endpoint skip
+    reg epskip_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Endpoint skip: Writing 1 to one of these bits, will indicate to HW that it must deactivate the buffer assigned to this endpoint and return control back to software.";
+        } SKIP[11:0] = 12'h0;
+    };
+    epskip_t EPSKIP @ 0x14;
+
+    // USB Endpoint Buffer in use
+    reg epinuse_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Buffer in use: This register has one bit per physical endpoint.";
+        } BUF[11:2] = 10'h0;
+    };
+    epinuse_t EPINUSE @ 0x18;
+
+    // USB Endpoint Buffer Configuration register
+    reg epbufcfg_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Buffer usage: This register has one bit per physical endpoint.";
+        } BUF_SB[11:2] = 10'h0;
+    };
+    epbufcfg_t EPBUFCFG @ 0x1C;
+
+    // USB interrupt status register
+    reg intstat_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the Control EP0 OUT direction.";
+        } EP0OUT[0:0] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the Control EP0 IN direction.";
+        } EP0IN[1:1] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the EP1 OUT direction.";
+        } EP1OUT[2:2] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the EP1 IN direction.";
+        } EP1IN[3:3] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the EP2 OUT direction.";
+        } EP2OUT[4:4] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the EP2 IN direction.";
+        } EP2IN[5:5] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the EP3 OUT direction.";
+        } EP3OUT[6:6] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the EP3 IN direction.";
+        } EP3IN[7:7] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the EP4 OUT direction.";
+        } EP4OUT[8:8] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the EP4 IN direction.";
+        } EP4IN[9:9] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the EP5 OUT direction.";
+        } EP5OUT[10:10] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Interrupt status register bit for the EP5 IN direction.";
+        } EP5IN[11:11] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Frame interrupt.";
+        } FRAME_INT[30:30] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Device status interrupt.";
+        } DEV_INT[31:31] = 1'h0;
+    };
+    intstat_t INTSTAT @ 0x20;
+
+    // USB interrupt enable register
+    reg inten_t {
+        field {
+            sw = rw; hw = r;
+            desc = "If this bit is set and the corresponding USB interrupt status bit is set, a HW interrupt is generated on the interrupt line.";
+        } EP_INT_EN[11:0] = 12'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "If this bit is set and the corresponding USB interrupt status bit is set, a HW interrupt is generated on the interrupt line.";
+        } FRAME_INT_EN[30:30] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "If this bit is set and the corresponding USB interrupt status bit is set, a HW interrupt is generated on the interrupt line.";
+        } DEV_INT_EN[31:31] = 1'h0;
+    };
+    inten_t INTEN @ 0x24;
+
+    // USB set interrupt status register
+    reg intsetstat_t {
+        field {
+            sw = rw; hw = r;
+            desc = "If software writes a one to one of these bits, the corresponding USB interrupt status bit is set.";
+        } EP_SET_INT[11:0] = 12'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "If software writes a one to one of these bits, the corresponding USB interrupt status bit is set.";
+        } FRAME_SET_INT[30:30] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "If software writes a one to one of these bits, the corresponding USB interrupt status bit is set.";
+        } DEV_SET_INT[31:31] = 1'h0;
+    };
+    intsetstat_t INTSETSTAT @ 0x28;
+
+    // USB Endpoint toggle register
+    reg eptoggle_t {
+        field {
+            sw = r; hw = w;
+            desc = "Endpoint data toggle: This field indicates the current value of the data toggle for the corresponding endpoint.";
+        } TOGGLE[29:0] = 30'h0;
+    };
+    eptoggle_t EPTOGGLE @ 0x34;
+
+    // UTMI/ULPI debug register
+    reg ulpidebug_t {
+        field {
+            sw = rw; hw = r;
+            desc = "ULPI mode: Bits 7:0 are used as the address when doing a register access over the ULPI interface.";
+        } PHY_ADDR[7:0] = 8'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "UTMI+ mode: Reserved.";
+        } PHY_WDATA[15:8] = 8'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "UTMI+ mode: Bits 7:0 contains the value returned by the VStatus signal on Vendor Interface of UTMI+.";
+        } PHY_RDATA[23:16] = 8'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "UTMI+ mode: Reserved.";
+        } PHY_RW[24:24] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Software writes this bit to one to start a read or write operation.";
+        } PHY_ACCESS[25:25] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "This bit indicates if the interface between the controller is UTMI+ or ULPI.";
+        } PHY_MODE[31:31] = 1'h0;
+    };
+    ulpidebug_t ULPIDEBUG @ 0x3C;
+
+};
