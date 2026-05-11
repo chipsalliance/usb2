@@ -38,7 +38,11 @@ module ip_xxx_3516_hs_mem_wrapper
   parameter        AXI_USER_WIDTH = 32,
   parameter        AXI_DMA_ADDR_WIDTH = 32,
   parameter        AXI_DEV_ADDR_WIDTH = 32,
-  parameter        AXI_HOST_ADDR_WIDTH = 32
+  parameter        AXI_HOST_ADDR_WIDTH = 32,
+  // Simulation chirp timer scaling: set 1 to use reduced chirp K
+  // duration and pre-chirp delay for VIP scaledown compatibility.
+  // Default 0 uses USB 2.0 spec-compliant timer values.
+  parameter        G_SIM_CHIRP_TIMERS = 0
  )  
  (
     // ----------------------------------------------------------------
@@ -577,7 +581,8 @@ module ip_xxx_3516_hs_mem_wrapper
       .C_PLL_DIVIDER(7'b0010100),
       .C_ULPI_SUPPORT(0),
       .C_UTMI_SUPPORT(1),
-      .C_EXTEND_TX_DELAY(1)
+      .C_EXTEND_TX_DELAY(1),
+      .G_SIM_CHIRP_TIMERS(G_SIM_CHIRP_TIMERS)
    ) uut (
                // Device AHB — from Lite converter
                .dev_ahbs_hresetn  (dev_axi_aresetn),

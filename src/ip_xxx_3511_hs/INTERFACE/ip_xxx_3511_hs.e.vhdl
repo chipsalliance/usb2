@@ -115,7 +115,8 @@ entity ip_xxx_3511_hs is
           C_PLL_DIVIDER            : std_logic_vector(6 downto 0) := "0010100";
           C_ULPI_SUPPORT             : boolean := TRUE;
           C_UTMI_SUPPORT             : boolean := TRUE;
-          C_EXTEND_TX_DELAY          : boolean := TRUE
+          C_EXTEND_TX_DELAY          : boolean := TRUE;
+          G_SIM_CHIRP_TIMERS         : boolean := FALSE
 	  );
   port(
        -- AHB bus signals

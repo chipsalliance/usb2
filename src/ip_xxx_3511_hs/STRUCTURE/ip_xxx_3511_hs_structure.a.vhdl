@@ -255,7 +255,8 @@ component usb_pie
       USB_DATAWIDTH         : integer := 64;
       C_NBDEV               : integer := 1; -- <<<< LAB to review 
       C_NBPHYSEP            : integer := 14;
-      C_EXTEND_TX_DELAY       : boolean := FALSE
+      C_EXTEND_TX_DELAY       : boolean := FALSE;
+      G_SIM_CHIRP_TIMERS      : boolean := FALSE
    );
     port (
           ----- To/From usb synchronizer ------------------------
@@ -1006,7 +1007,8 @@ usb_pie_1 : usb_pie
 		USB_DATAWIDTH     => USBPIE_DATAWIDTH,
                 C_NBDEV           => 1,
 		C_NBPHYSEP        => C_NBPHYSEP,
-		C_EXTEND_TX_DELAY   => C_EXTEND_TX_DELAY
+		C_EXTEND_TX_DELAY   => C_EXTEND_TX_DELAY,
+		G_SIM_CHIRP_TIMERS  => G_SIM_CHIRP_TIMERS
 		)
     port map   (
 	       pie_epinfo_req		    => sieint_epinfo_req	   ,

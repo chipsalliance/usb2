@@ -48,7 +48,8 @@ component ip_xxx_3516_hs_mem
           C_PLL_DIVIDER            : std_logic_vector(6 downto 0) := "0010100";
           C_ULPI_SUPPORT             : boolean := TRUE;
           C_UTMI_SUPPORT             : boolean := TRUE;
-	  C_EXTEND_TX_DELAY         : boolean := FALSE
+	  C_EXTEND_TX_DELAY         : boolean := FALSE;
+	  G_SIM_CHIRP_TIMERS        : boolean := FALSE
 	  );
   port(
        -- AHB bus signals

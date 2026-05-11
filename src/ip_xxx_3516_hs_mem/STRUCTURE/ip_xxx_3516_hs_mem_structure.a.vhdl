@@ -207,7 +207,8 @@ end component;
           C_PLL_DIVIDER            : std_logic_vector(6 downto 0) := "0010100";
           C_ULPI_SUPPORT             : boolean := TRUE;
           C_UTMI_SUPPORT             : boolean := TRUE;
-          C_EXTEND_TX_DELAY          : boolean := FALSE);
+          C_EXTEND_TX_DELAY          : boolean := FALSE;
+          G_SIM_CHIRP_TIMERS         : boolean := FALSE);
   port(
        -- AHB bus signals
        hclk                 : in  std_logic;
@@ -566,7 +567,8 @@ signal ip_xxx_3511_hs_fpga : std_logic_vector(255 downto 0);
           C_PLL_DIVIDER            => C_PLL_DIVIDER,
           C_ULPI_SUPPORT           => C_ULPI_SUPPORT,
           C_UTMI_SUPPORT           => C_UTMI_SUPPORT,
-          C_EXTEND_TX_DELAY        => C_EXTEND_TX_DELAY)
+          C_EXTEND_TX_DELAY        => C_EXTEND_TX_DELAY,
+          G_SIM_CHIRP_TIMERS       => G_SIM_CHIRP_TIMERS)
           port map (
 
       hclk                   => dev_ahbs_hclk,
