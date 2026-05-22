@@ -1,0 +1,435 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// USB High-Speed Host Controller Register Map
+// Auto-generated from third_party/usb/systemrdl/usbhsh.regs
+
+addrmap usbhsh {
+    default hw = na;
+
+    // This register contains the offset value towards the start of the operational register space and the version number of the IP block
+    reg caplength_chipid_t {
+        field {
+            sw = r; hw = w;
+            desc = "Capability Length: This is used as an offset.";
+        } CAPLENGTH[7:0] = 8'h10;
+        field {
+            sw = r; hw = w;
+            desc = "Chip identification: indicates major and minor revision of the IP: [31:24] = Major revision [23:16] = Minor revision Major revisions used: 0x01: USB2.";
+        } CHIPID[31:16] = 16'h101;
+    };
+    caplength_chipid_t CAPLENGTH_CHIPID @ 0x0;
+
+    // Host Controller Structural Parameters
+    reg hcsparams_t {
+        field {
+            sw = r; hw = w;
+            desc = "This register specifies the number of physical downstream ports implemented on this host controller.";
+        } N_PORTS[3:0] = 4'h1;
+        field {
+            sw = r; hw = w;
+            desc = "This field indicates whether the host controller implementation includes port power control.";
+        } PPC[4:4] = 1'h1;
+        field {
+            sw = r; hw = w;
+            desc = "This bit indicates whether the ports support port indicator control.";
+        } P_INDICATOR[16:16] = 1'h1;
+    };
+    hcsparams_t HCSPARAMS @ 0x4;
+
+    // Host Controller Capability Parameters
+    reg hccparams_t {
+        field {
+            sw = r; hw = w;
+            desc = "Link Power Management Capability.";
+        } LPMC[17:17] = 1'h1;
+    };
+    hccparams_t HCCPARAMS @ 0x8;
+
+    // Frame Length Adjustment
+    reg fladj_frindex_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Frame Length Timing Value.";
+        } FLADJ[5:0] = 6'h20;
+        field {
+            sw = rw; hw = r;
+            desc = "Frame Index: Bits 29 to16 in this register are used for the frame number field in the SOF packet.";
+        } FRINDEX[29:16] = 14'h0;
+    };
+    fladj_frindex_t FLADJ_FRINDEX @ 0xC;
+
+    // Memory base address where ATL PTD0 is stored
+    reg atl_ptd_base_addr_t {
+        field {
+            sw = rw; hw = r;
+            desc = "This indicates the current PTD that is used by the hardware when it is processing the ATL list.";
+        } ATL_CUR[8:4] = 5'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Base address to be used by the hardware to find the start of the ATL list.";
+        } ATL_BASE[31:9] = 23'h0;
+    };
+    atl_ptd_base_addr_t ATL_PTD_BASE_ADDR @ 0x10;
+
+    // Memory base address where ISO PTD0 is stored
+    reg iso_ptd_base_addr_t {
+        field {
+            sw = rw; hw = r;
+            desc = "This indicates the first PTD that is used by the hardware when it is processing the ISO list.";
+        } ISO_FIRST[9:5] = 5'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Base address to be used by the hardware to find the start of the ISO list.";
+        } ISO_BASE[31:10] = 22'h0;
+    };
+    iso_ptd_base_addr_t ISO_PTD_BASE_ADDR @ 0x14;
+
+    // Memory base address where INT PTD0 is stored
+    reg int_ptd_base_addr_t {
+        field {
+            sw = rw; hw = r;
+            desc = "This indicates the first PTD that is used by the hardware when it is processing the INT list.";
+        } INT_FIRST[9:5] = 5'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Base address to be used by the hardware to find the start of the INT list.";
+        } INT_BASE[31:10] = 22'h0;
+    };
+    int_ptd_base_addr_t INT_PTD_BASE_ADDR @ 0x18;
+
+    // Memory base address that indicates the start of the data payload buffers
+    reg data_payload_base_addr_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Base address to be used by the hardware to find the start of the data payload section.";
+        } DAT_BASE[31:16] = 16'h0;
+    };
+    data_payload_base_addr_t DATA_PAYLOAD_BASE_ADDR @ 0x1C;
+
+    // USB Command register
+    reg usbcmd_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Run/Stop: 1b = Run.";
+        } RS[0:0] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Host Controller Reset: This control bit is used by the software to reset the host controller.";
+        } HCRESET[1:1] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Frame List Size: This field specifies the size of the frame list.";
+        } FLS[3:2] = 2'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Light Host Controller Reset: This bit allows the driver software to reset the host controller without affecting the state of the ports.";
+        } LHCR[7:7] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "ATL List enabled.";
+        } ATL_EN[8:8] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "ISO List enabled.";
+        } ISO_EN[9:9] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "INT List enabled.";
+        } INT_EN[10:10] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Host-Initiated Resume Duration.";
+        } HIRD[27:24] = 4'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "bRemoteWake field.";
+        } LPM_RWU[28:28] = 1'h0;
+    };
+    usbcmd_t USBCMD @ 0x20;
+
+    // USB Interrupt Status register
+    reg usbsts_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Port Change Detect: The host controller sets this bit to logic 1 when any port has a change bit transition from a 0 to a one or a Force Port Resume bit transition from a 0 to a 1 as a result of a J-K transition detected on a suspended port. or               - the ID pin value changes or               - an LPM token has been transmitted to enter LPM L1 suspend state..               Software must write a one to clear the bit";
+        } PCD[2:2] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Frame List Rollover: The host controller sets this bit to logic 1 when the frame list index rolls over its maximum value to 0.";
+        } FLR[3:3] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "ATL IRQ: Indicates that an ATL PTD (with I-bit set) was completed.";
+        } ATL_IRQ[16:16] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "ISO IRQ: Indicates that an ISO PTD (with I-bit set) was completed.";
+        } ISO_IRQ[17:17] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "INT IRQ: Indicates that an INT PTD (with I-bit set) was completed.";
+        } INT_IRQ[18:18] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "SOF interrupt: Every time when the host sends a Start of Frame token on the USB bus, this bit is set.";
+        } SOF_IRQ[19:19] = 1'h0;
+    };
+    usbsts_t USBSTS @ 0x24;
+
+    // USB Interrupt Enable register
+    reg usbintr_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Port Change Detect Interrupt Enable: 1: enable 0: disable.";
+        } PCDE[2:2] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Frame List Rollover Interrupt Enable: 1: enable 0: disable.";
+        } FLRE[3:3] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "ATL IRQ Enable bit: 1: enable 0: disable.";
+        } ATL_IRQ_E[16:16] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "ISO IRQ Enable bit: 1: enable 0: disable.";
+        } ISO_IRQ_E[17:17] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "INT IRQ Enable bit: 1: enable 0: disable.";
+        } INT_IRQ_E[18:18] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "SOF Interrupt Enable bit: 1: enable 0: disable.";
+        } SOF_E[19:19] = 1'h0;
+    };
+    usbintr_t USBINTR @ 0x28;
+
+    // Port Status and Control register
+    reg portsc1_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Current Connect Status: Logic 1 indicates a device is present on the port.";
+        } CCS[0:0] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Connect Status Change: Logic 1 means that the value of CCS has changed.";
+        } CSC[1:1] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Port Enabled/Disabled.";
+        } PED[2:2] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Port Enabled/Disabled Change: Logic 1 means that the value of PED has changed.";
+        } PEDC[3:3] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Over-current active: Logic 1 means that this port has an over-current condition.";
+        } OCA[4:4] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Over-current change: Logic 1 means that the value of OCA has changed.";
+        } OCC[5:5] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Force Port Resume: Logic 1 means resume (K-state) detected or driven on the port.";
+        } FPR[6:6] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Suspend: Logic 1 means port is in the suspend state.Logic 0 means the port is not suspended.";
+        } SUSP[7:7] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Port Reset: Logic 1 means the port is in the reset state.";
+        } PR[8:8] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Suspend using L1 0b = Suspend using L2 1b = Suspend using L1 When this bit is set to a 1 and a non-zero value is specified in the Device Address field, the host controller will generate an LPM Token to enter the L1 state whenever software writes a one to the Suspend bit, as well as L1 exit timing during any device or host-initiated resume.";
+        } SUS_L1[9:9] = 1'h0;
+        field {
+            sw = r; hw = w;
+            desc = "Line Status: This field reflects the current logical levels of the DP (bit 11) and DM (bit 10) signal lines.";
+        } LS[11:10] = 2'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Port Power: The function of this bit depends on the value of the Port Power Control (PPC) bit in the HCSPARAMS register.";
+        } PP[12:12] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "ReservedPort Force Full Speed Connect. Writing this bit to a 1b will force the port to only connect at full-speed. It disables the chirp sequences that allows the port to identify itself as high-speed";
+        } PFSC[13:13] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Port Indicator Control : Writing to this field has no effect if the P_INDICATOR bit in the HCSPARAMS register is logic 0.";
+        } PIC[15:14] = 2'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Port Test Control: A non-zero value indicates that the port is operating in the test mode as indicated by the value.";
+        } PTC[19:16] = 4'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Port Speed: 00b: Low-speed 01b: Full-speed 10b: High-speed 11b: Reserved.";
+        } PSPD[21:20] = 2'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Wake on overcurrent enable: Writing this bit to a one enables the port to be sensitive to overcurrent conditions as wake-up events.";
+        } WOO[22:22] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "These two bits are used by software to determine whether the most recent L1 suspend request was successful: 00b: Success-state transition was successful (ACK) 01b: Not Yet - Device was unable to enter the L1 state at this time (NYET) 10b: Not supported - Device does not support the L1 state (STALL) 11b: Timeout/Error - Device failed to respond or an error occurred.";
+        } SUS_STAT[24:23] = 2'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Device Address for LPM tokens.";
+        } DEV_ADD[31:25] = 7'h0;
+    };
+    portsc1_t PORTSC1 @ 0x2C;
+
+    // Done map for each ATL PTD
+    reg atl_ptd_done_map_t {
+        field {
+            sw = rw; hw = r;
+            desc = "The bit corresponding to a certain PTD will be set to logic 1 as soon as that PTD execution is completed.";
+        } ATL_DONE[31:0] = 32'h0;
+    };
+    atl_ptd_done_map_t ATL_PTD_DONE_MAP @ 0x30;
+
+    // Skip map for each ATL PTD
+    reg atl_ptd_skip_map_t {
+        field {
+            sw = rw; hw = r;
+            desc = "When a bit in the PTD Skip Map is set to logic 1, the corresponding PTD will be skipped, independent of the V bit setting.";
+        } ATL_SKIP[31:0] = 32'h0;
+    };
+    atl_ptd_skip_map_t ATL_PTD_SKIP_MAP @ 0x34;
+
+    // Done map for each ISO PTD
+    reg iso_ptd_done_map_t {
+        field {
+            sw = rw; hw = r;
+            desc = "The bit corresponding to a certain PTD will be set to logic 1 as soon as that PTD execution is completed.";
+        } ISO_DONE[31:0] = 32'h0;
+    };
+    iso_ptd_done_map_t ISO_PTD_DONE_MAP @ 0x38;
+
+    // Skip map for each ISO PTD
+    reg iso_ptd_skip_map_t {
+        field {
+            sw = rw; hw = r;
+            desc = "The bit corresponding to a certain PTD will be set to logic 1 as soon as that PTD execution is completed.";
+        } ISO_SKIP[31:0] = 32'h0;
+    };
+    iso_ptd_skip_map_t ISO_PTD_SKIP_MAP @ 0x3C;
+
+    // Done map for each INT PTD
+    reg int_ptd_done_map_t {
+        field {
+            sw = rw; hw = r;
+            desc = "The bit corresponding to a certain PTD will be set to logic 1 as soon as that PTD execution is completed.";
+        } INT_DONE[31:0] = 32'h0;
+    };
+    int_ptd_done_map_t INT_PTD_DONE_MAP @ 0x40;
+
+    // Skip map for each INT PTD
+    reg int_ptd_skip_map_t {
+        field {
+            sw = rw; hw = r;
+            desc = "When a bit in the PTD Skip Map is set to logic 1, the corresponding PTD will be skipped, independent of the V bit setting.";
+        } INT_SKIP[31:0] = 32'h0;
+    };
+    int_ptd_skip_map_t INT_PTD_SKIP_MAP @ 0x44;
+
+    // Marks the last PTD in the list for ISO, INT and ATL
+    reg last_ptd_inuse_t {
+        field {
+            sw = rw; hw = r;
+            desc = "If hardware has reached this PTD and the J bit is not set, it will go to PTD0 as the next PTD to be processed.";
+        } ATL_LAST[4:0] = 5'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "This indicates the last PTD in the ISO list.";
+        } ISO_LAST[12:8] = 5'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "This indicates the last PTD in the INT list.";
+        } INT_LAST[20:16] = 5'h0;
+    };
+    last_ptd_inuse_t LAST_PTD_INUSE @ 0x48;
+
+    // Register to read/write registers in the attached USB PHY
+    reg utmiplus_ulpi_debug_t {
+        field {
+            sw = rw; hw = r;
+            desc = "UTMI+ mode: Bits 3:0 are used to control VControl signal on Vendor Interface of UTMI+ ULPI mode: Bits 7:0 are used as the address when doing a register access over the ULPI interface.";
+        } PHY_ADDR[7:0] = 8'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "UTMI+ mode: Reserved.";
+        } PHY_WDATA[15:8] = 8'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "UTMI+ mode: Bits 7:0 contains the value returned by the VStatus signal on Vendor Interface of UTMI+ ULPI mode: Bits 7:0 are used for the read data when reading a value to a ULPI PHY register.";
+        } PHY_RDATA[23:16] = 8'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "UTMI+ mode: Reserved.";
+        } PHY_RW[24:24] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Software writes this bit to one to start a read or write operation.";
+        } PHY_ACCESS[25:25] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "This bit indicates if the interface between the controller is UTMI+ or ULPI 0b: UTMI+ 1b: ULPI If the hardware supports both modes, this bit is RW by SW.";
+        } PHY_MODE[31:31] = 1'h0;
+    };
+    utmiplus_ulpi_debug_t UTMIPLUS_ULPI_DEBUG @ 0x4C;
+
+    // Controls the port if it is attached to the host block or the device block
+    reg portmode_t {
+        field {
+            sw = rw; hw = r;
+            desc = "Port 0 ID pin value.";
+        } ID0[0:0] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Port 0 ID pin pull-up enable.";
+        } ID0_EN[8:8] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "If this bit is set to one, the port will behave as a USB device.               If this bit is set to zero, the port will be controlled by the USB host block.";
+        } PORT_MODE[16:16] = 1'h1;
+        field {
+            sw = rw; hw = r;
+            desc = "This bit indicates if the PHY power-down input is controlled by software or by hardware.";
+        } SW_CTRL_PDCOM[18:18] = 1'h1;
+        field {
+            sw = rw; hw = r;
+            desc = "This bit is only used when SW_CTRL_PDCOM is set to 1b.";
+        } SW_PDCOM[19:19] = 1'h0;
+    };
+    portmode_t PORTMODE @ 0x50;
+
+    // packet turnaround time register
+    reg packet_turnaround_time_t {
+        field {
+            sw = rw; hw = r;
+            desc = "host time out value";
+        } HOST_TIMEOUT[10:0] = 11'h564;
+    };
+    packet_turnaround_time_t PACKET_TURNAROUND_TIME @ 0x84;
+
+};
