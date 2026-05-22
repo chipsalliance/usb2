@@ -1,3 +1,17 @@
+--  SPDX-License-Identifier: Apache-2.0
+--
+--  Licensed under the Apache License, Version 2.0 (the "License");
+--  you may not use this file except in compliance with the License.
+--  You may obtain a copy of the License at
+--
+--  http://www.apache.org/licenses/LICENSE-2.0
+--
+--  Unless required by applicable law or agreed to in writing, software
+--  distributed under the License is distributed on an "AS IS" BASIS,
+--  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+--  See the License for the specific language governing permissions and
+--  limitations under the License.
+--
 --  ----------------------------------------------------------------------------
 --                     Copyright Message
 --  ----------------------------------------------------------------------------
@@ -33,7 +47,7 @@
 --  ----------------------------------------------------------------------------
 --
 --   $Log: ip_xxx_3511_hs.e.vhdl.rca $
---   
+--
 --    Revision: 1.5 Tue Jan 30 23:49:09 2018 usb06610
 --    pulled out the following hard-coded constants, from ip_xxx_3511/RTL/usb_host_pie.m.vhdl and ip_xxx_3511/RTL/usb_pie.m.vhdl, to the boundary of the ip_xxx_3516_hs_mem as inputs: INTER_PACKET_DELAY_LS INTER_PACKET_DELAY_FS INTER_PACKET_DELAY_HS PACKET_TURNAROUND_TIMEOUT_LS PACKET_TURNAROUND_TIMEOUT_FS PACKET_TURNAROUND_TIMEOUT_HS PACKET_EVENT_TIMEOUT_LS PACKET_EVENT_TIMEOUT_FS PACKET_EVENT_TIMEOUT_HS
 --    
