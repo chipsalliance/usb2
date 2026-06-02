@@ -1,3 +1,17 @@
+--  SPDX-License-Identifier: Apache-2.0
+--
+--  Licensed under the Apache License, Version 2.0 (the "License");
+--  you may not use this file except in compliance with the License.
+--  You may obtain a copy of the License at
+--
+--  http://www.apache.org/licenses/LICENSE-2.0
+--
+--  Unless required by applicable law or agreed to in writing, software
+--  distributed under the License is distributed on an "AS IS" BASIS,
+--  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+--  See the License for the specific language governing permissions and
+--  limitations under the License.
+--
 --  ----------------------------------------------------------------------------
 --                    Copyright Message
 --  ----------------------------------------------------------------------------
@@ -82,13 +96,7 @@ library ieee;
 use ieee.numeric_std.all;
 use ieee.std_logic_1164.all;
 
-library lib_usb_ip_3516;
-
-library usb_lib;
-
-library lib_usb_ip_3515;
-
-library lib_usb_ip_3511;
+library rtl;
 
 
 architecture structure of ip_xxx_3516_hs_mem is
@@ -213,7 +221,8 @@ end component;
           C_PLL_DIVIDER            : std_logic_vector(6 downto 0) := "0010100";
           C_ULPI_SUPPORT             : boolean := TRUE;
           C_UTMI_SUPPORT             : boolean := TRUE;
-          C_EXTEND_TX_DELAY          : boolean := FALSE);
+          C_EXTEND_TX_DELAY          : boolean := FALSE;
+          G_SIM_CHIRP_TIMERS         : boolean := FALSE);
   port(
        -- AHB bus signals
        hclk                 : in  std_logic;
@@ -572,7 +581,8 @@ signal ip_xxx_3511_hs_fpga : std_logic_vector(255 downto 0);
           C_PLL_DIVIDER            => C_PLL_DIVIDER,
           C_ULPI_SUPPORT           => C_ULPI_SUPPORT,
           C_UTMI_SUPPORT           => C_UTMI_SUPPORT,
-          C_EXTEND_TX_DELAY        => C_EXTEND_TX_DELAY)
+          C_EXTEND_TX_DELAY        => C_EXTEND_TX_DELAY,
+          G_SIM_CHIRP_TIMERS       => G_SIM_CHIRP_TIMERS)
           port map (
 
       hclk                   => dev_ahbs_hclk,
@@ -877,22 +887,18 @@ library ieee;
 use ieee.numeric_std.all;
 use ieee.std_logic_1164.all;
 
-library lib_usb_ip_3516;
-
-library lib_usb_ip_3515;
-
-library lib_usb_ip_3511;
+library rtl;
 
 configuration ip_xxx_3516_hs_mem_structure_cfg of ip_xxx_3516_hs_mem is
   for structure
     for ip_xxx_3515_hs_inst: ip_xxx_3515_hs
-       use configuration lib_usb_ip_3515.ip_xxx_3515_hs_structure_cfg;
+       use configuration rtl.ip_xxx_3515_hs_structure_cfg;
     end for;
     for ip_xxx_3511_hs_inst: ip_xxx_3511_hs
-       use configuration lib_usb_ip_3511.ip_xxx_3511_hs_structure_cfg;
+       use configuration rtl.ip_xxx_3511_hs_structure_cfg;
     end for;
     for ahb_dma_slave_1 : ahb_dma_slave
-       use entity lib_usb_ip_3516.ahb_dma_slave(rtl);
+       use entity rtl.ahb_dma_slave(rtl);
     end for;
   end for;
 end ip_xxx_3516_hs_mem_structure_cfg;

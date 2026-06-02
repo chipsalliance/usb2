@@ -1,4 +1,4 @@
--work work
+-work rtl
 +incdir+${USB_COMPILE_DIR}/../../src/integration/rtl
 +incdir+${CALIPTRA_RTL_ROOT}/src/caliptra_prim/rtl
 +incdir+${CALIPTRA_RTL_ROOT}/src/libs/rtl

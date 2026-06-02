@@ -1,3 +1,17 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
 // Copyright (c) 2025 NXP Semiconductors N.V. All rights reserved
 // NXP Confidential Proprietary
 // ----------------------------------------------------------------------------
@@ -39,6 +53,10 @@ module ip_xxx_3516_hs_mem_wrapper
   parameter        AXI_DMA_ADDR_WIDTH = 32,
   parameter        AXI_DEV_ADDR_WIDTH = 32,
   parameter        AXI_HOST_ADDR_WIDTH = 32,
+  // Simulation chirp timer scaling: set 1 to use reduced chirp K
+  // duration and pre-chirp delay for VIP scaledown compatibility.
+  // Default 0 uses USB 2.0 spec-compliant timer values.
+  parameter        G_SIM_CHIRP_TIMERS = 0,
   // -----------------------------------------------------------------
   // OCP Recovery subsystem (A7 integration)
   // -----------------------------------------------------------------
@@ -650,7 +668,8 @@ module ip_xxx_3516_hs_mem_wrapper
       .C_PLL_DIVIDER(7'b0010100),
       .C_ULPI_SUPPORT(0),
       .C_UTMI_SUPPORT(1),
-      .C_EXTEND_TX_DELAY(1)
+      .C_EXTEND_TX_DELAY(1),
+      .G_SIM_CHIRP_TIMERS(G_SIM_CHIRP_TIMERS)
    ) uut (
                // Device AHB — from Lite converter
                .dev_ahbs_hresetn  (dev_axi_aresetn),

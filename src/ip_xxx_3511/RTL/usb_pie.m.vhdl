@@ -1,3 +1,17 @@
+--  SPDX-License-Identifier: Apache-2.0
+--
+--  Licensed under the Apache License, Version 2.0 (the "License");
+--  you may not use this file except in compliance with the License.
+--  You may obtain a copy of the License at
+--
+--  http://www.apache.org/licenses/LICENSE-2.0
+--
+--  Unless required by applicable law or agreed to in writing, software
+--  distributed under the License is distributed on an "AS IS" BASIS,
+--  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+--  See the License for the specific language governing permissions and
+--  limitations under the License.
+--
 --  ----------------------------------------------------------------------------
 --                     Copyright Message
 --  ----------------------------------------------------------------------------
@@ -305,8 +319,8 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-LIBRARY usb_lib;
-USE usb_lib.usb_subcmp_pkg.all;
+LIBRARY rtl;
+USE rtl.usb_subcmp_pkg.all;
 
 entity usb_pie is
       generic (
@@ -315,7 +329,8 @@ entity usb_pie is
       USB_DATAWIDTH         : integer := 64;
       C_NBDEV               : integer := 1;
       C_NBPHYSEP            : integer := 14;
-      C_EXTEND_TX_DELAY     : boolean := FALSE
+      C_EXTEND_TX_DELAY     : boolean := FALSE;
+      G_SIM_CHIRP_TIMERS    : boolean := FALSE
    );
     port (
           ----- To/From usb synchronizer ------------------------
@@ -488,6 +503,25 @@ constant LINESTATE_INCST     : std_logic_vector(1 DOWNTO 0) := "11";
 -- T_3ms can be used for several timings: -  3ms < TWTREV (3.072 ms @ 60 MHz) < 3.125 ms &  T3 (5.22.1.1 UTMI spec)
 -- - 1 ms < TDRSMUP (1.1 us @ 60 MHz) < 15 ms (5.22.3 UTMI spec) & TUCH (min 1 ms), max 7 ms
 constant T_3ms             : natural := 184320;  --  3ms < TWTREV (3.072 ms @ 60 MHz) < 3.125 ms &  T3 (5.22.1.1 UTMI spec)
+-- T_TUCH: device chirp K duration for HS detection (USB 2.0 T_UCH).
+-- Spec: 1-7 ms. When G_SIM_CHIRP_TIMERS=TRUE, scaled to 30 us so the
+-- full chirp handshake fits within VIP scaledown tdrst (~150 us).
+-- Default (FALSE): uses T_3ms (3.072 ms), which is spec-compliant.
+constant T_TUCH_SIM        : natural := 1800;   -- 30 us @ 60 MHz (sim)
+constant T_TUCH_SPEC       : natural := 184320; -- 3.072 ms @ 60 MHz (spec)
+-- T_CHIRP_DELAY: delay before device drives chirp K after detecting
+-- bus reset (SE0). When G_SIM_CHIRP_TIMERS=TRUE, reduced to 10 us.
+-- Default (FALSE): uses T_125us (125 us).
+constant T_CHIRP_DELAY_SIM  : natural := 600;   -- 10 us @ 60 MHz (sim)
+constant T_CHIRP_DELAY_SPEC : natural := 7500;  -- 125 us @ 60 MHz (spec)
+
+function sel_nat(sim : boolean; s : natural; r : natural) return natural is
+begin
+  if sim then return s; else return r; end if;
+end function;
+
+constant T_TUCH            : natural := sel_nat(G_SIM_CHIRP_TIMERS, T_TUCH_SIM, T_TUCH_SPEC);
+constant T_CHIRP_DELAY     : natural := sel_nat(G_SIM_CHIRP_TIMERS, T_CHIRP_DELAY_SIM, T_CHIRP_DELAY_SPEC);
 
 constant T_60us            : natural := 3600;  -- 60 us @ 60 MHz
 constant T_125us           : natural := 7500;  -- 125 us @ 60 MHz
@@ -1580,7 +1614,7 @@ begin
                bus_event_state_nxt <= BUS_EVENT_WF_EOR_FS;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';
-            elsif timer_bus_event = T_125us then -- add extra delay before driving chirp K
+            elsif timer_bus_event = T_CHIRP_DELAY then -- delay before driving chirp K
                bus_event_state_nxt <= BUS_EVENT_HS_DET_HSK_1;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';
@@ -1671,7 +1705,7 @@ begin
             end if;
 
          when BUS_EVENT_HS_DET_HSK_1 => -- High Speed Detection HandShake
-            if timer_bus_event = T_3ms  then --  TUCH minimum requirement is 1ms (UTMI spec 5.22.2.1)
+            if timer_bus_event = T_TUCH  then -- T_UCH chirp K duration (scaled for sim)
                bus_event_state_nxt <= BUS_EVENT_HS_DET_HSK_2;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';

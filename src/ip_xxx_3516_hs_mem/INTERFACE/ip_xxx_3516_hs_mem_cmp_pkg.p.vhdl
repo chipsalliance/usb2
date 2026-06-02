@@ -1,3 +1,17 @@
+--  SPDX-License-Identifier: Apache-2.0
+--
+--  Licensed under the Apache License, Version 2.0 (the "License");
+--  you may not use this file except in compliance with the License.
+--  You may obtain a copy of the License at
+--
+--  http://www.apache.org/licenses/LICENSE-2.0
+--
+--  Unless required by applicable law or agreed to in writing, software
+--  distributed under the License is distributed on an "AS IS" BASIS,
+--  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+--  See the License for the specific language governing permissions and
+--  limitations under the License.
+--
 --  ----------------------------------------------------------------------------
 --                     Copyright Message
 --  ----------------------------------------------------------------------------
@@ -48,7 +62,8 @@ component ip_xxx_3516_hs_mem
           C_PLL_DIVIDER            : std_logic_vector(6 downto 0) := "0010100";
           C_ULPI_SUPPORT             : boolean := TRUE;
           C_UTMI_SUPPORT             : boolean := TRUE;
-	  C_EXTEND_TX_DELAY         : boolean := FALSE
+	  C_EXTEND_TX_DELAY         : boolean := FALSE;
+	  G_SIM_CHIRP_TIMERS        : boolean := FALSE
 	  );
   port(
        -- AHB bus signals
