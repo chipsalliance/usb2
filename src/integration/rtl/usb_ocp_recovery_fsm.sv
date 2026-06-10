@@ -68,10 +68,28 @@ module usb_ocp_recovery_fsm (
   input  logic [7:0]  device_reset_ctrl,
   input  logic [7:0]  device_reset_forced,
   input  logic [7:0]  device_reset_iface,
+  // Per-byte strobes (rtl_review.md D-26 fix).  recovery_ctrl_wr pulses on
+  // ACTIVATE byte write; _cms / _img_sel pulse on those byte writes so the
+  // FSM never misses an update even if the host stops short of writing the
+  // ACTIVATE byte.
   input  logic        recovery_ctrl_wr,
+  input  logic        recovery_ctrl_wr_cms,
+  input  logic        recovery_ctrl_wr_img_sel,
   input  logic [7:0]  recovery_ctrl_cms,
   input  logic [7:0]  recovery_ctrl_img_sel,
   input  logic [7:0]  recovery_ctrl_activate,
+
+  // ACTIVATE woclr feedback to regs (OCP v1.1 Section 9.2 Tbl 9-9 / i3c-rdl
+  // line 434).  Pulsed for one cycle when the FSM enters S_ACTIVATE so the
+  // regs block can hw-clear recovery_ctrl_activate_q.  rtl_review.md D-26 / E.
+  output logic        recovery_ctrl_activate_consume,
+
+  // PROTOCOL_ERROR rclr pulse from regs (OCP v1.1 Section 9.2 Tbl 9-5 /
+  // i3c-rdl line 274: onread = rclr).  High for one cycle in the ack window
+  // of a successful host read of DEVICE_STATUS byte 1.  Clears the sticky
+  // proto-err latch driving device_status_protocol_err_out.  rtl_review.md
+  // C5 fix.
+  input  logic        proto_err_rd_pulse,
 
   // From A4 (FIFO/image push observation)
   input  logic        image_push_active,
@@ -83,10 +101,20 @@ module usb_ocp_recovery_fsm (
   // To A3 (status write-back)
   output logic [7:0]  device_status_out,
   output logic [7:0]  device_status_protocol_err_out,
-  output logic [7:0]  device_status_reason_out,
+  // OCP v1.1 Section9.2 Tbl 9-5: REC_REASON_CODE is 16 bits at bytes 2..3.  The
+  // FSM uses only the low byte today but the wire is spec-width so the
+  // regs block sees a clean 2-byte field (rtl_review.md D-24).
+  output logic [15:0] device_status_reason_out,
   output logic [7:0]  recovery_status_out,
   output logic [7:0]  recovery_vendor_status_out,
   output logic [7:0]  hw_status_out,
+  // OCP v1.1 Section9.2 Tbl 9-11: HW_STATUS spec layout requires distinct bytes
+  // 1 (VENDOR_HW_STATUS), 2 (CTEMP), 3 (VENDOR_HW_STATUS_LENGTH).  Today
+  // these are tied to 0; the ports exist so the byte layout is spec-correct
+  // and the FSM can extend without re-routing (rtl_review.md D-28).
+  output logic [7:0]  hw_status_vendor_out,
+  output logic [7:0]  hw_status_ctemp_out,
+  output logic [7:0]  hw_status_vendor_len_out,
 
   // SoC sideband
   output logic        recovery_active,
@@ -153,6 +181,12 @@ module usb_ocp_recovery_fsm (
   logic       size_err_q, size_err_d;
   logic       auth_err_q, auth_err_d;   // placeholder; latched by rec_trigger-time semantics
   logic       reset_pulse_q, reset_pulse_d; // 1-cycle device_reset_req pulse
+  // C5: sticky PROTOCOL_ERROR latch (OCP Recovery v1.1 Section 9.2 Tbl 9-5).
+  // Set when the FSM enters S_ERROR (rising edge of size_err/auth_err);
+  // cleared on proto_err_rd_pulse (read-clear by host).  Drives
+  // device_status_protocol_err_out so the regs block presents the spec
+  // rclr semantic without an extra read-side flop.
+  logic [7:0] proto_err_q, proto_err_d;
 
   // Detection of device-reset request: Sec 7 - any non-zero DEVICE_RESET ctrl
   // write triggers a reset path. DR_NO_RESET is benign.
@@ -182,6 +216,9 @@ module usb_ocp_recovery_fsm (
     size_err_d    = size_err_q;
     auth_err_d    = auth_err_q;
     reset_pulse_d = 1'b0;
+    recovery_ctrl_activate_consume = 1'b0;
+    // C5: PROTOCOL_ERROR sticky latch defaults (final value set after case).
+    proto_err_d = proto_err_q;
 
     unique case (state_q)
       S_IDLE: begin
@@ -196,16 +233,13 @@ module usb_ocp_recovery_fsm (
       end
 
       S_DETECTED: begin
-        // Transient entry state: advance to awaiting image next cycle.
-        // Not a passthrough in the bad sense - allows DEVICE_STATUS to be
-        // observed as Recovery Pending for one cycle and lets downstream
-        // status clients sample a clean edge.
         if (device_reset_cmd) begin
           state_d       = S_RESETTING;
           reset_pulse_d = 1'b1;
         end else begin
-          // latch selected recovery image index for RECOVERY_STATUS
-          if (recovery_ctrl_wr) begin
+          // Latch recovery-image index on IMG_SEL byte writes (per-byte
+          // strobe so the FSM never misses an update - rtl_review.md D-26).
+          if (recovery_ctrl_wr_img_sel) begin
             img_idx_d = recovery_ctrl_img_sel[3:0];
           end
           state_d = S_AWAIT_IMAGE;
@@ -220,8 +254,7 @@ module usb_ocp_recovery_fsm (
           state_d = S_ERROR;
         end else if (image_push_active) begin
           state_d = S_PUSH_ACTIVE;
-        end else if (recovery_ctrl_wr) begin
-          // software can update image index selection while waiting
+        end else if (recovery_ctrl_wr_img_sel) begin
           img_idx_d = recovery_ctrl_img_sel[3:0];
         end
       end
@@ -248,8 +281,10 @@ module usb_ocp_recovery_fsm (
           reset_pulse_d = 1'b1;
         end else if (activate_cmd) begin
           state_d = S_ACTIVATE;
+          // Pulse activate-consume back to regs so the woclr byte clears
+          // (OCP v1.1 Section9.2 Tbl 9-9, i3c-rdl line 434).
+          recovery_ctrl_activate_consume = 1'b1;
         end else if (image_push_active) begin
-          // New image push replaces previously loaded image
           state_d = S_PUSH_ACTIVE;
         end
       end
@@ -301,6 +336,24 @@ module usb_ocp_recovery_fsm (
         state_d = S_IDLE;
       end
     endcase
+
+    // C5: PROTOCOL_ERROR sticky set/clear (placed after the case so the
+    // _d signals reflect this cycle's transitions).  Set when the FSM is
+    // about to enter S_ERROR from any other state; clear on host read
+    // (rclr) pulse from the regs block.  Clear wins over set in the same
+    // cycle so the host always observes the latest "drain" semantics.
+    if ((state_d == S_ERROR) && (state_q != S_ERROR)) begin
+      if (auth_err_d) begin
+        proto_err_d = 8'h02;  // auth failure
+      end else if (size_err_d) begin
+        proto_err_d = 8'h01;  // size mismatch
+      end else begin
+        proto_err_d = 8'h03;  // generic recovery failed
+      end
+    end
+    if (proto_err_rd_pulse) begin
+      proto_err_d = 8'h00;
+    end
   end
 
   // ---------------------------------------------------------------------------
@@ -311,11 +364,17 @@ module usb_ocp_recovery_fsm (
   always_comb begin
     // Defaults (healthy/idle)
     device_status_out              = DS_DEVICE_HEALTHY;
-    device_status_protocol_err_out = 8'h00;
-    device_status_reason_out       = 8'h00;
+    // C5: PROTOCOL_ERROR sourced from sticky proto_err_q (rclr semantic).
+    device_status_protocol_err_out = proto_err_q;
+    device_status_reason_out       = 16'h0000;
     rec_status_code                = RS_NOT_IN_RECOVERY;
     recovery_vendor_status_out     = 8'h00;
     hw_status_out                  = 8'h00;
+    // OCP v1.1 Section9.2 Tbl 9-11 - bytes 1..3 of HW_STATUS.  Tied to 0 today;
+    // future hooks can replace these defaults without re-routing.
+    hw_status_vendor_out           = 8'h00;
+    hw_status_ctemp_out            = 8'h00;
+    hw_status_vendor_len_out       = 8'h00;
 
     recovery_active  = 1'b0;
     image_ready      = 1'b0;
@@ -379,13 +438,13 @@ module usb_ocp_recovery_fsm (
         // Choose reason code by latched error flavor
         if (auth_err_q) begin
           rec_status_code          = RS_AUTH_FAILURE;
-          device_status_reason_out = 8'h02; // vendor-defined reason
+          device_status_reason_out = 16'h0002; // vendor-defined reason
         end else if (size_err_q) begin
           rec_status_code          = RS_RECOVERY_FAILED;
-          device_status_reason_out = 8'h01;
+          device_status_reason_out = 16'h0001;
         end else begin
           rec_status_code          = RS_RECOVERY_FAILED;
-          device_status_reason_out = 8'h03;
+          device_status_reason_out = 16'h0003;
         end
         recovery_active = 1'b1;
         fatal_err       = 1'b1;
@@ -419,12 +478,14 @@ module usb_ocp_recovery_fsm (
       size_err_q    <= 1'b0;
       auth_err_q    <= 1'b0;
       reset_pulse_q <= 1'b0;
+      proto_err_q   <= 8'h00;
     end else begin
       state_q       <= state_d;
       img_idx_q     <= img_idx_d;
       size_err_q    <= size_err_d;
       auth_err_q    <= auth_err_d;
       reset_pulse_q <= reset_pulse_d;
+      proto_err_q   <= proto_err_d;
     end
   end
 

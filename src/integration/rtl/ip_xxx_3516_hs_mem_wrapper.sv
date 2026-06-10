@@ -63,12 +63,34 @@ module ip_xxx_3516_hs_mem_wrapper
   parameter        AXI_REC_ADDR_WIDTH   = 32,
   parameter int    REC_CMS_ADDR_W       = 16,
   parameter int    REC_NUM_CMS          = 2,
-  // PROT_CAP bytes 0..15 (OCP Recovery v1.1 Sec 9.2 cmd 0x22).
-  // Default: ASCII "OCP" magic + protocol version 0x11 + agent byte 0x01
-  // followed by zero capability flags.  SoC should override via parameter
-  // or tie-off when integrating.
+  // PROT_CAP bytes 0..15 (OCP Recovery v1.1 Sec 9.2 cmd 0x22 Tbl 9-3).
+  // - bytes[0..7] = ASCII magic "OCP RECV" (little-endian on wire).
+  // - byte[8]     = Major = 1
+  // - byte[9]     = Minor = 1
+  // - bytes[10..11] = CAPABILITIES bitmap, little-endian = 0x16BB:
+  //     bit  0 = Identification         (CMD 0x23/IDENT)
+  //     bit  1 = Forced Recovery        (CMD 0x24/RECOVERY_CTRL)
+  //     bit  3 = Device Reset           (CMD 0x26/RESET)
+  //     bit  4 = Device Status          (CMD 0x25/DEV_STATUS)
+  //     bit  5 = Recovery memory access (CMD 0x28/INDIRECT_CTRL)
+  //     bit  7 = Push C-image support
+  //     bit  9 = Hardware status        (CMD 0x27/HW_STATUS)
+  //     bit 10 = Vendor command         (CMD 0x2F/VENDOR)
+  //     bit 12 = FIFO CMS support       (CMD 0x2C/INDIRECT_FIFO_CTRL,
+  //                                      0x2D/INDIRECT_FIFO_STATUS,
+  //                                      0x2E/INDIRECT_FIFO_DATA)
+  // - byte[12]    = NUM_CMS_REGIONS = 2 (per REC_NUM_CMS)
+  // - byte[13]    = MAX_RESPONSE_TIME (0 => spec default)
+  // - byte[14]    = HEARTBEAT_PERIOD  (0 => not implemented)
+  // - byte[15]    = reserved
+  // Override by parameter at the SoC if a different capability bitmap is
+  // needed (review delta C9 fix).
   parameter logic [127:0] REC_PROT_CAP_DEFAULT  =
-      { 104'h0, 8'h01, 8'h11, 24'h50434F }, // little-endian "OCP",0x11,0x01
+      { 8'h00, 8'h00, 8'h00, 8'h02,             // [15:12] resv, HB, MRT, NUM_CMS=2
+        8'h16, 8'hBB,                            // [11:10] capabilities = 0x16BB
+        8'h01, 8'h01,                            // [9:8]   minor=1, major=1
+        8'h56, 8'h43, 8'h45, 8'h52,              // [7:4]   'V','C','E','R'
+        8'h20, 8'h50, 8'h43, 8'h4F },            // [3:0]   ' ','P','C','O'
   parameter logic [191:0] REC_DEVICE_ID_DEFAULT = 192'h0
  )  
  (
@@ -302,35 +324,11 @@ module ip_xxx_3516_hs_mem_wrapper
 				   // ----------------------------------------------------------------
 				   // OCP Recovery v1.1 - A7 integration (additive, 2026)
 				   // ----------------------------------------------------------------
-				   // AXI4-Lite management port for recovery subsystem.
-				   // Clocked on dev_axi_aclk / dev_axi_aresetn (same SoC clock
-				   // domain as the device AXI subordinate, so the SoC
-				   // interconnect that already crosses into the USB clock for
-				   // dev_axi_* does not need a second CDC for this port).
-				   // AW
-				   input  [AXI_REC_ADDR_WIDTH-1:0]  rec_axi_awaddr,
-				   input  [2:0]                     rec_axi_awprot,
-				   input                             rec_axi_awvalid,
-				   output                            rec_axi_awready,
-				   // W
-				   input  [31:0]                    rec_axi_wdata,
-				   input  [3:0]                     rec_axi_wstrb,
-				   input                             rec_axi_wvalid,
-				   output                            rec_axi_wready,
-				   // B
-				   output [1:0]                     rec_axi_bresp,
-				   output                            rec_axi_bvalid,
-				   input                             rec_axi_bready,
-				   // AR
-				   input  [AXI_REC_ADDR_WIDTH-1:0]  rec_axi_araddr,
-				   input  [2:0]                     rec_axi_arprot,
-				   input                             rec_axi_arvalid,
-				   output                            rec_axi_arready,
-				   // R
-				   output [31:0]                    rec_axi_rdata,
-				   output [1:0]                     rec_axi_rresp,
-				   output                            rec_axi_rvalid,
-				   input                             rec_axi_rready,
+				   // Note (Phase 1c): the AXI4-Lite management port (rec_axi_*)
+				   // has been removed.  The recovery register-bus is now
+				   // accessed via an AHB sub-decoder taking off the existing
+				   // dev_axi -> AHB path (see rec_ahb_subdec below; OCP
+				   // Recovery v1.1 Section 8.5).
 
 				   // CMS external SRAM (from A4, byte-wide)
 				   output [REC_CMS_ADDR_W-1:0]      cms_addr,
@@ -351,11 +349,7 @@ module ip_xxx_3516_hs_mem_wrapper
 				   output                            fatal_err,
 				   // ----------------------------------------------------------------
 				   // OCP Recovery v1.1 status pins (architecture proposal 3.7)
-				   // TODO: driven by usb_ocp_regs once the PIE/DMA hooks
-				   //       (usb_ocp_filter, usb_ocp_ep0, usb_ocp_fifo) are
-				   //       wired into usb_pie.m.vhdl and usb_dma.m.vhdl in a
-				   //       follow-up patch.  For this pass the pins are
-				   //       deterministic tie-offs (1'b0).
+				   // Driven by usb_ocp_recovery_fsm via wrapper sideband nets.
 				   // ----------------------------------------------------------------
 				   output wire                 ocp_recovery_available,
 				   output wire                 ocp_firmware_activated
@@ -377,6 +371,35 @@ module ip_xxx_3516_hs_mem_wrapper
    logic [AXI_DATA_WIDTH-1:0]     dev_ahb_hrdata;
    logic                           dev_ahb_hreadyout;
    logic [1:0]                     dev_ahb_hresp;
+
+   // Legacy IP (uut) sub-decoder response nets.  Multiplexed with the
+   // OCP Recovery AHB sub-decoder response below (C1) before being
+   // presented back to the AXI-to-AHB converter.
+   logic [AXI_DATA_WIDTH-1:0]     legacy_dev_hrdata;
+   logic                           legacy_dev_hreadyout;
+   logic [1:0]                     legacy_dev_hresp;
+
+   // OCP Recovery aperture decode (combinational); used to gate the
+   // legacy uut's hsel.  Definition (REC_BASE_ADDR, aperture log2)
+   // lives in the recovery sub-decoder block below.
+   logic                           rec_addr_in_window;
+
+   // ---- VHDL arbiter <-> SV recovery_top byte-stream wires ----
+   // Declared early so the uut port-map (~line 824) sees the proper
+   // vector widths and does not auto-create conflicting implicit nets.
+   logic                          rec_setup_pkt_vld_w;
+   logic [63:0]                   rec_setup_pkt_w;
+   logic [7:0]                    rec_ctrl_out_data_w;
+   logic                          rec_ctrl_out_vld_w;
+   logic                          rec_ctrl_out_last_w;
+   logic                          rec_ctrl_out_rdy_w;
+   logic [7:0]                    rec_ctrl_in_data_w;
+   logic                          rec_ctrl_in_vld_w;
+   logic                          rec_ctrl_in_last_w;
+   logic                          rec_ctrl_in_rdy_w;
+   logic                          rec_ctrl_set_stall_w;
+   logic                          rec_ctrl_xfer_done_w;
+   logic                          rec_ctrl_claim_w;
 
    // -- Host AHB (Lite converter output) --
    logic [AXI_HOST_ADDR_WIDTH-1:0] host_ahb_haddr;
@@ -415,7 +438,7 @@ module ip_xxx_3516_hs_mem_wrapper
        .UW(AXI_USER_WIDTH)
    ) dev_axi_if (.clk(dev_axi_aclk), .rst_n(dev_axi_aresetn));
 
-   // Connect dev AXI discrete ports → interface signals
+   // Connect dev AXI discrete ports -> interface signals
    assign dev_axi_if.araddr   = dev_axi_araddr;
    assign dev_axi_if.arburst  = dev_axi_arburst;
    assign dev_axi_if.arsize   = dev_axi_arsize;
@@ -468,7 +491,7 @@ module ip_xxx_3516_hs_mem_wrapper
        .UW(AXI_USER_WIDTH)
    ) host_axi_if (.clk(host_axi_aclk), .rst_n(host_axi_aresetn));
 
-   // Connect host AXI discrete ports → interface signals
+   // Connect host AXI discrete ports -> interface signals
    assign host_axi_if.araddr   = host_axi_araddr;
    assign host_axi_if.arburst  = host_axi_arburst;
    assign host_axi_if.arsize   = host_axi_arsize;
@@ -521,7 +544,7 @@ module ip_xxx_3516_hs_mem_wrapper
        .UW(AXI_USER_WIDTH)
    ) dma_axi_if (.clk(dma_axi_aclk), .rst_n(dma_axi_aresetn));
 
-   // Connect DMA AXI discrete ports → interface signals
+   // Connect DMA AXI discrete ports -> interface signals
    assign dma_axi_if.araddr   = dma_axi_araddr;
    assign dma_axi_if.arburst  = dma_axi_arburst;
    assign dma_axi_if.arsize   = dma_axi_arsize;
@@ -671,20 +694,24 @@ module ip_xxx_3516_hs_mem_wrapper
       .C_EXTEND_TX_DELAY(1),
       .G_SIM_CHIRP_TIMERS(G_SIM_CHIRP_TIMERS)
    ) uut (
-               // Device AHB — from Lite converter
+               // Device AHB -- from Lite converter.  hsel is qualified
+               // by ~rec_addr_in_window so the legacy IP only sees beats
+               // *outside* the OCP Recovery aperture (C1 disjoint
+               // decode).  Response nets feed legacy_dev_* and are
+               // muxed with the recovery sub-decoder below.
                .dev_ahbs_hresetn  (dev_axi_aresetn),
                .dev_ahbs_hclk     (dev_axi_aclk),
                .dev_ahbs_haddr    (dev_ahb_haddr[5:2]),
                .dev_ahbs_htrans   (dev_ahb_htrans),
                .dev_ahbs_hwrite   (dev_ahb_hwrite),
                .dev_ahbs_hwdata   (dev_ahb_hwdata),
-               .dev_ahbs_hsel     (dev_ahb_hsel),
+               .dev_ahbs_hsel     (dev_ahb_hsel & ~rec_addr_in_window),
                .dev_ahbs_hreadyin (dev_ahb_hreadymux),
-               .dev_ahbs_hrdata   (dev_ahb_hrdata),
-               .dev_ahbs_hreadyout(dev_ahb_hreadyout),
-               .dev_ahbs_hresp    (dev_ahb_hresp),
+               .dev_ahbs_hrdata   (legacy_dev_hrdata),
+               .dev_ahbs_hreadyout(legacy_dev_hreadyout),
+               .dev_ahbs_hresp    (legacy_dev_hresp),
 
-               // Host AHB — from Lite converter
+               // Host AHB -- from Lite converter
                .host_ahbs_hresetn  (host_axi_aresetn),
                .host_ahbs_hclk     (host_axi_aclk),
                .host_ahbs_haddr    (host_ahb_haddr[6:2]),
@@ -697,7 +724,7 @@ module ip_xxx_3516_hs_mem_wrapper
                .host_ahbs_hreadyout(host_ahb_hreadyout),
                .host_ahbs_hresp    (host_ahb_hresp),
 
-               // DMA AHB — from Full converter
+               // DMA AHB -- from Full converter
                .ahbs_dma_hresetn  (dma_axi_aresetn),
                .ahbs_dma_hclk     (dma_axi_aclk),
                .ahbs_dma_haddr    (dma_ahb_haddr[RAM_ADDRWIDTH-1+5:0]),
@@ -781,15 +808,15 @@ module ip_xxx_3516_hs_mem_wrapper
                .token_length_counter(token_length_counter),
                .usb_token_length(usb_token_length),
 
-               // Constant tie-offs — USB protocol timing parameters
+               // Constant tie-offs -- USB protocol timing parameters
                // Values from original NXP constants in usb_host_pie.m.vhdl and
                // usb_pie.m.vhdl. All timing values are in 60 MHz UTMI clock cycles.
 
-               // Host PIE inter-packet delays (USB 2.0 §7.1.18)
+               // Host PIE inter-packet delays (USB 2.0 Sec 7.1.18)
                .usb_host_pie_INTER_PACKET_DELAY_LS_param(8'd80),   // 2 LS bit times
                .usb_host_pie_INTER_PACKET_DELAY_FS_param(8'd10),   // 2 FS bit times
                .usb_host_pie_INTER_PACKET_DELAY_HS_param(8'd12),   // 96 HS bit times (min 88)
-               // Host PIE packet turnaround timeouts (USB 2.0 §7.1.18, §8.7.2)
+               // Host PIE packet turnaround timeouts (USB 2.0 Sec 7.1.18, Sec 8.7.2)
                .usb_host_pie_PACKET_TURNAROUND_TIMEOUT_LS_param(11'd1380),
                .usb_host_pie_PACKET_TURNAROUND_TIMEOUT_FS_param(8'd204),
                .usb_host_pie_PACKET_TURNAROUND_TIMEOUT_HS_param(8'd162),
@@ -807,6 +834,24 @@ module ip_xxx_3516_hs_mem_wrapper
                .usb_pie_PACKET_TURNAROUND_TIMEOUT_HS_param(8'd162),
                .usb_pie_PACKET_EVENT_TIMEOUT_FS_param(9'd256),
                .usb_pie_PACKET_EVENT_TIMEOUT_HS_param(9'd256),
+
+               // OCP Recovery v1.1 Section 8.5 arbiter byte-stream surface.
+               // Drives / driven by usb_ocp_recovery_top via the VHDL
+               // usb_pie_recovery_arb spliced inside ip_xxx_3511_hs.
+               .rec_setup_pkt_vld   (rec_setup_pkt_vld_w),
+               .rec_setup_pkt       (rec_setup_pkt_w),
+               .rec_ctrl_out_data   (rec_ctrl_out_data_w),
+               .rec_ctrl_out_vld    (rec_ctrl_out_vld_w),
+               .rec_ctrl_out_last   (rec_ctrl_out_last_w),
+               .rec_ctrl_out_rdy    (rec_ctrl_out_rdy_w),
+               .rec_ctrl_in_data    (rec_ctrl_in_data_w),
+               .rec_ctrl_in_vld     (rec_ctrl_in_vld_w),
+               .rec_ctrl_in_last    (rec_ctrl_in_last_w),
+               .rec_ctrl_in_rdy     (rec_ctrl_in_rdy_w),
+               .rec_ctrl_set_stall  (rec_ctrl_set_stall_w),
+               .rec_ctrl_xfer_done  (rec_ctrl_xfer_done_w),
+               .rec_ctrl_claim      (rec_ctrl_claim_w),
+
                // DFT: must be 0 for functional operation
                .async_disable(1'b0),
                .testmode(1'b0)
@@ -815,131 +860,423 @@ module ip_xxx_3516_hs_mem_wrapper
    // ================================================================
    // OCP Recovery v1.1 subsystem (A6: usb_ocp_recovery_top)
    // ----------------------------------------------------------------
-   // Wires the AXI4-Lite management port, the CMS external SRAM port,
-   // and the sideband handshake to the recovery subsystem.  The PIE
-   // (pie_*) ports of A6 hook into the existing VHDL device's EPCS
-   // channels (usb_pie / usb_dma) as described in A1's EPCS reuse
-   // inventory.  However, those signals are NOT currently exposed on
-   // the existing ip_xxx_3516_hs_mem instance's port list, so the
-   // connections below are STUBBED (TODO).  See bug report
-   //   bugs/bug-ocp-recovery-pie-epcs-not-exposed.md
-   // for the list of signals that must be routed out of
-   // usb_pie.m.vhdl / usb_dma.m.vhdl to the top of
-   // ip_xxx_3516_hs_mem and exposed here before recovery is functional.
-   // With the stubs in place the design compiles and exercises the
-   // management-side paths (AXI-Lite, CMS, sideband) but cannot
-   // transact against the real USB endpoints.
+   // Phase 1c integration:
+   //   - PIE side: byte-stream surface (rec_*) flows out of the VHDL
+   //     arbiter (usb_pie_recovery_arb) inside ip_xxx_3511_hs.
+   //   - Management side: AHB sub-decoder below taps the existing
+   //     dev_ahb_* output of axilite_to_ahb.sv and converts AHB beats
+   //     addressed to SOC_USB_OCP_RECOVERY_BASE_ADDR into single-byte
+   //     reg-bus transactions (ext_rb_*).  AXI4-Lite alt-master removed.
+   //   - CMS SRAM, sideband, and prot_cap/device_id straps unchanged.
    // ================================================================
 
-   // ---- Stubbed PIE/EPCS nets (TODO: wire to VHDL device) ----
-   // Outputs from A6 (unused until VHDL routing lands):
-   logic                          a6_pie_ctrl_out_ack;
-   logic                          a6_pie_ctrl_out_nak;
-   logic                          a6_pie_ctrl_in_req;
-   logic [7:0]                    a6_pie_ctrl_in_byte;
-   logic                          a6_pie_ctrl_in_last;
-   logic                          a6_pie_ctrl_stall;
-   logic                          a6_pie_bout_ack;
-   logic                          a6_pie_bout_nak;
-   logic                          a6_pie_bin_req;
-   logic [7:0]                    a6_pie_bin_byte;
-   logic                          a6_pie_bin_last;
-   logic                          a6_pie_bulk_stall;
+   // ---- VHDL arbiter <-> SV recovery_top byte-stream wires ----
+   // (Declared at the top of the module so the uut port-map sees the
+   // proper vector widths; see decls near line 387.)
 
-   // Inputs to A6 (tied to 0 until VHDL routing lands):
-   logic                          a6_pie_setup_received_stub;
-   logic [63:0]                   a6_pie_setup_data_stub;
-   logic                          a6_pie_ctrl_out_req_stub;
-   logic [7:0]                    a6_pie_ctrl_out_byte_stub;
-   logic                          a6_pie_ctrl_out_last_stub;
-   logic                          a6_pie_ctrl_in_ack_stub;
-   logic                          a6_pie_ctrl_xfer_done_stub;
-   logic                          a6_pie_bout_req_stub;
-   logic [7:0]                    a6_pie_bout_byte_stub;
-   logic                          a6_pie_bout_last_stub;
-   logic                          a6_pie_bin_ack_stub;
-   logic                          a6_pie_bulk_xfer_done_stub;
-
-   assign a6_pie_setup_received_stub  = 1'b0;
-   assign a6_pie_setup_data_stub      = '0;
-   assign a6_pie_ctrl_out_req_stub    = 1'b0;
-   assign a6_pie_ctrl_out_byte_stub   = '0;
-   assign a6_pie_ctrl_out_last_stub   = 1'b0;
-   assign a6_pie_ctrl_in_ack_stub     = 1'b0;
-   assign a6_pie_ctrl_xfer_done_stub  = 1'b0;
-   assign a6_pie_bout_req_stub        = 1'b0;
-   assign a6_pie_bout_byte_stub       = '0;
-   assign a6_pie_bout_last_stub       = 1'b0;
-   assign a6_pie_bin_ack_stub         = 1'b0;
-   assign a6_pie_bulk_xfer_done_stub  = 1'b0;
-
-   // ---- Recovery subsystem reset (SV sync active-high). ----
-   // dev_axi_aresetn is AXI-style async active-low; the SoC reset
-   // synchroniser upstream of dev_axi_aresetn already deasserts it
-   // synchronously to dev_axi_aclk, so a plain inversion is safe here.
+   // ---- Recovery subsystem reset (active-high, in pie_clk domain). ----
+   // Move the recovery_top to the pie_clk (utmi_clk) domain so the PIE
+   // arbiter byte-stream surface (rec_*) is in its native clock and
+   // requires no CDC.  The AHB management surface is handled by a
+   // dedicated narrow CDC bridge below (C3).
+   // Synchronize the AXI subordinate reset (which is sourced from the
+   // dev_axi_aclk domain) into utmi_clk before deasserting.  This is a
+   // simple 2-flop synchronizer (no caliptra_prim dependency to avoid
+   // a cross-tree include).  Assertion is asynchronous.
    logic rec_rst;
-   assign rec_rst = ~dev_axi_aresetn;
+   logic rec_rst_pie_meta_q;
+   logic rec_rst_pie_q;
+   always_ff @(posedge utmi_clk or negedge dev_axi_aresetn) begin
+     if (!dev_axi_aresetn) begin
+       rec_rst_pie_meta_q <= 1'b1;
+       rec_rst_pie_q      <= 1'b1;
+     end else begin
+       rec_rst_pie_meta_q <= 1'b0;
+       rec_rst_pie_q      <= rec_rst_pie_meta_q;
+     end
+   end
+   assign rec_rst = rec_rst_pie_q;
+
+   // ==================================================================
+   // OCP Recovery AHB sub-decoder + CDC bridge (review fixes C1..C4,C7,
+   // C8, M2).
+   //
+   // Address aperture
+   // ----------------
+   //   Base : SOC_USB_OCP_RECOVERY_BASE_ADDR = 0x2000_2000
+   //   Size : 4 KiB (REC_APERTURE_LOG2 = 12)
+   //   - Matches the SoC address map (next slot, I3CCSR, begins at
+   //     0x2000_4000, leaving an 8 KiB gap; we use 4 KiB to leave
+   //     symmetric margin and to fit a clean per-command 256 B page).
+   //
+   // In-aperture decode
+   // ------------------
+   //   haddr[11:8] = OCP command nibble; the full command byte presented
+   //                 to the reg-bus is { 4'h2, haddr[11:8] }.  This
+   //                 covers commands 0x20..0x2F (only 0x22..0x2F are
+   //                 valid per OCP Recovery v1.1 Section 9.2 Table 9-2;
+   //                 invalid codes are returned as rb_err).
+   //   haddr[7:0]  = byte offset within the command payload.  Max OCP
+   //                 record is INDIRECT_FIFO_DATA at 252 B (Tbl 9-12),
+   //                 so 256 B/cmd is sufficient.
+   //   hwdata[7:0] = reg-bus write byte (upper bytes ignored).
+   //   hrdata      = { 24'h0, rb_rdata } (lower byte only).
+   //
+   // hsel qualification (C1)
+   // -----------------------
+   //   uut.dev_ahbs_hsel is driven by (dev_ahb_hsel & ~rec_addr_in_window)
+   //   so the legacy 256 B endpoint register file inside the VHDL IP
+   //   only sees beats outside the recovery aperture; the recovery
+   //   sub-decoder owns beats inside it.  This prevents the two
+   //   sub-decoders from both responding to the same beat.
+   //
+   // CDC (C3)
+   // --------
+   //   dev_axi_aclk (caliptra_ss_clk) is asynchronous to utmi_clk
+   //   (60 MHz PHY clock).  recovery_top lives in utmi_clk to be in
+   //   the same domain as the PIE arbiter, so the AHB beat must cross
+   //   from dev_axi_aclk into utmi_clk and back.  Narrow 4-phase
+   //   level/ack handshake:
+   //     axi  : req_axi_q   --> 2-FF sync into utmi --> req_pie_sync
+   //     pie  : ack_pie_q   --> 2-FF sync into axi  --> ack_axi_sync
+   //   Payload (cmd/off/wr/wdata) is captured in axi_clk before req
+   //   goes high and remains stable for the duration of the handshake
+   //   so it can be sampled in utmi_clk without further CDC.  Read
+   //   data is captured in utmi_clk when ack rises and held until
+   //   req drops.
+   //
+   // Pulse semantics (C2/C7)
+   // -----------------------
+   //   The PIE-side FSM holds ext_rb_wr / ext_rb_rd high until it
+   //   observes ext_rb_ack from the arbiter.  This is safe because
+   //   usb_ocp_recovery_top now gates EXT grants behind ext_in_flight_q
+   //   so a held wr/rd does not re-fire pulse strobes.
+   //
+   // Response mux
+   // ------------
+   //   When the recovery sub-decoder owns the beat (rec_ahb_owns_q),
+   //   dev_ahb_hreadyout/hrdata/hresp are driven by the bridge.
+   //   Otherwise they pass through legacy_dev_*.
+   // ==================================================================
+   localparam int          REC_APERTURE_LOG2 = 12;
+   localparam logic [31:0] REC_BASE_ADDR     = 32'h2000_2000;
+
+   // -- Aperture decode (combinational, dev_axi_aclk domain) --
+   // The aaxi4_interconnect routes both the legacy device aperture
+   // (0x20000000-0x20000FFF) and the OCP recovery aperture
+   // (0x20002000-0x20002FFF) to the same USB DEV subordinate. Depending
+   // on whether the interconnect strips the slot base address or passes
+   // the absolute SoC address, dev_ahb_haddr for an OCP recovery access
+   // arrives as either 0x20002xxx (absolute) or 0x00002xxx (stripped).
+   // Detect on bits[13:12]==2'b10 which uniquely matches the OCP
+   // recovery 4 KiB aperture in either case (legacy aperture has
+   // bits[13:12]==2'b00 in both views).
+   // (rec_addr_in_window declared at the top of the module so it is
+   //  visible to the uut hsel gate above.)
+   assign rec_addr_in_window = (dev_ahb_haddr[13:12] == 2'b10);
+
+   // -- AHB address-phase strobe to capture in IDLE --
+   logic rec_ahb_addr_phase;
+   assign rec_ahb_addr_phase = dev_ahb_hsel
+                             & dev_ahb_htrans[1]
+                             & dev_ahb_hreadymux
+                             & rec_addr_in_window;
+
+   // -- Captured beat metadata (dev_axi_aclk domain, stable across CDC) --
+   logic [7:0]  ahb_cmd_q;
+   logic [7:0]  ahb_off_q;
+   logic        ahb_wr_q;
+   logic [7:0]  ahb_wdata_q;
+
+   // -- AXI-side AHB FSM --
+   typedef enum logic [2:0] {
+     A_IDLE      = 3'd0,  // wait for address phase in our window
+     A_DATA      = 3'd1,  // capture hwdata (writes), assert req
+     A_AWAIT_ACK = 3'd2,  // wait for ack to come back through sync
+     A_COMPLETE  = 3'd3,  // drive hreadyout=1 for one cycle
+     A_COOLDOWN  = 3'd4   // hold req=0 until ack_sync drops
+   } a_state_e;
+   a_state_e a_state_q, a_state_d;
+
+   // CDC: dev_axi_aclk -> utmi_clk request, utmi_clk -> dev_axi_aclk ack.
+   logic        req_axi_q;        // level, axi clk
+   logic        req_pie_meta_q;   // 2FF sync into pie
+   logic        req_pie_sync_q;
+   logic        ack_pie_q;        // level, pie clk
+   logic        ack_axi_meta_q;   // 2FF sync into axi
+   logic        ack_axi_sync_q;
+
+   // Read data captured in pie clk, sampled in axi clk after ack handshake.
+   logic [7:0]  rdata_pie_q;
+   logic        err_pie_q;
+   logic [7:0]  rdata_axi_q;
+   logic        err_axi_q;
+
+   // -- AXI clk: FSM and metadata capture --
+   always_comb begin
+     a_state_d = a_state_q;
+     unique case (a_state_q)
+       A_IDLE:      if (rec_ahb_addr_phase)              a_state_d = A_DATA;
+       A_DATA:                                            a_state_d = A_AWAIT_ACK;
+       A_AWAIT_ACK: if (ack_axi_sync_q)                  a_state_d = A_COMPLETE;
+       A_COMPLETE:                                        a_state_d = A_COOLDOWN;
+       A_COOLDOWN:  if (!ack_axi_sync_q)                 a_state_d = A_IDLE;
+       default:                                           a_state_d = A_IDLE;
+     endcase
+   end
+
+   always_ff @(posedge dev_axi_aclk or negedge dev_axi_aresetn) begin
+     if (!dev_axi_aresetn) begin
+       a_state_q   <= A_IDLE;
+       ahb_cmd_q   <= '0;
+       ahb_off_q   <= '0;
+       ahb_wr_q    <= 1'b0;
+       ahb_wdata_q <= '0;
+       req_axi_q   <= 1'b0;
+       ack_axi_meta_q <= 1'b0;
+       ack_axi_sync_q <= 1'b0;
+       rdata_axi_q <= '0;
+       err_axi_q   <= 1'b0;
+     end else begin
+       // 2FF sync for ack returning from pie clk
+       ack_axi_meta_q <= ack_pie_q;
+       ack_axi_sync_q <= ack_axi_meta_q;
+
+       a_state_q <= a_state_d;
+
+       // Capture cmd/off/wr at address phase (state IDLE on the edge of
+       // rec_ahb_addr_phase).  Maps the flat 4 KiB byte aperture layout
+       // (matches usb_ocp_recovery_rb_adapter.sv cmd_base LUT and the
+       // PeakRDL-generated soc_address_map.h SOC_USB_OCP_RECOVERY_*
+       // per-register addresses) into the byte-wide rb_* (cmd, offset)
+       // pair the adapter expects. PROT_CAP@0x000, DEVICE_ID@0x010,
+       // DEVICE_STATUS@0x028, DEVICE_RESET@0x068, RECOVERY_CTRL@0x06C,
+       // RECOVERY_STATUS@0x070, HW_STATUS@0x074, INDIRECT_CTRL@0x078,
+       // INDIRECT_STATUS@0x080, INDIRECT_DATA@0x088, INDIRECT_FIFO_CTRL@0x100,
+       // INDIRECT_FIFO_STATUS@0x180, INDIRECT_FIFO_DATA@0x184, VENDOR@0x1A4.
+       if (a_state_q == A_IDLE && rec_ahb_addr_phase) begin
+         casez (dev_ahb_haddr[11:0])
+           12'h00?:                  begin ahb_cmd_q <= 8'h22; ahb_off_q <= dev_ahb_haddr[3:0]; end // PROT_CAP 0x000-0x00F
+           12'h01?, 12'h02?:         // DEVICE_ID 0x010-0x027 (24 B)
+             if (dev_ahb_haddr[11:0] < 12'h028) begin
+               ahb_cmd_q <= 8'h23;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h10;
+             end else begin
+               ahb_cmd_q <= 8'h24;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h28;
+             end
+           12'h03?, 12'h04?, 12'h05?, 12'h06?: // DEVICE_STATUS 0x028-0x067 plus DEVICE_RESET 0x068-0x06A and RECOVERY_CTRL 0x06C-0x06E
+             if (dev_ahb_haddr[11:0] < 12'h068) begin
+               ahb_cmd_q <= 8'h24;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h28;
+             end else if (dev_ahb_haddr[11:0] < 12'h06C) begin
+               ahb_cmd_q <= 8'h25;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h68;
+             end else begin
+               ahb_cmd_q <= 8'h26;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h6C;
+             end
+           12'h07?: // RECOVERY_STATUS 0x070-0x071, HW_STATUS 0x074-0x077, INDIRECT_CTRL 0x078-0x07D
+             if (dev_ahb_haddr[3:0] < 4'h4) begin
+               ahb_cmd_q <= 8'h27;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h70;
+             end else if (dev_ahb_haddr[3:0] < 4'h8) begin
+               ahb_cmd_q <= 8'h28;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h74;
+             end else begin
+               ahb_cmd_q <= 8'h29;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h78;
+             end
+           12'h08?: // INDIRECT_STATUS 0x080-0x087 (cmd 0x2A) or INDIRECT_DATA 0x088+ (cmd 0x2B)
+             if (dev_ahb_haddr[3:0] < 4'h8) begin
+               ahb_cmd_q <= 8'h2A;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h80;
+             end else begin
+               ahb_cmd_q <= 8'h2B;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h88;
+             end
+           12'h09?, 12'h0A?, 12'h0B?, 12'h0C?, 12'h0D?, 12'h0E?, 12'h0F?: // INDIRECT_DATA continuation
+             begin
+               ahb_cmd_q <= 8'h2B;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h88;
+             end
+           12'h1?: // 0x100-0x17F INDIRECT_FIFO_CTRL (cmd 0x2C), 0x180-0x183 INDIRECT_FIFO_STATUS (cmd 0x2D), 0x184+ INDIRECT_FIFO_DATA (cmd 0x2E), 0x1A4 VENDOR (cmd 0x2F)
+             if (dev_ahb_haddr[11:0] < 12'h180) begin
+               ahb_cmd_q <= 8'h2C;
+               ahb_off_q <= dev_ahb_haddr[7:0];
+             end else if (dev_ahb_haddr[11:0] < 12'h184) begin
+               ahb_cmd_q <= 8'h2D;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h80;
+             end else if (dev_ahb_haddr[11:0] < 12'h1A4) begin
+               ahb_cmd_q <= 8'h2E;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h84;
+             end else if (dev_ahb_haddr[11:0] == 12'h1A4) begin
+               ahb_cmd_q <= 8'h2F;
+               ahb_off_q <= 8'h00;
+             end else begin
+               // Out-of-range above VENDOR: forward an invalid cmd so the
+               // adapter raises rb_err_q (which now also raises rb_ack_q
+               // to avoid bus hang).
+               ahb_cmd_q <= 8'h00;
+               ahb_off_q <= 8'h00;
+             end
+           default: begin
+             // Out-of-range below valid record set: invalid cmd.
+             ahb_cmd_q <= 8'h00;
+             ahb_off_q <= 8'h00;
+           end
+         endcase
+         ahb_wr_q    <= dev_ahb_hwrite;
+       end
+       // hwdata is on the bus during the AHB data phase (one cycle
+       // after address phase, when this FSM is in A_DATA).
+       if (a_state_q == A_DATA && ahb_wr_q) begin
+         ahb_wdata_q <= dev_ahb_hwdata[7:0];
+       end
+
+       // req level: raise from A_DATA onwards, drop at A_COMPLETE.
+       if (a_state_q == A_DATA)                          req_axi_q <= 1'b1;
+       else if (a_state_q == A_COMPLETE)                 req_axi_q <= 1'b0;
+
+       // Capture response when ack first observed (axi clk).
+       if (a_state_q == A_AWAIT_ACK && ack_axi_sync_q) begin
+         rdata_axi_q <= rdata_pie_q;
+         err_axi_q   <= err_pie_q;
+       end
+     end
+   end
+
+   // -- PIE clk: 2FF sync for req, PIE FSM that drives ext_rb_* --
+   logic        rec_ext_rb_wr;
+   logic        rec_ext_rb_rd;
+   logic [7:0]  rec_ext_rb_rdata;
+   logic        rec_ext_rb_ack;
+   logic        rec_ext_rb_err;
+
+   typedef enum logic [1:0] {
+     P_IDLE    = 2'd0,
+     P_PRESENT = 2'd1,  // hold wr/rd high awaiting ext_rb_ack
+     P_DONE    = 2'd2   // ack received, hold ack_pie high awaiting req drop
+   } p_state_e;
+   p_state_e p_state_q, p_state_d;
+
+   always_comb begin
+     p_state_d = p_state_q;
+     unique case (p_state_q)
+       P_IDLE:    if (req_pie_sync_q)  p_state_d = P_PRESENT;
+       P_PRESENT: if (rec_ext_rb_ack)  p_state_d = P_DONE;
+       P_DONE:    if (!req_pie_sync_q) p_state_d = P_IDLE;
+       default:                         p_state_d = P_IDLE;
+     endcase
+   end
+
+   always_ff @(posedge utmi_clk or posedge rec_rst) begin
+     if (rec_rst) begin
+       p_state_q      <= P_IDLE;
+       req_pie_meta_q <= 1'b0;
+       req_pie_sync_q <= 1'b0;
+       ack_pie_q      <= 1'b0;
+       rdata_pie_q    <= '0;
+       err_pie_q      <= 1'b0;
+     end else begin
+       // 2FF sync for req coming from axi clk
+       req_pie_meta_q <= req_axi_q;
+       req_pie_sync_q <= req_pie_meta_q;
+
+       p_state_q <= p_state_d;
+
+       // Capture rdata/err the cycle ext_rb_ack fires (in P_PRESENT).
+       if (p_state_q == P_PRESENT && rec_ext_rb_ack) begin
+         rdata_pie_q <= rec_ext_rb_rdata;
+         err_pie_q   <= rec_ext_rb_err;
+       end
+
+       // Raise ack_pie when entering P_DONE, hold until P_IDLE.
+       if (p_state_d == P_DONE) ack_pie_q <= 1'b1;
+       else if (p_state_d == P_IDLE) ack_pie_q <= 1'b0;
+     end
+   end
+
+   // PIE-side reg-bus drive: wr/rd held high through P_PRESENT.  The
+   // arbiter's ext_in_flight_q gate (in usb_ocp_recovery_top) ensures
+   // the held-level does not re-fire pulse strobes if the grant
+   // doesn't happen on the first cycle.
+   assign rec_ext_rb_wr = (p_state_q == P_PRESENT) &&  ahb_wr_q;
+   assign rec_ext_rb_rd = (p_state_q == P_PRESENT) && !ahb_wr_q;
+
+   // -- AHB response mux --
+   // rec_ahb_owns_q follows a_state_q != A_IDLE so the AHB master sees
+   // a stalled hreadyout during the entire recovery transaction window
+   // and a 1-cycle hreadyout=1 in A_COMPLETE.
+   logic rec_ahb_owns_now;
+   assign rec_ahb_owns_now = (a_state_q != A_IDLE);
+
+   // hreadyout: 1 in A_COMPLETE (final beat completes), 0 otherwise
+   // when we own the beat.  Outside our window, pass legacy through.
+   assign dev_ahb_hreadyout = rec_ahb_owns_now
+                            ? (a_state_q == A_COMPLETE)
+                            : legacy_dev_hreadyout;
+   assign dev_ahb_hrdata    = rec_ahb_owns_now
+                            ? { 24'h0, rdata_axi_q }
+                            : legacy_dev_hrdata;
+   assign dev_ahb_hresp     = rec_ahb_owns_now
+                            ? { 1'b0, err_axi_q }
+                            : legacy_dev_hresp;
+
+   // SVA: legacy IP must NOT respond when we own the beat.
+   // pragma translate_off
+   property p_legacy_silent_when_rec_owns;
+     @(posedge dev_axi_aclk) disable iff (!dev_axi_aresetn)
+       rec_ahb_owns_now |-> (legacy_dev_hreadyout === 1'b1);
+   endproperty
+   // (legacy_dev_hreadyout stays high when uut's hsel is gated off.)
+   assert property (p_legacy_silent_when_rec_owns)
+     else $error("rec/legacy AHB sub-decoder collision");
+   // pragma translate_on
+
 
    usb_ocp_recovery_top #(
        .CTRL_EP_NR        (0),
-       .BULK_OUT_EP_NR    (1),
-       .BULK_IN_EP_NR     (1),
        .CMS_ADDR_W        (REC_CMS_ADDR_W),
        .NUM_CMS           (REC_NUM_CMS),
        .PROT_CAP_DEFAULT  (REC_PROT_CAP_DEFAULT),
-       .DEVICE_ID_DEFAULT (REC_DEVICE_ID_DEFAULT),
-       .AXIL_AW           (AXI_REC_ADDR_WIDTH),
-       .AXIL_DW           (32)
+       .DEVICE_ID_DEFAULT (REC_DEVICE_ID_DEFAULT)
    ) u_ocp_recovery (
-       .clk  (dev_axi_aclk),
+       // Now in pie_clk (utmi_clk) domain (review fix C3).  Reset is
+       // 2FF-synced to this clock above (rec_rst).  Sideband and CMS
+       // ports cross to the SoC and must be sync'd on the consumer side
+       // (was previously dev_axi_aclk; see residual risk note in the
+       // combined fixes report).
+       .clk  (utmi_clk),
        .rst  (rec_rst),
 
-       // PIE-side (TODO: wire to VHDL usb_pie / usb_dma)
-       .pie_setup_received (a6_pie_setup_received_stub),
-       .pie_setup_data     (a6_pie_setup_data_stub),
-       .pie_ctrl_out_req   (a6_pie_ctrl_out_req_stub),
-       .pie_ctrl_out_byte  (a6_pie_ctrl_out_byte_stub),
-       .pie_ctrl_out_last  (a6_pie_ctrl_out_last_stub),
-       .pie_ctrl_out_ack   (a6_pie_ctrl_out_ack),
-       .pie_ctrl_out_nak   (a6_pie_ctrl_out_nak),
-       .pie_ctrl_in_req    (a6_pie_ctrl_in_req),
-       .pie_ctrl_in_byte   (a6_pie_ctrl_in_byte),
-       .pie_ctrl_in_last   (a6_pie_ctrl_in_last),
-       .pie_ctrl_in_ack    (a6_pie_ctrl_in_ack_stub),
-       .pie_ctrl_stall     (a6_pie_ctrl_stall),
-       .pie_ctrl_xfer_done (a6_pie_ctrl_xfer_done_stub),
-       .pie_bout_req       (a6_pie_bout_req_stub),
-       .pie_bout_byte      (a6_pie_bout_byte_stub),
-       .pie_bout_last      (a6_pie_bout_last_stub),
-       .pie_bout_ack       (a6_pie_bout_ack),
-       .pie_bout_nak       (a6_pie_bout_nak),
-       .pie_bin_req        (a6_pie_bin_req),
-       .pie_bin_byte       (a6_pie_bin_byte),
-       .pie_bin_last       (a6_pie_bin_last),
-       .pie_bin_ack        (a6_pie_bin_ack_stub),
-       .pie_bulk_stall     (a6_pie_bulk_stall),
-       .pie_bulk_xfer_done (a6_pie_bulk_xfer_done_stub),
+       // PIE byte-stream surface (driven by VHDL usb_pie_recovery_arb)
+       .rec_setup_pkt_vld  (rec_setup_pkt_vld_w),
+       .rec_setup_pkt      (rec_setup_pkt_w),
+       .rec_ctrl_out_data  (rec_ctrl_out_data_w),
+       .rec_ctrl_out_vld   (rec_ctrl_out_vld_w),
+       .rec_ctrl_out_last  (rec_ctrl_out_last_w),
+       .rec_ctrl_out_rdy   (rec_ctrl_out_rdy_w),
+       .rec_ctrl_in_data   (rec_ctrl_in_data_w),
+       .rec_ctrl_in_vld    (rec_ctrl_in_vld_w),
+       .rec_ctrl_in_last   (rec_ctrl_in_last_w),
+       .rec_ctrl_in_rdy    (rec_ctrl_in_rdy_w),
+       .rec_ctrl_set_stall (rec_ctrl_set_stall_w),
+       .rec_ctrl_xfer_done (rec_ctrl_xfer_done_w),
+       .rec_ctrl_claim     (rec_ctrl_claim_w),
 
-       // AXI4-Lite management port
-       .s_axil_awaddr   (rec_axi_awaddr),
-       .s_axil_awprot   (rec_axi_awprot),
-       .s_axil_awvalid  (rec_axi_awvalid),
-       .s_axil_awready  (rec_axi_awready),
-       .s_axil_wdata    (rec_axi_wdata),
-       .s_axil_wstrb    (rec_axi_wstrb),
-       .s_axil_wvalid   (rec_axi_wvalid),
-       .s_axil_wready   (rec_axi_wready),
-       .s_axil_bresp    (rec_axi_bresp),
-       .s_axil_bvalid   (rec_axi_bvalid),
-       .s_axil_bready   (rec_axi_bready),
-       .s_axil_araddr   (rec_axi_araddr),
-       .s_axil_arprot   (rec_axi_arprot),
-       .s_axil_arvalid  (rec_axi_arvalid),
-       .s_axil_arready  (rec_axi_arready),
-       .s_axil_rdata    (rec_axi_rdata),
-       .s_axil_rresp    (rec_axi_rresp),
-       .s_axil_rvalid   (rec_axi_rvalid),
-       .s_axil_rready   (rec_axi_rready),
+       // External reg-bus slave -- driven by the PIE-side bridge above.
+       // cmd/offset/wdata are stable across the CDC handshake, so they
+       // can be fed straight in from the axi-clk capture flops.
+       .ext_rb_cmd     (ahb_cmd_q),
+       .ext_rb_offset  ({8'h00, ahb_off_q}),
+       .ext_rb_wr      (rec_ext_rb_wr),
+       .ext_rb_rd      (rec_ext_rb_rd),
+       .ext_rb_wdata   (ahb_wdata_q),
+       .ext_rb_be      (1'b1),
+       .ext_rb_rdata   (rec_ext_rb_rdata),
+       .ext_rb_ack     (rec_ext_rb_ack),
+       .ext_rb_err     (rec_ext_rb_err),
 
        // CMS external SRAM passthrough
        .cms_addr  (cms_addr),
@@ -962,8 +1299,7 @@ module ip_xxx_3516_hs_mem_wrapper
        .fatal_err        (fatal_err)
    );
 
-   // Legacy top-level status pins: repurpose as a summary view of the
-   // recovery FSM so downstream SoC glue sees consistent behaviour.
+   // Legacy top-level status pins: summary view of the recovery FSM.
    assign ocp_recovery_available = rec_active;
    assign ocp_firmware_activated = image_ready;
 

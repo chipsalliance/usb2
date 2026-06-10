@@ -262,6 +262,78 @@ constant RESET_CYCLE      : integer := 63;
 constant C_NBDEV          : integer := 1;
 --++++++++++++++++++++++++++++++++++++++++++++++
 
+-- ----------------------------------------------------------------------------
+-- usb_pie_recovery_arb: OCP Recovery v1.1 (Section 8.5) EP0 arbiter.
+-- Splices between the legacy EP-info bundle (from usb_synchronizer) and
+-- the usb_pie EP-info input bundle, exposing a byte-stream upper side to
+-- the SV recovery stack at the top-level wrapper boundary.
+-- See third_party/usb2/src/ip_xxx_3511/RTL/usb_pie_recovery_arb.{e,m}.vhdl.
+-- ----------------------------------------------------------------------------
+component usb_pie_recovery_arb
+  generic (
+    USB_DATAWIDTH : integer := 64;
+    C_REC_EPNR    : integer := 0
+  );
+  port (
+    clk      : in  std_logic;
+    reset_n  : in  std_logic;
+
+    pie_epinfo_req            : in  std_logic;
+    pie_epinfo_epnr           : in  std_logic_vector(3 downto 0);
+    pie_epinfo_epdir          : in  std_logic;
+    pie_epinfo_setup          : in  std_logic;
+    pie_epinfo_setup_received : in  std_logic;
+    pie_rxdata                : in  std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    pie_rxdatavalid           : in  std_logic;
+    pie_rx_nbytes             : in  std_logic_vector(11 downto 0);
+    pie_endtransfer           : in  std_logic;
+    pie_success               : in  std_logic;
+    pie_error                 : in  std_logic;
+    pie_txdata_fetched        : in  std_logic;
+
+    legacy_epinfo_valid        : in std_logic;
+    legacy_epinfo_active       : in std_logic;
+    legacy_epinfo_disabled     : in std_logic;
+    legacy_epinfo_toggle       : in std_logic;
+    legacy_epinfo_stall        : in std_logic;
+    legacy_epinfo_iso          : in std_logic;
+    legacy_epinfo_nbytes       : in std_logic_vector(14 downto 0);
+    legacy_epinfo_maxpacket    : in std_logic_vector(1 downto 0);
+    legacy_epinfo_txdata       : in std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    legacy_epinfo_txdata_valid : in std_logic;
+
+    epinfo_to_pie_valid        : out std_logic;
+    epinfo_to_pie_active       : out std_logic;
+    epinfo_to_pie_disabled     : out std_logic;
+    epinfo_to_pie_toggle       : out std_logic;
+    epinfo_to_pie_stall        : out std_logic;
+    epinfo_to_pie_iso          : out std_logic;
+    epinfo_to_pie_nbytes       : out std_logic_vector(14 downto 0);
+    epinfo_to_pie_maxpacket    : out std_logic_vector(1 downto 0);
+    epinfo_to_pie_txdata       : out std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    epinfo_to_pie_txdata_valid : out std_logic;
+
+    setup_pkt_vld   : out std_logic;
+    setup_pkt       : out std_logic_vector(63 downto 0);
+
+    ctrl_out_data   : out std_logic_vector(7 downto 0);
+    ctrl_out_vld    : out std_logic;
+    ctrl_out_last   : out std_logic;
+    ctrl_out_rdy    : in  std_logic;
+
+    ctrl_in_data    : in  std_logic_vector(7 downto 0);
+    ctrl_in_vld     : in  std_logic;
+    ctrl_in_last    : in  std_logic;
+    ctrl_in_rdy     : out std_logic;
+
+    ctrl_set_stall  : in  std_logic;
+    ctrl_xfer_done  : out std_logic;
+
+    rec_claim       : in  std_logic
+  );
+end component;
+
+
 component usb_pie
       generic (
       ULPI_SUPPORT          : boolean := TRUE;
@@ -868,6 +940,22 @@ signal usbreg_phy_test_mode   : std_logic_vector(2 downto 0);
 signal sync_sieint_setup_received:  std_logic;
 --signal dma_epinfo_toggle:      std_logic_vector(C_NBPHYSEP+1 downto 0);
 signal usbreg_epinfo_toggle  : std_logic_vector(C_NBPHYSEP+1 downto 0);
+
+-- ----------------------------------------------------------------------------
+-- OCP Recovery v1.1 (Section 8.5) arbiter internal nets.
+-- epinfo_to_pie_* are the muxed bundle going into usb_pie's epinfo_* inputs.
+-- ----------------------------------------------------------------------------
+signal epinfo_to_pie_valid        : std_logic;
+signal epinfo_to_pie_active       : std_logic;
+signal epinfo_to_pie_disabled     : std_logic;
+signal epinfo_to_pie_toggle       : std_logic;
+signal epinfo_to_pie_stall        : std_logic;
+signal epinfo_to_pie_iso          : std_logic;
+signal epinfo_to_pie_nbytes       : std_logic_vector(14 downto 0);
+signal epinfo_to_pie_maxpacket    : std_logic_vector(1 downto 0);
+signal epinfo_to_pie_txdata       : std_logic_vector(USBPIE_DATAWIDTH-1 downto 0);
+signal epinfo_to_pie_txdata_valid : std_logic;
+
 signal usbreg_port_force_fullspeed : std_logic;
 signal dma_clear_toggle      : std_logic;
 signal dma_set_toggle        : std_logic;
@@ -1031,17 +1119,17 @@ usb_pie_1 : usb_pie
 	       pie_epinfo_setup 	    => sieint_epinfo_setup	   ,
 	       pie_epinfo_setup_received    => sieint_epinfo_setup_received,
 	       pie_usbaddress		    => sieint_usbaddress	   ,
-	       epinfo_valid		    => epinfo_valid		   ,
-	       epinfo_active		    => epinfo_active		   ,
-	       epinfo_disabled  	    => epinfo_disabled  	   ,
-	       epinfo_toggle		    => epinfo_toggle		   ,
-	       epinfo_stall		    => epinfo_stall		   ,
-	       epinfo_iso		    => epinfo_iso		   ,
-	       epinfo_nbytes		    => epinfo_nbytes		   ,
-	       epinfo_maxpacket             => epinfo_maxpacket            ,
+	       epinfo_valid		    => epinfo_to_pie_valid		   ,
+	       epinfo_active		    => epinfo_to_pie_active		   ,
+	       epinfo_disabled  	    => epinfo_to_pie_disabled  	   ,
+	       epinfo_toggle		    => epinfo_to_pie_toggle		   ,
+	       epinfo_stall		    => epinfo_to_pie_stall		   ,
+	       epinfo_iso		    => epinfo_to_pie_iso		   ,
+	       epinfo_nbytes		    => epinfo_to_pie_nbytes		   ,
+	       epinfo_maxpacket             => epinfo_to_pie_maxpacket            ,
 	       pie_txdata_fetched	    => sieint_txdatafetched	   ,
-	       epinfo_txdata		    => epinfo_txdata		   ,
-               epinfo_txdata_valid	    => epinfo_txdata_valid	   ,
+	       epinfo_txdata		    => epinfo_to_pie_txdata		   ,
+               epinfo_txdata_valid	    => epinfo_to_pie_txdata_valid	   ,
                pie_rx_nbytes		    => sieint_rx_nbytes 	   ,
                pie_rxdata		    => sieint_rxdata		   ,
                pie_rxdatavalid  	    => sieint_rxdatavalid	   ,
@@ -1399,6 +1487,74 @@ usb_dma_1 : usb_dma
       dma_skip_ep                   => dma_skip_ep              ,
       usb_dma_fpga                  => usb_dma_fpga
      );
+
+-- ----------------------------------------------------------------------------
+-- OCP Recovery v1.1 Section 8.5 - PIE EP0 arbiter.
+-- Splices between the legacy epinfo bundle (out of usb_synchronizer_1) and
+-- the usb_pie_1 epinfo input bundle.  Default (rec_ctrl_claim='0') is a
+-- pass-through, so legacy USB behaviour is unchanged.  When recovery owns
+-- EP0, the arbiter substitutes its own epinfo response and surfaces a
+-- byte-stream interface to the SV layer via the new rec_* top-level ports.
+-- ----------------------------------------------------------------------------
+usb_pie_recovery_arb_1 : usb_pie_recovery_arb
+  generic map (
+    USB_DATAWIDTH => USBPIE_DATAWIDTH,
+    C_REC_EPNR    => 0
+  )
+  port map (
+    clk      => pie_clk,
+    reset_n  => Reset_N,
+
+    pie_epinfo_req            => sieint_epinfo_req,
+    pie_epinfo_epnr           => sieint_epinfo_epnr,
+    pie_epinfo_epdir          => sieint_epinfo_epdir,
+    pie_epinfo_setup          => sieint_epinfo_setup,
+    pie_epinfo_setup_received => sieint_epinfo_setup_received,
+    pie_rxdata                => sieint_rxdata,
+    pie_rxdatavalid           => sieint_rxdatavalid,
+    pie_rx_nbytes             => sieint_rx_nbytes,
+    pie_endtransfer           => sieint_endtransfer,
+    pie_success               => sieint_success,
+    pie_error                 => sieint_error,
+    pie_txdata_fetched        => sieint_txdatafetched,
+
+    legacy_epinfo_valid        => epinfo_valid,
+    legacy_epinfo_active       => epinfo_active,
+    legacy_epinfo_disabled     => epinfo_disabled,
+    legacy_epinfo_toggle       => epinfo_toggle,
+    legacy_epinfo_stall        => epinfo_stall,
+    legacy_epinfo_iso          => epinfo_iso,
+    legacy_epinfo_nbytes       => epinfo_nbytes,
+    legacy_epinfo_maxpacket    => epinfo_maxpacket,
+    legacy_epinfo_txdata       => epinfo_txdata,
+    legacy_epinfo_txdata_valid => epinfo_txdata_valid,
+
+    epinfo_to_pie_valid        => epinfo_to_pie_valid,
+    epinfo_to_pie_active       => epinfo_to_pie_active,
+    epinfo_to_pie_disabled     => epinfo_to_pie_disabled,
+    epinfo_to_pie_toggle       => epinfo_to_pie_toggle,
+    epinfo_to_pie_stall        => epinfo_to_pie_stall,
+    epinfo_to_pie_iso          => epinfo_to_pie_iso,
+    epinfo_to_pie_nbytes       => epinfo_to_pie_nbytes,
+    epinfo_to_pie_maxpacket    => epinfo_to_pie_maxpacket,
+    epinfo_to_pie_txdata       => epinfo_to_pie_txdata,
+    epinfo_to_pie_txdata_valid => epinfo_to_pie_txdata_valid,
+
+    setup_pkt_vld   => rec_setup_pkt_vld,
+    setup_pkt       => rec_setup_pkt,
+    ctrl_out_data   => rec_ctrl_out_data,
+    ctrl_out_vld    => rec_ctrl_out_vld,
+    ctrl_out_last   => rec_ctrl_out_last,
+    ctrl_out_rdy    => rec_ctrl_out_rdy,
+    ctrl_in_data    => rec_ctrl_in_data,
+    ctrl_in_vld     => rec_ctrl_in_vld,
+    ctrl_in_last    => rec_ctrl_in_last,
+    ctrl_in_rdy     => rec_ctrl_in_rdy,
+    ctrl_set_stall  => rec_ctrl_set_stall,
+    ctrl_xfer_done  => rec_ctrl_xfer_done,
+    rec_claim       => rec_ctrl_claim
+  );
+
 
 usb_ahb_slave_1 : usb_ahb_slave
   port map   (
@@ -1827,6 +1983,9 @@ configuration ip_xxx_3511_hs_structure_cfg of ip_xxx_3511_hs is
     end for;
     for usb_dma_1 : usb_dma
       use entity rtl.usb_dma(rtl);
+    end for;
+    for usb_pie_recovery_arb_1 : usb_pie_recovery_arb
+      use entity rtl.usb_pie_recovery_arb(rtl);
     end for;
     for usb_ahb_slave_1 : usb_ahb_slave
       use entity rtl.usb_ahb_slave(rtl);
