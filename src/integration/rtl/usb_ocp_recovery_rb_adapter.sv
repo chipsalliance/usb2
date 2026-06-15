@@ -6,10 +6,10 @@
 // rb_* protocol (cmd[7:0] + offset[15:0]) used by A2 (ctrl_decode) / the
 // AHB sub-decoder to the DWORD-aligned, passthrough CPU interface emitted
 // by the peakrdl-generated usb_ocp_recovery regblock (see
-// third_party/usb2/src/integration/rtl/generated/usb_ocp_recovery.sv).
+// third_party/usb2/src/integration/rtl/generated/usb_ocp_recovery_reg.sv).
 //
 // Address layout (OCP cmd -> byte offset in the regblock window) is the
-// single source of truth in third_party/usb2/systemrdl/usb_ocp_recovery.rdl
+// single source of truth in third_party/usb2/systemrdl/usb_ocp_recovery_reg.rdl
 // and is reproduced here as a small LUT.  No other field-layout constant
 // is duplicated; per-byte field placement is handled by the regblock
 // itself.
@@ -116,7 +116,7 @@ module usb_ocp_recovery_rb_adapter (
 
   // --------------------------------------------------------------------------
   // OCP command code -> byte-offset base in the regblock window.
-  // Source of truth: third_party/usb2/systemrdl/usb_ocp_recovery.rdl
+  // Source of truth: third_party/usb2/systemrdl/usb_ocp_recovery_reg.rdl
   //   PROT_CAP_0       @ 0x000  (cmd 0x22, 16 B)
   //   DEVICE_ID_0      @ 0x010  (cmd 0x23, 24 B)
   //   DEVICE_STATUS_0  @ 0x028  (cmd 0x24, 64 B)

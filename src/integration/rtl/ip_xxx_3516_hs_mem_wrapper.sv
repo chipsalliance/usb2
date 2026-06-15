@@ -865,7 +865,7 @@ module ip_xxx_3516_hs_mem_wrapper
    //     arbiter (usb_pie_recovery_arb) inside ip_xxx_3511_hs.
    //   - Management side: AHB sub-decoder below taps the existing
    //     dev_ahb_* output of axilite_to_ahb.sv and converts AHB beats
-   //     addressed to SOC_USB_OCP_RECOVERY_BASE_ADDR into single-byte
+   //     addressed to SOC_USB_OCP_RECOVERY_REG_BASE_ADDR into single-byte
    //     reg-bus transactions (ext_rb_*).  AXI4-Lite alt-master removed.
    //   - CMS SRAM, sideband, and prot_cap/device_id straps unchanged.
    // ================================================================
@@ -903,7 +903,7 @@ module ip_xxx_3516_hs_mem_wrapper
    //
    // Address aperture
    // ----------------
-   //   Base : SOC_USB_OCP_RECOVERY_BASE_ADDR = 0x2000_2000
+   //   Base : SOC_USB_OCP_RECOVERY_REG_BASE_ADDR = 0x2000_2000
    //   Size : 4 KiB (REC_APERTURE_LOG2 = 12)
    //   - Matches the SoC address map (next slot, I3CCSR, begins at
    //     0x2000_4000, leaving an 8 KiB gap; we use 4 KiB to leave
@@ -1047,7 +1047,7 @@ module ip_xxx_3516_hs_mem_wrapper
        // Capture cmd/off/wr at address phase (state IDLE on the edge of
        // rec_ahb_addr_phase).  Maps the flat 4 KiB byte aperture layout
        // (matches usb_ocp_recovery_rb_adapter.sv cmd_base LUT and the
-       // PeakRDL-generated soc_address_map.h SOC_USB_OCP_RECOVERY_*
+       // PeakRDL-generated soc_address_map.h SOC_USB_OCP_RECOVERY_REG_*
        // per-register addresses) into the byte-wide rb_* (cmd, offset)
        // pair the adapter expects. PROT_CAP@0x000, DEVICE_ID@0x010,
        // DEVICE_STATUS@0x028, DEVICE_RESET@0x068, RECOVERY_CTRL@0x06C,
