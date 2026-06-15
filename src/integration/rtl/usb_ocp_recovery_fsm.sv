@@ -229,6 +229,19 @@ module usb_ocp_recovery_fsm (
           reset_pulse_d = 1'b1;
         end else if (rec_trigger) begin
           state_d = S_DETECTED;
+        end else if (recovery_ctrl_wr_cms) begin
+          // Host-initiated recovery: any byte-0 write to RECOVERY_CTRL
+          // signals that the host has selected a CMS for recovery and
+          // intends to push an image. OCP Recovery v1.1 Sec 9.2 Tbl 9-9.
+          // This matches the documented "host-initiated recovery via the
+          // command path" intent noted in
+          // src/integration/rtl/caliptra_ss_top.sv comments at the
+          // rec_trigger tie-off. img_idx_d is latched here as a
+          // convenience; a subsequent IMG_SEL byte-1 write will still be
+          // captured by S_DETECTED/S_AWAIT_IMAGE via the
+          // recovery_ctrl_wr_img_sel strobe.
+          img_idx_d = recovery_ctrl_img_sel[3:0];
+          state_d   = S_DETECTED;
         end
       end
 
