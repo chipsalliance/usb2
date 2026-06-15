@@ -329,7 +329,9 @@ component usb_pie_recovery_arb
     ctrl_set_stall  : in  std_logic;
     ctrl_xfer_done  : out std_logic;
 
-    rec_claim       : in  std_logic
+    rec_claim       : in  std_logic;
+
+    legacy_setup_received_gated : out std_logic
   );
 end component;
 
@@ -865,6 +867,12 @@ signal sieint_epinfo_epnr:     std_logic_vector(3 downto 0);
 signal sieint_epinfo_epdir:    std_logic;
 signal sieint_epinfo_setup:    std_logic;
 signal sieint_epinfo_setup_received:    std_logic;
+-- Gated copy emitted by usb_pie_recovery_arb (low while the arbiter has
+-- claimed an EP0 OCP recovery class transfer). Routed to the legacy SIE
+-- usb_synchronizer in place of the raw signal so the MCU EPCS does not
+-- see SETUP-received notifications for recovery-class transfers.  See
+-- research/usb_ocp_p7_claim_debug.md and usb_pie_recovery_arb.{e,m}.vhdl.
+signal sieint_epinfo_setup_received_gated: std_logic;
 signal epinfo_valid:	       std_logic;
 signal epinfo_active:	       std_logic;
 signal epinfo_disabled:        std_logic;
@@ -1229,7 +1237,7 @@ usb_synchronizer_1: usb_synchronizer
 	      sieint_epinfo_epnr	   => sieint_epinfo_epnr	  ,
 	      sieint_epinfo_epdir	   => sieint_epinfo_epdir	  ,
 	      sieint_epinfo_setup	   => sieint_epinfo_setup	  ,
-	      sieint_epinfo_setup_received => sieint_epinfo_setup_received,
+	      sieint_epinfo_setup_received => sieint_epinfo_setup_received_gated,
 	      epinfo_valid		   => epinfo_valid		  ,
 	      epinfo_active		   => epinfo_active		  ,
 	      epinfo_disabled  	  	   => epinfo_disabled		  ,
@@ -1552,7 +1560,8 @@ usb_pie_recovery_arb_1 : usb_pie_recovery_arb
     ctrl_in_rdy     => rec_ctrl_in_rdy,
     ctrl_set_stall  => rec_ctrl_set_stall,
     ctrl_xfer_done  => rec_ctrl_xfer_done,
-    rec_claim       => rec_ctrl_claim
+    rec_claim       => rec_ctrl_claim,
+    legacy_setup_received_gated => sieint_epinfo_setup_received_gated
   );
 
 
