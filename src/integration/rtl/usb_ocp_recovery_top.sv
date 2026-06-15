@@ -461,14 +461,28 @@ module usb_ocp_recovery_top #(
   // read window with no extra storage cycle.
   //
   // DEVICE_STATUS_0 fields (DEV_STATUS / PROT_ERROR / REC_REASON_CODE)
-  // come from the FSM.  Remaining DEVICE_STATUS bytes (heartbeat, vendor
-  // status) and INDIRECT_STATUS / INDIRECT_DATA / INDIRECT_FIFO_* are
-  // either FIFO-routed (read via A4, never reach the regblock) or tied 0.
+  // come from the FSM (Sec 9.2 Tbl 9-5).  DEVICE_STATUS_1..15 carry the
+  // optional heartbeat / vendor-status bytes (Sec 9.2 Tbl 9-5 bytes 4..63);
+  // those are vendor-specific and remain tied to 0 until a vendor extension
+  // populates them.
   //
-  // RECOVERY_STATUS bytes 0/1 split: byte0 low/high nibbles to
-  // DEV_REC_STATUS / REC_IMG_INDEX, byte1 to VENDOR_SPECIFIC_STATUS.
-  // HW_STATUS byte 0 split into TEMP_CRITICAL / SOFT_ERR / FATAL_ERR /
-  // RESERVED_7_3 per OCP Recovery v1.1 Sec 9.2 Tbl 9-11.
+  // RECOVERY_STATUS (Sec 9.2 Tbl 9-11) byte 0 splits low nibble =
+  // DEV_REC_STATUS, high nibble = REC_IMG_INDEX; byte 1 = vendor.
+  // HW_STATUS byte 0 (Sec 9.2 Tbl 9-12) splits bit 0 = TEMP_CRITICAL,
+  // bit 1 = SOFT_ERR, bit 2 = FATAL_ERR, bits 7:3 = reserved.
+  //
+  // INDIRECT_STATUS / INDIRECT_DATA / INDIRECT_FIFO_* (Sec 9.2 Tbl 9-13..9-15)
+  // are routed by usb_ocp_recovery_rb_adapter.sv (is_fifo_cmd, line 159)
+  // to the cms_fifo A4 block.  The regblock copies of those registers are
+  // never read out on the host control bus, so their .next ports are
+  // intentionally left at 0; A4 owns the live values.  Driving them here
+  // would be dead silicon and risk diverging from the FIFO-owned state.
+  //
+  // The adapter also intercepts cpuif_rd_err (rb_adapter.sv:466 only ORs
+  // fifo_rb_err into rb_err), so a regblock-side decode miss cannot
+  // surface as an rb_err / AXI error response.  Every regblock byte in
+  // the address window is backed by a declared field per the generated
+  // package (usb_ocp_recovery_pkg.sv).
   // --------------------------------------------------------------------------
   always_comb begin
     rb_hwif_in = '{default: '0};

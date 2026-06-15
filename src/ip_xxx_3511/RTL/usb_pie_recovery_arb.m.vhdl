@@ -97,6 +97,28 @@ architecture rtl of usb_pie_recovery_arb is
   signal ctrl_in_rdy_c    : std_logic;
 
   -- ----------------------------------------------------------------------
+  -- Per-transfer byte budget latched from SETUP wLength.  Driven into
+  -- mux_nbytes_c so the PIE TX serializer (usb_pie.m.vhdl) is told the
+  -- full data-stage length rather than the previous placeholder of 8.
+  --
+  -- Spec citations:
+  --   OCP Recovery v1.1 Sec 8.5.1: data-stage byte count equals the
+  --     wLength carried by the SETUP packet.
+  --   USB 2.0 Sec 9.3 (Table 9-2): wLength is little-endian at bytes 6..7
+  --     of the SETUP payload.  setup_pkt_r is packed byte 0 at bits[7:0],
+  --     byte k at bits[8k+7:8k]; therefore wLength low = bits(55:48),
+  --     wLength high = bits(63:56).
+  --   USB 2.0 Sec 5.5.3: control transfer data stage may be terminated
+  --     early by a short packet; sending fewer than wLength bytes when the
+  --     register is shorter is permitted.
+  --
+  -- Width: USB wLength is 16 bits but the PIE nbytes port is 15 bits.
+  -- OCP Recovery v1.1 register payloads are all <= 256 bytes, so dropping
+  -- the MSB cannot truncate any spec-legal recovery transfer.
+  -- ----------------------------------------------------------------------
+  signal nbytes_r        : unsigned(14 downto 0);
+
+  -- ----------------------------------------------------------------------
   -- Arbiter mux outputs (combinational view of muxed epinfo to PIE).
   -- ----------------------------------------------------------------------
   signal mux_valid_c        : std_logic;
@@ -132,10 +154,16 @@ begin
     if reset_n = '0' then
       setup_pkt_r     <= (others => '0');
       setup_pkt_vld_r <= '0';
+      nbytes_r        <= (others => '0');
     elsif rising_edge(clk) then
       setup_pkt_vld_r <= setup_capture_c;
       if setup_capture_c = '1' then
         setup_pkt_r <= pie_rxdata;
+        -- USB 2.0 Sec 9.3 Tbl 9-2: wLength little-endian at bytes 6..7.
+        -- Concatenate high byte (bits 63:56) with low byte (bits 55:48)
+        -- and truncate to 15-bit nbytes width.  See nbytes_r declaration
+        -- comment for the truncation rationale.
+        nbytes_r <= unsigned(pie_rxdata(62 downto 48));
       end if;
     end if;
   end process setup_clk_proc;
@@ -238,7 +266,14 @@ begin
   -- Backpressure: ctrl_in_rdy = !tx_word_full_r so the SV layer cannot
   -- overflow the slot while PIE has not yet fetched.
   -- ======================================================================
-  ctrl_in_rdy_c <= not tx_word_full_r;
+  -- Fix 3c (usb_ocp_arbiter_fix_plan Bug 3): gate ctrl_in_rdy on arb_owns_c
+  -- so the SV ctrl_decode source observes backpressure the instant the
+  -- arbiter releases EP0 (e.g. on a stray pie_endtransfer pulse).  This
+  -- works with the global ctrl_xfer_done escape in ctrl_decode.sv to
+  -- ensure the SV FSM exits S_READ instead of wedging on a full slot.
+  -- USB 2.0 Sec 8.5.3.2: control transfer state must not leak across
+  -- transfer boundaries.
+  ctrl_in_rdy_c <= (not tx_word_full_r) and arb_owns_c;
   ctrl_in_rdy   <= ctrl_in_rdy_c;
 
   txstream_comb_proc : process (tx_word_r, tx_byte_idx_r, tx_word_full_r,
@@ -253,8 +288,14 @@ begin
     tx_word_full_nxt <= tx_word_full_r;
     tx_last_nxt      <= tx_last_r;
 
-    -- Accept one byte from SV side.
-    if (ctrl_in_vld = '1') and (ctrl_in_rdy_c = '1') then
+    -- Accept one byte from SV side.  Fix 3b (usb_ocp_arbiter_fix_plan
+    -- Bug 3): require arb_owns_c='1' so stray bytes pushed after PIE
+    -- has issued pie_endtransfer cannot leak into the slot for the
+    -- next transaction.  (ctrl_in_rdy_c is already gated on arb_owns_c
+    -- above, but defensive gating here protects against a same-cycle
+    -- race where the SV side asserts vld on the cycle arb_owns drops.)
+    if (ctrl_in_vld = '1') and (ctrl_in_rdy_c = '1') and
+       (arb_owns_c = '1') then
       byte_index_v := to_integer(tx_byte_idx_r);
       tx_word_nxt(byte_index_v*8 + 7 downto byte_index_v*8) <= ctrl_in_data;
       if (tx_byte_idx_r = "111") or (ctrl_in_last = '1') then
@@ -272,6 +313,24 @@ begin
        (arb_owns_c = '1') then
       tx_word_full_nxt <= '0';
       tx_last_nxt      <= '0';
+      tx_word_nxt      <= (others => '0');
+    end if;
+
+    -- Fix 3a (usb_ocp_arbiter_fix_plan Bug 3): flush the staging slot
+    -- whenever the arbiter is not claiming EP0.  Placed AFTER the
+    -- accept/drain blocks so it dominates both.  Without this, a
+    -- premature pie_endtransfer that drops rec_claim mid-DATA-IN
+    -- leaves tx_word_full_r='1' forever (drain requires arb_owns_c='1',
+    -- but arb_owns_c is now '0'), wedging the slot into the next
+    -- recovery transaction.  Matches the rec_claim=0 pass-through
+    -- architecture in the header.
+    -- OCP Recovery v1.1 Sec 8.5 / USB 2.0 Sec 8.5.3.2: each control
+    -- transfer is atomic; arbiter state must not leak across transfer
+    -- boundaries.
+    if arb_owns_c = '0' then
+      tx_word_full_nxt <= '0';
+      tx_last_nxt      <= '0';
+      tx_byte_idx_nxt  <= (others => '0');
       tx_word_nxt      <= (others => '0');
     end if;
   end process txstream_comb_proc;
@@ -312,9 +371,17 @@ begin
   --     for the next phase; for now follow legacy default.
   --   - stall: OR-combine legacy with ctrl_set_stall (Section 9.4.5
   --     CLEAR_FEATURE handling stays with legacy; arbiter never clears).
-  --   - nbytes / maxpacket: from SV-fed ctrl_in_nbytes (TODO: surfaced via
-  --     a future generic / port; for the current phase the SV stack pushes
-  --     a known short reply <= 64B and we use 64B max-packet for EP0 HS).
+  --   - nbytes / maxpacket: nbytes is the wLength captured from the SETUP
+  --     packet (nbytes_r, see setup_clk_proc).  This replaces the prior
+  --     hard-coded "8" placeholder which caused PIE to terminate the IN
+  --     data stage after a single 8-byte beat regardless of wLength,
+  --     truncating responses such as PROT_CAP (wLength=64).
+  --     Spec: OCP Recovery v1.1 Sec 8.5.1 (data-stage length = wLength)
+  --           and USB 2.0 Sec 5.5.3 (control transfer data stage budget).
+  --     maxpacket is left at "11" (HS EP0, 64 B); FS support is deferred
+  --     because the recovery interface currently mandates HS operation
+  --     and changing this risks affecting non-recovery EP0 traffic.  See
+  --     usb_ocp_arbiter_fix_plan.md Bug 5.
   --   - txdata / txdata_valid: from the IN serializer slot.
   -- ======================================================================
   mux_valid_c        <= legacy_epinfo_valid    when arb_owns_c = '0' else '1';
@@ -324,7 +391,7 @@ begin
   mux_iso_c          <= legacy_epinfo_iso      when arb_owns_c = '0' else '0';
   mux_nbytes_c       <= legacy_epinfo_nbytes
                           when arb_owns_c = '0'
-                          else std_logic_vector(to_unsigned(8, 15));
+                          else std_logic_vector(nbytes_r);
   mux_maxpacket_c    <= legacy_epinfo_maxpacket when arb_owns_c = '0' else "11";
   mux_txdata_c       <= legacy_epinfo_txdata
                           when arb_owns_c = '0' else tx_word_r;
@@ -368,11 +435,16 @@ begin
           severity warning;
       end if;
 
-      -- TX overflow: SV side asserting ctrl_in_vld while not rdy.
-      assert not ((ctrl_in_vld = '1') and (tx_word_full_r = '1') and
-                  (pie_txdata_fetched = '0'))
-        report "usb_pie_recovery_arb: ctrl_in_vld with tx slot full"
-        severity warning;
+      -- usb_ocp_arbiter_fix_plan Bug 2: the previous "ctrl_in_vld with
+      -- tx slot full" warning fired every cycle on legitimate ready/valid
+      -- backpressure (vld held high while rdy=0 is the standard contract,
+      -- e.g. AXI-Stream TVALID/TREADY rule).  Replaced with a true-overflow
+      -- check that should be unreachable because ctrl_in_rdy_c is the
+      -- inverse of tx_word_full_r.
+      assert not ((ctrl_in_vld = '1') and (ctrl_in_rdy_c = '1') and
+                  (tx_word_full_r = '1'))
+        report "usb_pie_recovery_arb: byte accepted while slot full -- arbiter bug"
+        severity failure;
     end if;
   end process assertions_proc;
   -- pragma translate_on

@@ -184,6 +184,22 @@ module usb_ocp_recovery_ctrl_decode (
     rb_wdata       = ctrl_out_data;
     rb_be          = 1'b1;
 
+    // -----------------------------------------------------------------------
+    // Global early-termination escape.  When the VHDL arbiter signals
+    // ctrl_xfer_done (re-emission of pie_endtransfer while recovery owns
+    // EP0), honour it regardless of the current state.  USB 2.0
+    // Sec 8.5.3.2 permits the host to early-abort a control transfer
+    // data stage by issuing the opposite-direction STATUS phase; the
+    // device must tolerate this without wedging.  Combined with the
+    // VHDL arbiter slot flush on claim drop (Fix 3a in
+    // usb_pie_recovery_arb.m.vhdl), this prevents S_READ / S_WRITE
+    // lockup when PIE ends the transfer before the SV side has finished
+    // streaming wLength bytes.  See usb_ocp_arbiter_fix_plan Bug 4.
+    // -----------------------------------------------------------------------
+    if (ctrl_xfer_done) begin
+      state_d  = S_IDLE;
+      offset_d = '0;
+    end else begin
     unique case (state_q)
       //-----------------------------------------------------------------------
       S_IDLE: begin
@@ -289,6 +305,7 @@ module usb_ocp_recovery_ctrl_decode (
 
       default: state_d = S_IDLE;
     endcase
+    end // !ctrl_xfer_done
   end
 
   //---------------------------------------------------------------------------
