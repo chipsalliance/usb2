@@ -57,6 +57,22 @@ architecture rtl of usb_pie_recovery_arb is
   signal is_rec_ep_c : std_logic;
   signal arb_owns_c  : std_logic;  -- arbiter is overriding pie inputs
 
+  -- Combinational OCP class-match on pie_rxdata during setup_capture_c.
+  -- Latched into setup_is_ocp_match_q so the gating term holds high for
+  -- the entire pie_epinfo_setup_received pulse, which trails
+  -- setup_capture_c by ~10s-100s of ns (FSDB-confirmed in
+  -- research/usb_ocp_p7_gate_debug.md). rec_claim_q (one PIE clk late)
+  -- alone is too narrow to cover the leading edge.
+  signal setup_is_ocp_match_c : std_logic;
+  signal setup_is_ocp_match_q : std_logic;
+  signal pie_setup_received_r : std_logic;
+  -- Tracks whether the SETUP-stage pie_endtransfer has already been
+  -- observed and consumed within the current claim window. First
+  -- pie_endtransfer after arb_owns_c rises is provably the SETUP-end
+  -- (USB 2.0 Sec 8.5.3 - DATA cannot complete before SETUP); we skip
+  -- it. Subsequent pie_endtransfer pulses forward to ctrl_xfer_done.
+  signal setup_end_seen_q : std_logic;
+
   -- ----------------------------------------------------------------------
   -- SETUP capture (one cycle latch when PIE delivers the SETUP beat).
   -- ----------------------------------------------------------------------
@@ -139,6 +155,82 @@ begin
   -- ======================================================================
   is_rec_ep_c <= '1' when (pie_epinfo_epnr = REC_EPNR_SLV) else '0';
   arb_owns_c  <= rec_claim and is_rec_ep_c;
+
+  -- ======================================================================
+  -- Legacy SIE SETUP-received gating
+  --
+  -- Per FSDB evidence in research/usb_ocp_p7_claim_debug.md, the legacy
+  -- IP-3511 PIE delivers pie_epinfo_setup_received directly into the
+  -- usb_synchronizer/usb_reg_if path that drives DEVCMDSTAT.SETUP and
+  -- INTSTAT.EP0OUT. That notification is what kicks the MCU EPCS into
+  -- decoding the SETUP. If the SETUP is an OCP recovery class request
+  -- the MCU MUST NOT see the SETUP -- otherwise both the SV recovery
+  -- decoder and the MCU firmware race to respond on the same EP0
+  -- transfer, corrupting the IN data stage (host sees ZLP from MCU
+  -- instead of PROT_CAP bytes from the SV decoder).
+  --
+  -- Gating must fire on the SAME clock as the SETUP arrival (rec_claim
+  -- only rises one PIE clk AFTER the SETUP via the SV-side flop, which
+  -- is too late -- the legacy SIE has already latched the
+  -- setup_received pulse by then). We therefore decode the OCP class
+  -- match combinationally from pie_rxdata while setup_capture_c='1'
+  -- and OR that with the (cycle-late) arb_owns_c term so the gate
+  -- holds high for the entire claimed transfer.
+  --
+  -- Class-match rule per OCP Recovery v1.1 Sec 8.5.1:
+  --   bmRequestType[6:5] == "01"      (Class)
+  --   bmRequestType[4:0] == "00001"   (Interface recipient)
+  --   bRequest           == 8'h00     (OCP_RECOVERY_TRANSFER)
+  --   wIndex[7:0]        == REC_IFACE_NUM (this build: 8'h00)
+  --
+  -- pie_rxdata little-endian SETUP byte layout (USB 2.0 Sec 9.3 Tbl 9-2):
+  --   bmRequestType = rxdata[7:0]
+  --   bRequest      = rxdata[15:8]
+  --   wValue        = rxdata[31:16]
+  --   wIndex        = rxdata[47:32]    (lo byte 39:32)
+  --   wLength       = rxdata[63:48]
+  --
+  -- USB 2.0 Sec 8.5.3 wire behavior is preserved: the arbiter still
+  -- consumes the SETUP and answers the data/status phases via the muxed
+  -- epinfo_to_pie_* path. Only the *internal* MCU notification is
+  -- suppressed for recovery-class SETUPs.
+  -- ======================================================================
+  setup_is_ocp_match_c <= '1' when (setup_capture_c = '1')
+                                  and (pie_rxdata(6 downto 5)  = "01")
+                                  and (pie_rxdata(4 downto 0)  = "00001")
+                                  and (pie_rxdata(15 downto 8) = "00000000")
+                                  and (pie_rxdata(39 downto 32) = std_logic_vector(to_unsigned(0, 8)))
+                              else '0';
+
+  -- Hold the OCP-match flag from SETUP capture through the entire
+  -- pie_epinfo_setup_received pulse. FSDB evidence
+  -- (research/usb_ocp_p7_gate_debug.md): pie_epinfo_setup_received
+  -- trails setup_capture_c by ~117 ns and remains high for ~680 ns.
+  -- Iter 7 attempt cleared the flop whenever pie_epinfo_setup_received='0'
+  -- which immediately fires in the gap between capture and pulse rise
+  -- (research/usb_ocp_p7_datapath.md, Q1). Clear only on the FALLING
+  -- edge of pie_epinfo_setup_received to guarantee the flop overlaps
+  -- the entire pulse.
+  setup_match_clk_proc : process (clk, reset_n)
+  begin
+    if reset_n = '0' then
+      setup_is_ocp_match_q     <= '0';
+      pie_setup_received_r     <= '0';
+    elsif rising_edge(clk) then
+      pie_setup_received_r <= pie_epinfo_setup_received;
+      if setup_is_ocp_match_c = '1' then
+        setup_is_ocp_match_q <= '1';
+      elsif (pie_setup_received_r = '1') and (pie_epinfo_setup_received = '0') then
+        -- Falling edge of pulse: now safe to drop the match marker.
+        setup_is_ocp_match_q <= '0';
+      end if;
+    end if;
+  end process setup_match_clk_proc;
+
+  legacy_setup_received_gated <= pie_epinfo_setup_received and
+                                 (not setup_is_ocp_match_c) and
+                                 (not setup_is_ocp_match_q) and
+                                 (not arb_owns_c);
 
   -- ======================================================================
   -- SETUP capture
@@ -353,8 +445,40 @@ begin
   -- ======================================================================
   -- xfer-done re-emission to SV layer (gated by claim so we do not surface
   -- legacy EP completions to the recovery decoder).
+  --
+  -- IMPORTANT: USB 2.0 Sec 8.5.3 control transfers have a SETUP stage,
+  -- then DATA stage (optional, possibly multiple data packets), then
+  -- STATUS stage. The PIE fires pie_endtransfer at the END of EACH
+  -- stage. We must NOT forward the SETUP-stage pie_endtransfer to
+  -- ctrl_xfer_done, otherwise the SV ctrl_decode FSM treats it as
+  -- "transfer over" and clears rec_claim before the DATA stage starts
+  -- (research/usb_ocp_p7_datapath.md Q2). Iter-8 used
+  -- data_stage_seen_q with the heuristic "DATA stage begun when
+  -- ctrl_in_vld asserted"; FSDB (research/usb_ocp_p7_prot_cap.md)
+  -- showed ctrl_in_vld rises ~33 ns BEFORE the SETUP-stage
+  -- pie_endtransfer pulse, so the gate is already open. Switch to a
+  -- direct count: the FIRST pie_endtransfer after arb_owns_c rises is
+  -- provably the SETUP-stage end (DATA cannot complete before SETUP
+  -- completes); subsequent pulses legitimately mark DATA / STATUS end.
   -- ======================================================================
-  ctrl_xfer_done <= pie_endtransfer when arb_owns_c = '1' else '0';
+  setup_end_clk_proc : process (clk, reset_n)
+  begin
+    if reset_n = '0' then
+      setup_end_seen_q <= '0';
+    elsif rising_edge(clk) then
+      if arb_owns_c = '0' then
+        -- Inter-transfer: reset for the next transfer's SETUP stage.
+        setup_end_seen_q <= '0';
+      elsif (pie_endtransfer = '1') and (setup_end_seen_q = '0') then
+        -- First pie_endtransfer after claim = SETUP-stage end. Mark
+        -- seen so any subsequent pie_endtransfer pulses forward to
+        -- ctrl_xfer_done as legitimate DATA/STATUS-end markers.
+        setup_end_seen_q <= '1';
+      end if;
+    end if;
+  end process setup_end_clk_proc;
+
+  ctrl_xfer_done <= pie_endtransfer when (arb_owns_c = '1') and (setup_end_seen_q = '1') else '0';
 
   -- ======================================================================
   -- EP-info mux to PIE.

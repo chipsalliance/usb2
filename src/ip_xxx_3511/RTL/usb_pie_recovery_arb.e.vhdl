@@ -134,6 +134,18 @@ entity usb_pie_recovery_arb is
     -- transaction (asserted after SETUP classified as class-specific,
     -- deasserted on ctrl_xfer_done).  When low the arbiter passes the
     -- legacy bundle through unmodified.
-    rec_claim       : in  std_logic
+    rec_claim       : in  std_logic;
+
+    -- ------------------------------------------------------------------
+    -- Gated copy of pie_epinfo_setup_received for the legacy SIE / MCU
+    -- EPCS notification path. When the arbiter is claiming EP0
+    -- (rec_claim AND in-flight EP0 == REC_EPNR), the legacy SIE must
+    -- NOT see SETUP-received events for the recovery-class transfer
+    -- (DEVCMDSTAT.SETUP / INTSTAT.EP0OUT). Otherwise MCU firmware
+    -- races the SV recovery decoder and corrupts the EP0 response.
+    -- See research/usb_ocp_p7_claim_debug.md for the FSDB evidence.
+    -- Use legacy_setup_received_gated in the structure file in place
+    -- of the raw pie_epinfo_setup_received to feed the legacy SIE.
+    legacy_setup_received_gated : out std_logic
   );
 end entity usb_pie_recovery_arb;
