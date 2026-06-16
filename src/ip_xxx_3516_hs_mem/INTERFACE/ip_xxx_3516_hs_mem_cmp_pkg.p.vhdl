@@ -217,7 +217,7 @@ component ip_xxx_3516_hs_mem
        rec_ctrl_in_rdy     : out std_logic;
        rec_ctrl_set_stall  : in  std_logic;
        rec_ctrl_xfer_done  : out std_logic;
-       rec_ctrl_claim      : in  std_logic;
+       rec_ctrl_claim      : out std_logic;
 
        -- core testability
        async_disable:        in    std_logic;

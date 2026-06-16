@@ -35,9 +35,11 @@ module usb_ocp_recovery_top #(
   parameter int           CMS_ADDR_W     = 16,
   parameter int           NUM_CMS        = 2,
   // OCP Recovery v1.1 Section 8.5.2 RECOMMENDS interface number 0 for the
-  // recovery interface.  Make it a parameter so a future SoC integrator can
-  // relocate the OCP recovery interface without re-spinning RTL.  Used by
-  // the SETUP class-match filter (see rec_claim assertion below).
+  // recovery interface.  Phase 8: the class-match filter now lives in the
+  // VHDL arbiter (usb_pie_recovery_arb generic C_REC_IFACE_NUM) so this
+  // SV parameter is documentation-only here -- if a future SoC integrator
+  // relocates the OCP recovery interface, BOTH this parameter and the
+  // VHDL generic must be updated in lock-step.
   parameter logic [7:0]   REC_IFACE_NUM     = 8'h00,
   parameter logic [127:0] PROT_CAP_DEFAULT  = '0,
   parameter logic [191:0] DEVICE_ID_DEFAULT = '0
@@ -65,8 +67,11 @@ module usb_ocp_recovery_top #(
   output logic                    rec_ctrl_set_stall,
   input  logic                    rec_ctrl_xfer_done,
 
-  // Arbiter claim flag back to VHDL: '1' while recovery owns EP0.
-  output logic                    rec_ctrl_claim,
+  // Claim status from the VHDL arbiter: '1' while the arbiter has claimed
+  // an OCP recovery class transfer (SETUP / DATA / STATUS stages).  Phase
+  // 8: the arbiter owns claim derivation; this port is consumed here only
+  // for visibility / assertions (no functional fan-out into ctrl_decode).
+  input  logic                    rec_ctrl_claim,
 
   //----------------------------------------------------------------------------
   // External register-bus slave (driven by AHB sub-decoder upstream).
@@ -270,75 +275,25 @@ module usb_ocp_recovery_top #(
   assign ext_rb_err   = rb_err & (grant_ext | (owner_q == 2'b10));
 
   //////////////////////////////////////////////////////////////////////////////
-  // EP0 claim flag for the VHDL PIE arbiter.
+  // EP0 SETUP routing -- Phase 8 architecture
   //
-  // OCP Recovery v1.1 Section 8.5.1 "Class-specific control transfer" defines
-  // the SETUP-packet encoding the host uses to address the OCP recovery
-  // interface:
-  //   bmRequestType[6:5] == 2'b01     (Class)
-  //   bmRequestType[4:0] == 5'b00001  (Interface recipient)
-  //   bRequest           == 8'h00     (OCP_RECOVERY_TRANSFER)
-  //   wIndex[7:0]        == REC_IFACE_NUM (this build's recovery iface)
-  // bmRequestType[7] (direction), wValue (cmd code / byte index), and wLength
-  // are downstream-parser fields and do NOT participate in the claim filter.
+  // The VHDL arbiter (usb_pie_recovery_arb) performs OCP class decode
+  // INLINE on the captured SETUP beat and pre-filters rec_setup_pkt_vld
+  // so that only OCP-class SETUPs ever pulse into this SV stack.  All
+  // non-OCP SETUPs flow through the arbiter to the legacy SIE
+  // unmodified, so standard USB enumeration (GET_DESCRIPTOR / SET_ADDRESS
+  // / SET_CONFIGURATION / GET_STATUS / ...) continues to be handled by
+  // the MCU EPCS.  See usb_pie_recovery_arb.{e,m}.vhdl for the class-
+  // match definition (OCP Recovery v1.1 Sec 8.5.1; USB 2.0 Sec 9.3
+  // Tbl 9-2 SETUP byte layout).
   //
-  // Filtering at claim assertion ensures non-OCP EP0 SETUPs (standard USB
-  // enumeration: GET_DESCRIPTOR, SET_ADDRESS, SET_CONFIGURATION, ...) keep
-  // flowing through the VHDL arbiter to the legacy usb_pie unmodified
-  // (arb_owns_c stays low; pass-through mux is bit-identical to un-arbitered).
-  //
-  // setup_pkt[ 7: 0] = byte0 = bmRequestType
-  // setup_pkt[15: 8] = byte1 = bRequest
-  // setup_pkt[31:16] = bytes 2..3 = wValue (LE)
-  // setup_pkt[47:32] = bytes 4..5 = wIndex (LE)
-  // setup_pkt[63:48] = bytes 6..7 = wLength (LE)
+  // Consequence: this module no longer needs a SETUP-classifier
+  // (setup_is_ocp_c), a setup-vld filter (setup_pkt_vld_filtered) or
+  // its own claim flop (rec_claim_q).  All three were removed in the
+  // Phase 8 rewrite -- they were the source of the multi-cycle latency
+  // and race conditions documented in research/usb_ocp_p7_*.md.
   //////////////////////////////////////////////////////////////////////////////
-  logic       setup_is_ocp_c;
-  logic [7:0] setup_bmrt_c;
-  logic [7:0] setup_brq_c;
-  logic [7:0] setup_widx_lo_c;
-  logic [7:0] setup_widx_hi_c;
 
-  // OCP Recovery v1.1 Section 8.5.1 / USB 2.0 Section 9.3: wIndex[15:8] is
-  // reserved (host MUST drive 0).  Reject non-conformant SETUPs at the
-  // claim filter (C5: prevents yanking EP0 away from the legacy stack on
-  // the basis of a partial match).
-  always_comb begin
-    setup_bmrt_c    = rec_setup_pkt[7:0];
-    setup_brq_c     = rec_setup_pkt[15:8];
-    setup_widx_lo_c = rec_setup_pkt[39:32];
-    setup_widx_hi_c = rec_setup_pkt[47:40];
-    setup_is_ocp_c  = (setup_bmrt_c[6:5] == 2'b01) &&
-                      (setup_bmrt_c[4:0] == 5'b00001) &&
-                      (setup_brq_c       == 8'h00)   &&
-                      (setup_widx_lo_c   == REC_IFACE_NUM) &&
-                      (setup_widx_hi_c   == 8'h00);
-  end
-
-  logic rec_claim_q;
-  logic setup_pkt_vld_filtered;
-
-  // Only the SETUPs that match the OCP class filter are surfaced into the
-  // recovery decoder.  Non-matching SETUPs still reach the VHDL arbiter
-  // (and thus the legacy stack) untouched because the arbiter's SETUP
-  // capture is independent of rec_claim.
-  assign setup_pkt_vld_filtered = rec_setup_pkt_vld & setup_is_ocp_c;
-
-  always_ff @(posedge clk) begin
-    if (rst) begin
-      rec_claim_q <= 1'b0;
-    end else if (setup_pkt_vld_filtered) begin
-      rec_claim_q <= 1'b1;
-    end else if (rec_ctrl_xfer_done | rec_ctrl_set_stall) begin
-      rec_claim_q <= 1'b0;
-    end
-  end
-  // C6: rec_ctrl_claim must be purely registered to avoid a same-cycle
-  // combinational path from rec_setup_pkt[*] through the SETUP-class
-  // filter back into the VHDL arbiter mux.  The 1-cycle claim latency
-  // is absorbed by USB tFRH between SETUP and the first data-phase
-  // packet (USB 2.0 Section 7.1.18.1 / 8.7.2).
-  assign rec_ctrl_claim = rec_claim_q;
 
   //////////////////////////////////////////////////////////////////////////////
   // A2 : USB control-endpoint request decoder -> reg-bus master
@@ -348,7 +303,7 @@ module usb_ocp_recovery_top #(
     .clk             (clk),
     .rst             (rst),
 
-    .setup_pkt_vld   (setup_pkt_vld_filtered),
+    .setup_pkt_vld   (rec_setup_pkt_vld),
     .setup_pkt       (rec_setup_pkt),
     .ctrl_out_data   (rec_ctrl_out_data),
     .ctrl_out_vld    (rec_ctrl_out_vld),

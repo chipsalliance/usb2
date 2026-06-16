@@ -2,37 +2,54 @@
 --  ----------------------------------------------------------------------------
 --  File: usb_pie_recovery_arb.e.vhdl
 --
---  Purpose:
---    Arbitrate the shared, EP-multiplexed PIE bus surface (see
---    usb_pie.m.vhdl entity ports lines 335..395) between the legacy USB EP
---    table (driven by usb_dma via usb_synchronizer) and an OCP Recovery v1.1
---    endpoint living in SystemVerilog above the wrapper.
+--  Purpose
+--  -------
+--  Arbitrate the shared, EP-multiplexed PIE bus surface (see usb_pie.m.vhdl
+--  ports lines 335..395) between:
+--    (a) the legacy USB EP table (driven by usb_dma via usb_synchronizer)
+--    (b) an OCP Recovery v1.1 endpoint living in SystemVerilog above the
+--        ip_xxx_3511_hs / ip_xxx_3516_hs_mem wrapper boundary.
 --
---    Architecture: EP0-only (per plan D0.A).  Only EP0 traffic is shared;
---    bulk endpoints belong exclusively to the legacy EP table.  Arbitration
---    on EP0 is controlled by the recovery side asserting rec_claim while it
---    owns an in-flight class request data/status stage.  When rec_claim is
---    not asserted the arbiter is a transparent pass-through: legacy_epinfo_*
---    => epinfo_to_pie_*.
+--  Phase 8 architecture
+--  --------------------
+--  Class-decode is performed INLINE in this arbiter on the captured SETUP
+--  beat.  The arbiter is the SOLE router that decides which side handles a
+--  given EP0 control transfer:
+--    - Recovery-class SETUP        -> SV recovery stack (autonomous HW resp).
+--                                     Legacy SIE / MCU EPCS NEVER sees the
+--                                     SETUP-received notification for the
+--                                     duration of the transfer.
+--    - Any other EP0 SETUP, any    -> legacy SIE / MCU EPCS (bit-identical
+--      non-EP0 transaction, any      pass-through of the un-arbitered IP).
+--      DATA / handshake beat
 --
---    Upper-side surface: byte-stream contract identical to the legacy
---    usb_ocp_recovery_ep_adapter (deleted in Phase 1c per plan D0.B) so
---    that the SV stack (ctrl_decode, regs, cms_fifo, fsm) connects
---    unmodified.
+--  This eliminates the response-side-mux race conditions that motivated the
+--  Phase 7 -> Phase 8 rewrite (see /home/ws/caliptra/cwhitehead/copilot/
+--  research/usb_ocp_p7_{audit,claim_debug,gate_debug,datapath,prot_cap}.md).
 --
---  Spec references:
---    - OCP Recovery v1.1 Section 8.5 (USB transport): class-specific control
---      requests on EP0 (bmRequestType[6:5]=01 + recipient=interface).
---    - USB 2.0 Section 8.5.3 (Control transfers / SETUP packet framing): 8
---      bytes payload, ACK by device within 1.5 us @ HS (already met by
---      usb_pie; arbiter does not lie in this path).
---    - USB 2.0 Section 9.3-9.4 (standard request framework).
+--  Spec references
+--  ---------------
+--  - OCP Recovery v1.1 Section 8.5     -- USB transport overview.
+--  - OCP Recovery v1.1 Section 8.5.1   -- Class-specific control transfer
+--                                         SETUP encoding:
+--                                           bmRequestType[6:5] = 01 (Class)
+--                                           bmRequestType[4:0] = 00001 (Iface)
+--                                           bRequest           = OCP_RECOVERY_
+--                                                                TRANSFER (00h)
+--                                           wIndex[7:0]        = REC_IFACE_NUM
+--  - USB 2.0 Section 5.5               -- Control transfer model.
+--  - USB 2.0 Section 8.5.3             -- Control transfer SETUP/DATA/STATUS
+--                                         phasing (and the abandon-on-new-
+--                                         SETUP rule).
+--  - USB 2.0 Section 9.3 Table 9-2     -- SETUP packet byte layout
+--                                         (little-endian on the wire).
 --
---  Coding conventions (project VHDL):
---    - library IEEE; numeric_std; no std_logic_unsigned / arith.
---    - _r suffix on registered signals, _nxt suffix on next-state.
---    - Two-process FSM, defaults at top of comb process.
---    - Async active-low reset (reset_n) clk_proc.
+--  Coding conventions
+--  ------------------
+--  - library IEEE; numeric_std; no std_logic_unsigned / std_logic_arith.
+--  - _r suffix on registered signals, _nxt on next-state, _c on comb.
+--  - Two-process FSM (combinational _comb_proc + clocked _clk_proc).
+--  - Asynchronous active-low reset (reset_n).
 --  ----------------------------------------------------------------------------
 
 library IEEE;
@@ -41,21 +58,27 @@ use IEEE.numeric_std.all;
 
 entity usb_pie_recovery_arb is
   generic (
-    USB_DATAWIDTH : integer := 64;
-    -- EP number that carries OCP recovery class-specific requests.
-    -- Per OCP Recovery v1.1 Section 8.5 the recovery interface uses EP0
-    -- for control-class requests.
-    C_REC_EPNR    : integer := 0
+    USB_DATAWIDTH    : integer := 64;
+    -- USB EP number that carries OCP recovery control requests.  Per OCP
+    -- Recovery v1.1 Sec 8.5 the recovery interface uses the device default
+    -- control pipe (EP0).  Kept as a generic for backward compatibility
+    -- with the existing structure-file binding.
+    C_REC_EPNR       : integer := 0;
+    -- USB Interface Number whose wIndex[7:0] selects the recovery interface
+    -- for class-specific SETUPs (OCP Recovery v1.1 Sec 8.5.1, also USB 2.0
+    -- Sec 9.3 Tbl 9-2 wIndex semantics for Interface recipients).
+    -- Default 0 matches the current SoC composite-device build.
+    C_REC_IFACE_NUM  : integer range 0 to 255 := 0
   );
   port (
     -- ------------------------------------------------------------------
-    -- Clock / async active-low reset (matches usb_pie.m.vhdl convention)
+    -- Clock / async active-low reset (matches usb_pie.m.vhdl convention).
     -- ------------------------------------------------------------------
     clk      : in  std_logic;
     reset_n  : in  std_logic;
 
     -- ------------------------------------------------------------------
-    -- Lower side - PIE snoop (PIE outputs - this arbiter only reads them)
+    -- Lower side - PIE snoop inputs.
     -- ------------------------------------------------------------------
     pie_epinfo_req            : in  std_logic;
     pie_epinfo_epnr           : in  std_logic_vector(3 downto 0);
@@ -71,9 +94,7 @@ entity usb_pie_recovery_arb is
     pie_txdata_fetched        : in  std_logic;
 
     -- ------------------------------------------------------------------
-    -- Lower side - legacy EP table (usb_dma via usb_synchronizer) inputs.
-    -- These mirror exactly what would otherwise go into the PIE entity's
-    -- epinfo_* input bundle.
+    -- Lower side - legacy EP-table bundle (from usb_synchronizer).
     -- ------------------------------------------------------------------
     legacy_epinfo_valid       : in  std_logic;
     legacy_epinfo_active      : in  std_logic;
@@ -87,7 +108,7 @@ entity usb_pie_recovery_arb is
     legacy_epinfo_txdata_valid: in  std_logic;
 
     -- ------------------------------------------------------------------
-    -- Lower side - muxed outputs to PIE entity's epinfo_* input bundle.
+    -- Lower side - muxed bundle delivered into usb_pie's epinfo input set.
     -- ------------------------------------------------------------------
     epinfo_to_pie_valid       : out std_logic;
     epinfo_to_pie_active      : out std_logic;
@@ -102,50 +123,56 @@ entity usb_pie_recovery_arb is
 
     -- ------------------------------------------------------------------
     -- Upper side - byte-stream surface to the SV recovery stack.
-    -- Matches the contract of the (now deleted, Phase 1c per plan D0.B)
-    -- usb_ocp_recovery_ep_adapter upper side.
+    -- Same contract that the deleted (Phase 1c) usb_ocp_recovery_ep_adapter
+    -- presented; the SV ctrl_decode + regs + cms_fifo + fsm connect
+    -- unmodified.  Phase 8 change: setup_pkt_vld is PRE-FILTERED -- the SV
+    -- side never sees a non-OCP-class SETUP and consequently no longer
+    -- needs its own SETUP-classifier flop.
     -- ------------------------------------------------------------------
-
-    -- SETUP packet (8 bytes captured from pie_rxdata, qualified by
-    -- pie_epinfo_setup + pie_rxdatavalid).
     setup_pkt_vld   : out std_logic;
     setup_pkt       : out std_logic_vector(63 downto 0);
 
-    -- Control-OUT byte stream (host -> device, data stage of EP0 class req).
     ctrl_out_data   : out std_logic_vector(7 downto 0);
     ctrl_out_vld    : out std_logic;
     ctrl_out_last   : out std_logic;
     ctrl_out_rdy    : in  std_logic;
 
-    -- Control-IN byte stream (device -> host, response on EP0).
     ctrl_in_data    : in  std_logic_vector(7 downto 0);
     ctrl_in_vld     : in  std_logic;
     ctrl_in_last    : in  std_logic;
     ctrl_in_rdy     : out std_logic;
 
-    -- Stall request from recovery; OR'd into epinfo_to_pie_stall.
+    -- STALL request from SV recovery; OR'd into epinfo_to_pie_stall while
+    -- the arbiter holds claim (OCP Recovery v1.1 Sec 8.5: malformed class
+    -- requests SHALL be STALLed).
     ctrl_set_stall  : in  std_logic;
 
-    -- End-of-transaction pulse to SV (re-emit of pie_endtransfer while
-    -- recovery owns EP0).
+    -- End-of-stage pulse to SV: re-emit of pie_endtransfer ONLY for the
+    -- DATA-stage and STATUS-stage of the claimed transfer (the SETUP-
+    -- stage pie_endtransfer is consumed internally by the claim FSM and
+    -- is NEVER forwarded; this was the iter-8 Phase 7 corruption root
+    -- cause -- see research/usb_ocp_p7_datapath.md Q2).
     ctrl_xfer_done  : out std_logic;
 
-    -- Recovery claim: high while ctrl_decode owns the in-flight EP0
-    -- transaction (asserted after SETUP classified as class-specific,
-    -- deasserted on ctrl_xfer_done).  When low the arbiter passes the
-    -- legacy bundle through unmodified.
-    rec_claim       : in  std_logic;
+    -- ------------------------------------------------------------------
+    -- Claim status (output).  '1' while the arbiter has claimed an OCP
+    -- recovery class transfer (any of SETUP / DATA / STATUS stages).
+    -- The SV wrapper consumes this purely for visibility; it is NOT in
+    -- any combinational feedback loop into the arbiter (the arbiter
+    -- decides claim from its own state machine).
+    -- ------------------------------------------------------------------
+    rec_claim_status : out std_logic;
 
     -- ------------------------------------------------------------------
     -- Gated copy of pie_epinfo_setup_received for the legacy SIE / MCU
-    -- EPCS notification path. When the arbiter is claiming EP0
-    -- (rec_claim AND in-flight EP0 == REC_EPNR), the legacy SIE must
-    -- NOT see SETUP-received events for the recovery-class transfer
-    -- (DEVCMDSTAT.SETUP / INTSTAT.EP0OUT). Otherwise MCU firmware
-    -- races the SV recovery decoder and corrupts the EP0 response.
-    -- See research/usb_ocp_p7_claim_debug.md for the FSDB evidence.
-    -- Use legacy_setup_received_gated in the structure file in place
-    -- of the raw pie_epinfo_setup_received to feed the legacy SIE.
+    -- EPCS notification path.  This signal MUST be routed to the legacy
+    -- usb_synchronizer in place of the raw pie_epinfo_setup_received so
+    -- that the MCU EPCS firmware NEVER sees a SETUP-received notification
+    -- for an OCP recovery class transfer.  Otherwise both the SV
+    -- recovery decoder and the MCU firmware would race to respond on the
+    -- same EP0 transfer (Phase 7 failure mode, see
+    -- research/usb_ocp_p7_claim_debug.md).
+    -- ------------------------------------------------------------------
     legacy_setup_received_gated : out std_logic
   );
 end entity usb_pie_recovery_arb;

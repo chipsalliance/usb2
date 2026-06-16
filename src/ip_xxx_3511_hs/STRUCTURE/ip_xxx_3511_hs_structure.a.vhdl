@@ -271,8 +271,9 @@ constant C_NBDEV          : integer := 1;
 -- ----------------------------------------------------------------------------
 component usb_pie_recovery_arb
   generic (
-    USB_DATAWIDTH : integer := 64;
-    C_REC_EPNR    : integer := 0
+    USB_DATAWIDTH    : integer := 64;
+    C_REC_EPNR       : integer := 0;
+    C_REC_IFACE_NUM  : integer range 0 to 255 := 0
   );
   port (
     clk      : in  std_logic;
@@ -329,8 +330,7 @@ component usb_pie_recovery_arb
     ctrl_set_stall  : in  std_logic;
     ctrl_xfer_done  : out std_logic;
 
-    rec_claim       : in  std_logic;
-
+    rec_claim_status            : out std_logic;
     legacy_setup_received_gated : out std_logic
   );
 end component;
@@ -1506,8 +1506,9 @@ usb_dma_1 : usb_dma
 -- ----------------------------------------------------------------------------
 usb_pie_recovery_arb_1 : usb_pie_recovery_arb
   generic map (
-    USB_DATAWIDTH => USBPIE_DATAWIDTH,
-    C_REC_EPNR    => 0
+    USB_DATAWIDTH   => USBPIE_DATAWIDTH,
+    C_REC_EPNR      => 0,
+    C_REC_IFACE_NUM => 0
   )
   port map (
     clk      => pie_clk,
@@ -1560,7 +1561,7 @@ usb_pie_recovery_arb_1 : usb_pie_recovery_arb
     ctrl_in_rdy     => rec_ctrl_in_rdy,
     ctrl_set_stall  => rec_ctrl_set_stall,
     ctrl_xfer_done  => rec_ctrl_xfer_done,
-    rec_claim       => rec_ctrl_claim,
+    rec_claim_status            => rec_ctrl_claim,
     legacy_setup_received_gated => sieint_epinfo_setup_received_gated
   );
 
