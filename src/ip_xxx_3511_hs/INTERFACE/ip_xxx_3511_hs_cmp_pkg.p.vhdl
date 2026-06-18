@@ -230,11 +230,13 @@ component ip_xxx_3511_hs
        -- OCP Recovery v1.1 Section 8.5 - PIE arbiter upper-side byte stream
        rec_setup_pkt_vld   : out std_logic;
        rec_setup_pkt       : out std_logic_vector(63 downto 0);
-       rec_ctrl_out_data   : out std_logic_vector(7 downto 0);
+       rec_ctrl_out_data   : out std_logic_vector(31 downto 0);
+       rec_ctrl_out_be   : out std_logic_vector(3 downto 0);
        rec_ctrl_out_vld    : out std_logic;
        rec_ctrl_out_last   : out std_logic;
        rec_ctrl_out_rdy    : in  std_logic;
-       rec_ctrl_in_data    : in  std_logic_vector(7 downto 0);
+       rec_ctrl_in_data    : in std_logic_vector(31 downto 0);
+       rec_ctrl_in_be    : in std_logic_vector(3 downto 0);
        rec_ctrl_in_vld     : in  std_logic;
        rec_ctrl_in_last    : in  std_logic;
        rec_ctrl_in_rdy     : out std_logic;

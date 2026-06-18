@@ -2,47 +2,40 @@
 // ============================================================================
 // usb_ocp_recovery_rb_adapter.sv
 //
-// Byte-granular OCP Recovery v1.1 reg-bus adapter.  Bridges the byte-wide
-// rb_* protocol (cmd[7:0] + offset[15:0]) used by A2 (ctrl_decode) / the
-// AHB sub-decoder to the DWORD-aligned, passthrough CPU interface emitted
-// by the peakrdl-generated usb_ocp_recovery regblock (see
+// Word-granular OCP Recovery v1.1 reg-bus adapter.  Bridges the 32-bit
+// word-wide rb_* protocol (cmd[7:0] + word offset[15:0] + wdata[31:0] +
+// wstrb[3:0]) used by A2 (ctrl_decode) and the SoC AHB sub-decoder to the
+// DWORD-aligned passthrough CPU interface emitted by the peakrdl-generated
+// usb_ocp_recovery regblock (see
 // third_party/usb2/src/integration/rtl/generated/usb_ocp_recovery_reg.sv).
 //
-// Address layout (OCP cmd -> byte offset in the regblock window) is the
-// single source of truth in third_party/usb2/systemrdl/usb_ocp_recovery_reg.rdl
-// and is reproduced here as a small LUT.  No other field-layout constant
-// is duplicated; per-byte field placement is handled by the regblock
-// itself.
+// rb_* is native 32-bit.  Bytes exist only on the USB wire and on the SoC AHB
+// byte aperture; everything from here up to the PIE 64-bit beat is word-wide.
+// rb_offset is a word index into the command window.  DEVICE_RESET and
+// RECOVERY_CTRL flow through the normal CPUIF path so the regblock owns field
+// layout and swmod generation, while the top-level wrapper aligns those swmod
+// strobes with the registered field values before they reach the recovery FSM.
+// Writes drive cpuif_wr_data = rb_wdata and expand cpuif_wr_biten from
+// rb_wstrb (each strobe bit -> 8 biten bits) for native byte-enable partial-
+// word writes.
 //
-// FIFO branch:  Commands 0x2A/0x2B/0x2C/0x2D/0x2E (INDIRECT_STATUS,
-// INDIRECT_DATA, INDIRECT_FIFO_*) are routed to A4 (usb_ocp_recovery_cms_fifo)
-// instead of the regblock.  This adapter is responsible for the steering
-// and pass-through ack/err/rdata.
+// Endianness is preserved end-to-end: OCP byte at command-window offset N maps
+// to CPUIF bits [N*8 +: 8] (little-endian byte-in-word).  Word offset W maps
+// to CPUIF byte address cmd_base + (W << 2) and rb_wdata[7:0] is the lowest
+// command-window byte of that word.  This matches OCP Recovery v1.1 Sec 9.2
+// (little-endian) and the PeakRDL little-endian field placement.
 //
-// Sideband strobes:
-//   DEVICE_RESET (0x25) and RECOVERY_CTRL (0x26) are written to / read from
-//   the adapter's own latches rather than the regblock.  Rationale:
-//     - RDL line 507 declares ACTIVATE_REC_IMG onwrite=woclr, and RDL
-//       line 460 reset for RESET_CTRL is 0.  Both fields use the FSM's
-//       consume-clear pattern (latch byte on SW write; HW clears on
-//       FSM acknowledge), which is not equivalent to RDL onwrite=woclr
-//       (which would clear bits the host wrote 1 to).  Owning the
-//       storage in the adapter preserves the FSM contract documented
-//       in usb_ocp_recovery_regs.sv (lines 71-75, 454-463, 486-493).
-//     - This makes the adapter the writable hand-off boundary for the
-//       OCP "write payload then activate" handshake.
-//   HW_STATUS (0x28) writes are sideband-only (pulse + wdata to FSM);
-//   no cpuif write is issued because the regblock HW_STATUS fields are
-//   hw=w with we=false (host writes would be ignored).  This matches
-//   the legacy usb_ocp_recovery_regs.sv behavior (lines 495-498).
-//   PROTOCOL_ERROR rclr (OCP v1.1 Sec 9.2 Tbl 9-5) pulses on the ack
-//   cycle of a host read of DEVICE_STATUS byte 1, matching the legacy
-//   module's behavior (lines 429-435).
+// FIFO branch: commands 0x2A/0x2B/0x2C/0x2D/0x2E (INDIRECT_STATUS,
+// INDIRECT_DATA, INDIRECT_FIFO_*) are routed to A4 (usb_ocp_recovery_cms_fifo).
+// This adapter forwards the word + strobe + word offset straight through and
+// returns cms_fifo's word-level ack/err/rdata combinationally; cms_fifo owns
+// the byte-wise sequencing against external CMS SRAM.
 //
-// Latency: matches the legacy module:
-//   - Local cmd ack: 1 cycle after rb_wr/rb_rd (registered).
-//   - FIFO cmd ack/err/rdata: combinational pass-through from A4
-//     (which itself ack's same-cycle).
+// Latency:
+//   - Regblock cmd ack: 1 cycle after rb_wr/rb_rd (registered), single-cycle
+//     cpuif_req pulse so swmod fires exactly once per word.
+//   - FIFO cmd ack: word-level ack from cms_fifo (combinational passthrough;
+//     register records same-cycle, SRAM records when the byte sequence ends).
 //
 // Reset: synchronous, active-high (SV integration convention).
 // ============================================================================
@@ -52,35 +45,39 @@ module usb_ocp_recovery_rb_adapter (
   input  logic        rst,
 
   // --------------------------------------------------------------------------
-  // Byte-wide reg-bus (producer: A2 ctrl_decode or AHB sub-decoder).
+  // Word-wide reg-bus (producer: A2 ctrl_decode or top-level arbiter / AHB).
+  // rb_offset is a word index into the command window.  rb_wstrb marks the
+  // valid byte lanes (writes: byte-enable; reads: which lanes the consumer
+  // will use, so the FIFO path returns exactly that many bytes).
   // --------------------------------------------------------------------------
   input  logic [7:0]  rb_cmd,
   input  logic [15:0] rb_offset,
   input  logic        rb_wr,
   input  logic        rb_rd,
-  input  logic [7:0]  rb_wdata,
-  input  logic        rb_be,
-  output logic [7:0]  rb_rdata,
+  input  logic [31:0] rb_wdata,
+  input  logic [3:0]  rb_wstrb,
+  output logic [31:0] rb_rdata,
   output logic        rb_ack,
   output logic        rb_err,
 
   // --------------------------------------------------------------------------
-  // FIFO branch to A4 (cms_fifo).  Unchanged from the legacy interface.
+  // FIFO branch to A4 (cms_fifo).  Native 32-bit word + 4-bit byte
+  // strobe passthrough; fifo_rb_offset carries the word index of the command
+  // record.
   // --------------------------------------------------------------------------
   output logic        fifo_rb_sel,
   output logic [7:0]  fifo_rb_cmd,
   output logic [15:0] fifo_rb_offset,
   output logic        fifo_rb_wr,
   output logic        fifo_rb_rd,
-  output logic [7:0]  fifo_rb_wdata,
-  input  logic [7:0]  fifo_rb_rdata,
+  output logic [31:0] fifo_rb_wdata,
+  output logic [3:0]  fifo_rb_wstrb,
+  input  logic [31:0] fifo_rb_rdata,
   input  logic        fifo_rb_ack,
   input  logic        fifo_rb_err,
 
   // --------------------------------------------------------------------------
-  // peakrdl-regblock passthrough CPU interface.  Same-cycle (0-cycle)
-  // ack/err for both reads and writes per the regblock's "balanced
-  // latency" passthrough.
+  // peakrdl-regblock passthrough CPU interface (0-cycle balanced ack).
   // --------------------------------------------------------------------------
   output logic        cpuif_req,
   output logic        cpuif_req_is_wr,
@@ -94,21 +91,13 @@ module usb_ocp_recovery_rb_adapter (
   input  logic        cpuif_wr_err,
 
   // --------------------------------------------------------------------------
-  // Sideband to/from A5 FSM.  Semantics match usb_ocp_recovery_regs.sv.
+  // HW_STATUS sideband write pulse to A5 FSM.  HW_STATUS regblock fields are
+  // hw=w / we=false (host writes ignored at the regblock), so the host write
+  // is converted to a sideband pulse + low byte rather than a cpuif write.
+  // proto_err_rd_pulse implements PROTOCOL_ERROR onread=rclr (OCP Recovery
+  // v1.1 Sec 9.2 Tbl 9-5): pulse on a successful read of the DEVICE_STATUS
+  // word that contains PROT_ERROR (byte 1 -> word 0).
   // --------------------------------------------------------------------------
-  output logic        device_reset_wr,
-  output logic [7:0]  device_reset_ctrl,
-  output logic [7:0]  device_reset_forced,
-  output logic [7:0]  device_reset_iface,
-
-  output logic        recovery_ctrl_wr,
-  output logic        recovery_ctrl_wr_cms,
-  output logic        recovery_ctrl_wr_img_sel,
-  output logic [7:0]  recovery_ctrl_cms,
-  output logic [7:0]  recovery_ctrl_img_sel,
-  output logic [7:0]  recovery_ctrl_activate,
-  input  logic        recovery_ctrl_activate_consume,
-
   output logic        hw_status_wr,
   output logic [7:0]  hw_status_wdata,
   output logic        proto_err_rd_pulse
@@ -120,14 +109,14 @@ module usb_ocp_recovery_rb_adapter (
   //   PROT_CAP_0       @ 0x000  (cmd 0x22, 16 B)
   //   DEVICE_ID_0      @ 0x010  (cmd 0x23, 24 B)
   //   DEVICE_STATUS_0  @ 0x028  (cmd 0x24, 64 B)
-  //   DEVICE_RESET     @ 0x068  (cmd 0x25,  3 B, adapter-owned)
-  //   RECOVERY_CTRL    @ 0x06C  (cmd 0x26,  3 B, adapter-owned)
+  //   DEVICE_RESET     @ 0x068  (cmd 0x25,  3 B, CPUIF/swmod)
+  //   RECOVERY_CTRL    @ 0x06C  (cmd 0x26,  3 B, CPUIF/swmod)
   //   RECOVERY_STATUS  @ 0x070  (cmd 0x27,  2 B)
   //   HW_STATUS        @ 0x074  (cmd 0x28,  4 B, write is sideband-only)
   //   INDIRECT_CTRL_0  @ 0x078  (cmd 0x29,  6 B)
   //   INDIRECT_STATUS  @ 0x080  (cmd 0x2A, FIFO-routed)
   //   INDIRECT_DATA    @ 0x088  (cmd 0x2B, FIFO-routed)
-  //   INDIRECT_FIFO_*  @ 0x184  (cmds 0x2C..0x2E, FIFO-routed)
+  //   INDIRECT_FIFO_*  @ 0x100+ (cmds 0x2C..0x2E, FIFO-routed)
   //   VENDOR           @ 0x1A4  (cmd 0x2F,  1 B stub)
   // --------------------------------------------------------------------------
   localparam logic [7:0] CMD_PROT_CAP             = 8'h22;
@@ -145,13 +134,9 @@ module usb_ocp_recovery_rb_adapter (
   localparam logic [7:0] CMD_INDIRECT_FIFO_DATA   = 8'h2E;
   localparam logic [7:0] CMD_VENDOR               = 8'h2F;
 
-  // Byte offsets within DEVICE_RESET / RECOVERY_CTRL / DEVICE_STATUS used
-  // for sideband decoding (OCP Recovery v1.1 Sec 9.2 Tbls 9-5, 9-7, 9-9).
-  localparam logic [1:0] OFF_DR_RESET_CONTROL = 2'd0;
-  localparam logic [1:0] OFF_RC_CMS           = 2'd0;
-  localparam logic [1:0] OFF_RC_IMG_SEL       = 2'd1;
-  localparam logic [1:0] OFF_RC_ACTIVATE      = 2'd2;
-  localparam logic [5:0] OFF_DS_PROT_ERROR    = 6'd1;
+  // DEVICE_STATUS word 0 holds DEV_STATUS (byte 0) + PROT_ERROR (byte 1)
+  // + REC_REASON_CODE (bytes 2..3); reading word 0 read-clears PROTOCOL_ERROR.
+  localparam logic [15:0] WOFF_DS_WORD0 = 16'd0;
 
   // --------------------------------------------------------------------------
   // FIFO-routing decode
@@ -169,7 +154,7 @@ module usb_ocp_recovery_rb_adapter (
   end
 
   // --------------------------------------------------------------------------
-  // Local command base address + payload length
+  // Local command base address + payload length (bytes)
   // --------------------------------------------------------------------------
   logic        is_local_cmd;
   logic [11:0] cmd_base;
@@ -192,295 +177,173 @@ module usb_ocp_recovery_rb_adapter (
     endcase
   end
 
-  logic access;
-  logic off_ok;
-  logic local_access;
-  logic local_write_ok;
-  logic local_read_ok;
+  // Byte address of the addressed word base = cmd_base + (rb_offset << 2).
+  // off_ok: the word base byte must lie inside the command window.  Every
+  // valid word (including a partial final word) has a base byte < cmd_len.
+  logic        access;
+  logic [13:0] word_base_byte;
+  logic        off_ok;
+  logic        local_access;
   assign access         = rb_wr | rb_rd;
-  assign off_ok         = (rb_offset < cmd_len);
-  assign local_access   = access  & is_local_cmd & ~is_fifo_cmd;
-  assign local_write_ok = rb_wr   & is_local_cmd & ~is_fifo_cmd & off_ok & rb_be;
-  assign local_read_ok  = rb_rd   & is_local_cmd & ~is_fifo_cmd & off_ok;
+  assign word_base_byte = {rb_offset[11:0], 2'b00};
+  assign off_ok         = (word_base_byte < {2'b00, cmd_len[11:0]});
+  assign local_access   = access & is_local_cmd & ~is_fifo_cmd;
 
   // --------------------------------------------------------------------------
-  // FIFO branch pass-through (unchanged from legacy regs.sv:222-227).
-  // --------------------------------------------------------------------------
-  assign fifo_rb_sel    = is_fifo_cmd;
-  assign fifo_rb_cmd    = rb_cmd;
-  assign fifo_rb_offset = rb_offset;
-  assign fifo_rb_wr     = rb_wr & is_fifo_cmd;
-  assign fifo_rb_rd     = rb_rd & is_fifo_cmd;
-  assign fifo_rb_wdata  = rb_wdata;
-
-  // --------------------------------------------------------------------------
-  // Adapter-owned DEVICE_RESET / RECOVERY_CTRL latches and pulses.
+  // FIFO branch passthrough.
   //
-  // These mirror usb_ocp_recovery_regs.sv (lines 146-153, 440-498) so the
-  // FSM sees bit-identical sideband timing.
+  // The word access engine lives entirely in A4 (cms_fifo): this adapter
+  // forwards the 32-bit word + 4-bit byte strobe + word offset straight
+  // through and returns cms_fifo's word-level ack/err/rdata combinationally.
+  // cms_fifo sequences the byte-wide SRAM access internally so the shared
+  // reg-bus still observes exactly one ack per word access.
   // --------------------------------------------------------------------------
-  logic [7:0] device_reset_ctrl_q;
-  logic [7:0] device_reset_forced_q;
-  logic [7:0] device_reset_iface_q;
-  logic       device_reset_wr_q;
-
-  logic [7:0] recovery_ctrl_cms_q;
-  logic [7:0] recovery_ctrl_img_sel_q;
-  logic [7:0] recovery_ctrl_activate_q;
-  logic       recovery_ctrl_wr_q;
-  logic       recovery_ctrl_wr_cms_q;
-  logic       recovery_ctrl_wr_img_sel_q;
-
-  logic       hw_status_wr_q;
-  logic [7:0] hw_status_wdata_q;
-  logic       proto_err_rd_pulse_q;
-
-  logic       wr_device_reset;
-  logic       wr_recovery_ctrl;
-  logic       wr_hw_status;
-  assign wr_device_reset  = local_write_ok & (rb_cmd == CMD_DEVICE_RESET);
-  assign wr_recovery_ctrl = local_write_ok & (rb_cmd == CMD_RECOVERY_CTRL);
-  assign wr_hw_status     = local_write_ok & (rb_cmd == CMD_HW_STATUS);
-
-  // --------------------------------------------------------------------------
-  // Adapter-owned read mux for DEVICE_RESET / RECOVERY_CTRL.  DEVICE_RESET
-  // reads return 0 (WO per OCP Recovery v1.1 Sec 9.2 Tbl 9-7); RECOVERY_CTRL
-  // returns the latched bytes.
-  // --------------------------------------------------------------------------
-  logic [7:0] adapter_rdata_c;
   always_comb begin
-    adapter_rdata_c = 8'h00;
-    if (rb_cmd == CMD_RECOVERY_CTRL) begin
-      unique case (rb_offset[1:0])
-        (OFF_RC_CMS):      adapter_rdata_c = recovery_ctrl_cms_q;
-        (OFF_RC_IMG_SEL):  adapter_rdata_c = recovery_ctrl_img_sel_q;
-        (OFF_RC_ACTIVATE): adapter_rdata_c = recovery_ctrl_activate_q;
-        default:             adapter_rdata_c = 8'h00;
-      endcase
-    end
+    fifo_rb_sel    = is_fifo_cmd;
+    fifo_rb_cmd    = rb_cmd;
+    fifo_rb_offset = rb_offset;            // WORD index of the command record
+    fifo_rb_wr     = is_fifo_cmd & rb_wr;
+    fifo_rb_rd     = is_fifo_cmd & rb_rd;
+    fifo_rb_wdata  = rb_wdata;
+    fifo_rb_wstrb  = rb_wstrb;
   end
 
   // --------------------------------------------------------------------------
-  // Does this access go to the regblock cpuif?  The adapter handles
-  // DEVICE_RESET / RECOVERY_CTRL itself, and HW_STATUS / VENDOR writes are
-  // dropped (HW_STATUS: regblock fields are hw=w/we=false; VENDOR: legacy
-  // "writes dropped, reads zero" stub matched here).
+  // Regblock CPUIF path.
+  //
+  // A single-cycle cpuif_req pulse per word access (busy_q suppresses re-issue
+  // while the upper master holds rb_wr/rb_rd through the registered ack), so
+  // swmod fires exactly once per host write.  cpuif_rd_data is combinational
+  // in the request cycle and is captured into rb_rdata_q for the ack cycle.
   // --------------------------------------------------------------------------
-  logic adapter_owned_cmd;
-  logic cpuif_req_c;
-  logic [11:0] cpuif_addr_c;
+  logic regblock_busy_q;
 
-  assign adapter_owned_cmd = (rb_cmd == CMD_DEVICE_RESET)
-                           | (rb_cmd == CMD_RECOVERY_CTRL);
-
+  // A regblock cpuif access is issued for local non-FIFO commands except
+  // dropped writes (HW_STATUS sideband-only, VENDOR stub) and out-of-window
+  // offsets.  Reads of every in-window local command go to the cpuif.
+  logic do_cpuif_wr;
+  logic do_cpuif_rd;
   always_comb begin
-    cpuif_req_c = 1'b0;
-    if (local_access & ~adapter_owned_cmd) begin
-      if (rb_wr) begin
-        // Drop HW_STATUS and VENDOR writes (sideband-only / stub).
-        if ((rb_cmd != CMD_HW_STATUS) && (rb_cmd != CMD_VENDOR) && local_write_ok) begin
-          cpuif_req_c = 1'b1;
-        end
-      end else if (local_read_ok) begin
-        cpuif_req_c = 1'b1;
+    do_cpuif_wr = local_access & rb_wr & off_ok
+                & (rb_cmd != CMD_HW_STATUS)
+                & (rb_cmd != CMD_VENDOR);
+    do_cpuif_rd = local_access & rb_rd & off_ok;
+  end
+
+  // Single-cycle request: gated by ~regblock_busy_q so the held-level access
+  // does not re-fire cpuif_req (and therefore swmod) on the ack cycle.
+  logic cpuif_fire;
+  assign cpuif_fire     = (do_cpuif_wr | do_cpuif_rd) & ~regblock_busy_q;
+  assign cpuif_req      = cpuif_fire;
+  assign cpuif_req_is_wr= rb_wr;
+  assign cpuif_addr     = cmd_base + word_base_byte[11:0];
+  assign cpuif_wr_data  = rb_wdata;
+  // Expand the per-lane byte strobe into per-bit biten (8 biten bits / lane).
+  assign cpuif_wr_biten = {{8{rb_wstrb[3]}}, {8{rb_wstrb[2]}},
+                           {8{rb_wstrb[1]}}, {8{rb_wstrb[0]}}};
+
+  // A local access that completes WITHOUT a cpuif transaction: invalid cmd,
+  // out-of-window offset, dropped HW_STATUS/VENDOR write.  These still need a
+  // (registered) ack/err so the upstream master does not hang.
+  logic local_noncpuif_acc;
+  logic local_noncpuif_err;
+  always_comb begin
+    local_noncpuif_acc = 1'b0;
+    local_noncpuif_err = 1'b0;
+    if (access & ~is_fifo_cmd & ~regblock_busy_q) begin
+      if (~is_local_cmd) begin
+        local_noncpuif_acc = 1'b1;
+        local_noncpuif_err = 1'b1;     // invalid OCP command code
+      end else if (~off_ok) begin
+        local_noncpuif_acc = 1'b1;
+        local_noncpuif_err = 1'b1;     // offset past command window
+      end else if (rb_wr & ((rb_cmd == CMD_HW_STATUS) ||
+                            (rb_cmd == CMD_VENDOR))) begin
+        local_noncpuif_acc = 1'b1;     // dropped write (sideband / stub)
       end
     end
   end
 
-  // cpuif_addr is the DWORD-aligned byte address into the regblock.
-  // Low 2 bits of the byte address select the byte lane on the 32-bit bus.
-  logic [11:0] byte_addr_c;
-  assign byte_addr_c    = cmd_base + rb_offset[11:0];
-  assign cpuif_addr_c   = {byte_addr_c[11:2], 2'b00};
-  assign cpuif_req      = cpuif_req_c;
-  assign cpuif_req_is_wr= rb_wr;
-  assign cpuif_addr     = cpuif_addr_c;
-  // Replicate rb_wdata across all 4 byte lanes; biten gates the active lane.
-  assign cpuif_wr_data  = {4{rb_wdata}};
-  always_comb begin
-    cpuif_wr_biten = 32'h0000_0000;
-    unique case (rb_offset[1:0])
-      2'd0: cpuif_wr_biten = 32'h0000_00FF;
-      2'd1: cpuif_wr_biten = 32'h0000_FF00;
-      2'd2: cpuif_wr_biten = 32'h00FF_0000;
-      2'd3: cpuif_wr_biten = 32'hFF00_0000;
-      default: cpuif_wr_biten = 32'h0000_0000;
-    endcase
-  end
-
-  // Combinational byte-lane select on the regblock read response.
-  logic [7:0] cpuif_rdata_byte_c;
-  always_comb begin
-    unique case (rb_offset[1:0])
-      2'd0:    cpuif_rdata_byte_c = cpuif_rd_data[7:0];
-      2'd1:    cpuif_rdata_byte_c = cpuif_rd_data[15:8];
-      2'd2:    cpuif_rdata_byte_c = cpuif_rd_data[23:16];
-      2'd3:    cpuif_rdata_byte_c = cpuif_rd_data[31:24];
-      default: cpuif_rdata_byte_c = 8'h00;
-    endcase
-  end
+  // HW_STATUS sideband write pulse (low byte of the word).
+  logic wr_hw_status;
+  assign wr_hw_status = local_access & rb_wr & off_ok &
+                        (rb_cmd == CMD_HW_STATUS) & rb_wstrb[0];
 
   // --------------------------------------------------------------------------
-  // Sequential: handshake registers + adapter-owned storage.
+  // Sequential: regblock handshake registers.
   // --------------------------------------------------------------------------
-  logic       rb_ack_q;
-  logic       rb_err_q;
-  logic [7:0] rb_rdata_q;
+  logic        rb_ack_q;
+  logic        rb_err_q;
+  logic [31:0] rb_rdata_q;
+  logic        hw_status_wr_q;
+  logic [7:0]  hw_status_wdata_q;
+  logic        proto_err_rd_pulse_q;
 
   always_ff @(posedge clk) begin
     if (rst) begin
-      rb_ack_q                   <= 1'b0;
-      rb_err_q                   <= 1'b0;
-      rb_rdata_q                 <= '0;
-
-      device_reset_ctrl_q        <= 8'h00;
-      device_reset_forced_q      <= 8'h00;
-      device_reset_iface_q       <= 8'h00;
-      device_reset_wr_q          <= 1'b0;
-
-      recovery_ctrl_cms_q        <= 8'h00;
-      recovery_ctrl_img_sel_q    <= 8'h00;
-      recovery_ctrl_activate_q   <= 8'h00;
-      recovery_ctrl_wr_q         <= 1'b0;
-      recovery_ctrl_wr_cms_q     <= 1'b0;
-      recovery_ctrl_wr_img_sel_q <= 1'b0;
-
-      hw_status_wr_q             <= 1'b0;
-      hw_status_wdata_q          <= 8'h00;
-      proto_err_rd_pulse_q       <= 1'b0;
+      rb_ack_q             <= 1'b0;
+      rb_err_q             <= 1'b0;
+      rb_rdata_q           <= '0;
+      regblock_busy_q      <= 1'b0;
+      hw_status_wr_q       <= 1'b0;
+      hw_status_wdata_q    <= 8'h00;
+      proto_err_rd_pulse_q <= 1'b0;
     end else begin
-      // Defaults: handshake low, pulses low.
-      rb_ack_q                   <= 1'b0;
-      rb_err_q                   <= 1'b0;
-      rb_rdata_q                 <= '0;
-      device_reset_wr_q          <= 1'b0;
-      recovery_ctrl_wr_q         <= 1'b0;
-      recovery_ctrl_wr_cms_q     <= 1'b0;
-      recovery_ctrl_wr_img_sel_q <= 1'b0;
-      hw_status_wr_q             <= 1'b0;
-      proto_err_rd_pulse_q       <= 1'b0;
+      // Defaults: handshake / pulses low.
+      rb_ack_q             <= 1'b0;
+      rb_err_q             <= 1'b0;
+      rb_rdata_q           <= '0;
+      hw_status_wr_q       <= 1'b0;
+      proto_err_rd_pulse_q <= 1'b0;
 
-      // ----- Local cmd handshake (1-cycle late) -----
-      if (access & ~is_fifo_cmd) begin
-        if (~is_local_cmd) begin
-          // Always ack alongside err so the upstream ext_rb/AHB bridge does
-          // not deadlock on invalid OCP command codes (USB 2.0 control
-          // transfer cleanup or stray SoC DMA reads must not hang the bus).
-          rb_ack_q   <= 1'b1;
-          rb_err_q   <= 1'b1;
-        end else if (~off_ok) begin
-          rb_ack_q   <= 1'b1;
-          rb_err_q   <= 1'b1;
-        end else if (rb_wr & ~rb_be) begin
-          // Honored by writes only when rb_be is set (legacy behavior); a
-          // bare wr with no be lands here as a silent no-op ack to keep
-          // the producer's handshake balanced.
-          rb_ack_q   <= 1'b1;
+      // ----- Regblock CPUIF path (single-cycle req, registered ack) -----
+      if (cpuif_fire) begin
+        regblock_busy_q <= 1'b1;
+        if (do_cpuif_rd) begin
+          rb_rdata_q <= cpuif_rd_data;
+          rb_err_q   <= cpuif_rd_err;
+          // PROTOCOL_ERROR onread=rclr (OCP Recovery v1.1 Sec 9.2 Tbl 9-5):
+          // pulse on a successful read of the DEVICE_STATUS word holding
+          // PROT_ERROR (byte 1 -> word 0).
+          if ((rb_cmd == CMD_DEVICE_STATUS) && (rb_offset == WOFF_DS_WORD0)) begin
+            proto_err_rd_pulse_q <= 1'b1;
+          end
         end else begin
-          rb_ack_q   <= 1'b1;
-          if (rb_rd) begin
-            if (adapter_owned_cmd) begin
-              rb_rdata_q <= adapter_rdata_c;
-            end else begin
-              rb_rdata_q <= cpuif_rdata_byte_c;
-            end
-            // OCP Recovery v1.1 Sec 9.2 Tbl 9-5 / i3c-rdl line 274:
-            // PROTOCOL_ERROR onread=rclr.  Pulse on the ack cycle of a
-            // successful read of DEVICE_STATUS byte 1.  Matches legacy
-            // usb_ocp_recovery_regs.sv lines 429-435.
-            if ((rb_cmd == CMD_DEVICE_STATUS) &&
-                (rb_offset[5:0] == OFF_DS_PROT_ERROR)) begin
-              proto_err_rd_pulse_q <= 1'b1;
-            end
-          end
+          rb_err_q <= cpuif_wr_err;
         end
+        rb_ack_q <= 1'b1;
+      end else if (regblock_busy_q) begin
+        // Ack cycle already serviced above; just clear busy.
+        regblock_busy_q <= 1'b0;
       end
 
-      // ----- DEVICE_RESET writable bytes + pulse -----
-      // OCP Recovery v1.1 Sec 9.2 Tbl 9-7: 3-byte payload (control,
-      // forced_recovery, iface_control).  Pulse on byte-0 (control) write,
-      // matching legacy usb_ocp_recovery_regs.sv lines 440-452.
-      if (wr_device_reset) begin
-        unique case (rb_offset[1:0])
-          2'd0: device_reset_ctrl_q   <= rb_wdata;
-          2'd1: device_reset_forced_q <= rb_wdata;
-          2'd2: device_reset_iface_q  <= rb_wdata;
-          default: ;
-        endcase
-        if (rb_offset[1:0] == (OFF_DR_RESET_CONTROL)) begin
-          device_reset_wr_q <= 1'b1;
-        end
+      // ----- Local non-cpuif completion (invalid / dropped) -----
+      if (local_noncpuif_acc) begin
+        regblock_busy_q <= 1'b1;
+        rb_ack_q        <= 1'b1;
+        rb_err_q        <= local_noncpuif_err;
       end
 
-      // RESET_CONTROL woclr: clear the latched byte one cycle after the
-      // FSM samples the pulse (legacy regs.sv lines 454-463; OCP Recovery
-      // v1.1 Sec 9.2 Tbl 9-7 / i3c-rdl line 367 onwrite=woclr).  Guarded
-      // against a concurrent host re-write so the new value is not lost.
-      if (device_reset_wr_q && !wr_device_reset) begin
-        device_reset_ctrl_q <= 8'h00;
-      end
-
-      // ----- RECOVERY_CTRL per-byte latch + strobes -----
-      // OCP Recovery v1.1 Sec 9.2 Tbl 9-9: per-byte strobes so the FSM
-      // never misses a CMS / IMG_SEL update (legacy regs.sv lines 465-484).
-      if (wr_recovery_ctrl) begin
-        unique case (rb_offset[1:0])
-          (OFF_RC_CMS): begin
-            recovery_ctrl_cms_q    <= rb_wdata;
-            recovery_ctrl_wr_cms_q <= 1'b1;
-          end
-          (OFF_RC_IMG_SEL): begin
-            recovery_ctrl_img_sel_q    <= rb_wdata;
-            recovery_ctrl_wr_img_sel_q <= 1'b1;
-          end
-          (OFF_RC_ACTIVATE): begin
-            recovery_ctrl_activate_q <= rb_wdata;
-            recovery_ctrl_wr_q       <= 1'b1;
-          end
-          default: ;
-        endcase
-      end
-
-      // ACTIVATE woclr feedback: when FSM consumes the latched ACTIVATE
-      // byte, clear it so subsequent host reads return 0 (legacy regs.sv
-      // lines 486-493; OCP Recovery v1.1 Sec 9.2 Tbl 9-9 / i3c-rdl line
-      // 434 onwrite=woclr).
-      if (recovery_ctrl_activate_consume) begin
-        recovery_ctrl_activate_q <= 8'h00;
-      end
-
-      // ----- HW_STATUS sideband pulse (no cpuif write; regblock fields
-      //       are hw=w / we=false). -----
+      // ----- HW_STATUS sideband pulse (no cpuif write) -----
       if (wr_hw_status) begin
         hw_status_wr_q    <= 1'b1;
-        hw_status_wdata_q <= rb_wdata;
+        hw_status_wdata_q <= rb_wdata[7:0];
       end
     end
   end
 
   // --------------------------------------------------------------------------
-  // Output mux: local registered path vs FIFO combinational pass-through.
-  // Mutually exclusive by is_fifo_cmd / adapter_owned_cmd.
+  // Outputs.  Regblock / FIFO paths are mutually exclusive by is_fifo_cmd.
+  //   - FIFO commands: ack/err/rdata come combinationally from A4 (cms_fifo),
+  //     which now owns the word-level handshake and the byte-SRAM sequencing.
+  //   - Local (regblock / sideband) commands: the registered handshake above.
   // --------------------------------------------------------------------------
-  assign rb_ack   = rb_ack_q | fifo_rb_ack;
-  assign rb_err   = rb_err_q | fifo_rb_err;
-  assign rb_rdata = fifo_rb_ack ? fifo_rb_rdata : rb_rdata_q;
-
-  assign device_reset_wr        = device_reset_wr_q;
-  assign device_reset_ctrl      = device_reset_ctrl_q;
-  assign device_reset_forced    = device_reset_forced_q;
-  assign device_reset_iface     = device_reset_iface_q;
-
-  assign recovery_ctrl_wr         = recovery_ctrl_wr_q;
-  assign recovery_ctrl_wr_cms     = recovery_ctrl_wr_cms_q;
-  assign recovery_ctrl_wr_img_sel = recovery_ctrl_wr_img_sel_q;
-  assign recovery_ctrl_cms        = recovery_ctrl_cms_q;
-  assign recovery_ctrl_img_sel    = recovery_ctrl_img_sel_q;
-  assign recovery_ctrl_activate   = recovery_ctrl_activate_q;
-
-  assign hw_status_wr           = hw_status_wr_q;
-  assign hw_status_wdata        = hw_status_wdata_q;
-  assign proto_err_rd_pulse     = proto_err_rd_pulse_q;
+  assign rb_ack             = is_fifo_cmd ? fifo_rb_ack   : rb_ack_q;
+  assign rb_err             = is_fifo_cmd ? fifo_rb_err   : rb_err_q;
+  assign rb_rdata           = is_fifo_cmd ? fifo_rb_rdata : rb_rdata_q;
+  assign hw_status_wr       = hw_status_wr_q;
+  assign hw_status_wdata    = hw_status_wdata_q;
+  assign proto_err_rd_pulse = proto_err_rd_pulse_q;
 
   // --------------------------------------------------------------------------
   // Assertions
@@ -491,8 +354,6 @@ module usb_ocp_recovery_rb_adapter (
     if (!rst) begin
       assert (!(rb_wr && rb_rd))
         else $error("usb_ocp_recovery_rb_adapter: rb_wr and rb_rd both asserted");
-      assert (!(rb_ack_q && fifo_rb_ack))
-        else $error("usb_ocp_recovery_rb_adapter: local and fifo ack collision");
       if (rb_wr | rb_rd) begin
         assert (!$isunknown({rb_cmd, rb_offset}))
           else $error("usb_ocp_recovery_rb_adapter: X on rb_cmd/rb_offset during access");

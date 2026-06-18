@@ -272,16 +272,12 @@ constant C_NBDEV          : integer := 1;
 component usb_pie_recovery_arb
   generic (
     USB_DATAWIDTH    : integer := 64;
-    C_REC_EPNR       : integer := 0;
     C_REC_IFACE_NUM  : integer range 0 to 255 := 0
   );
   port (
     clk      : in  std_logic;
     reset_n  : in  std_logic;
 
-    pie_epinfo_req            : in  std_logic;
-    pie_epinfo_epnr           : in  std_logic_vector(3 downto 0);
-    pie_epinfo_epdir          : in  std_logic;
     pie_epinfo_setup          : in  std_logic;
     pie_epinfo_setup_received : in  std_logic;
     pie_rxdata                : in  std_logic_vector(USB_DATAWIDTH-1 downto 0);
@@ -317,12 +313,14 @@ component usb_pie_recovery_arb
     setup_pkt_vld   : out std_logic;
     setup_pkt       : out std_logic_vector(63 downto 0);
 
-    ctrl_out_data   : out std_logic_vector(7 downto 0);
+    ctrl_out_data   : out std_logic_vector(31 downto 0);
+    ctrl_out_be   : out std_logic_vector(3 downto 0);
     ctrl_out_vld    : out std_logic;
     ctrl_out_last   : out std_logic;
     ctrl_out_rdy    : in  std_logic;
 
-    ctrl_in_data    : in  std_logic_vector(7 downto 0);
+    ctrl_in_data    : in std_logic_vector(31 downto 0);
+    ctrl_in_be    : in std_logic_vector(3 downto 0);
     ctrl_in_vld     : in  std_logic;
     ctrl_in_last    : in  std_logic;
     ctrl_in_rdy     : out std_logic;
@@ -1507,16 +1505,12 @@ usb_dma_1 : usb_dma
 usb_pie_recovery_arb_1 : usb_pie_recovery_arb
   generic map (
     USB_DATAWIDTH   => USBPIE_DATAWIDTH,
-    C_REC_EPNR      => 0,
     C_REC_IFACE_NUM => 0
   )
   port map (
     clk      => pie_clk,
     reset_n  => Reset_N,
 
-    pie_epinfo_req            => sieint_epinfo_req,
-    pie_epinfo_epnr           => sieint_epinfo_epnr,
-    pie_epinfo_epdir          => sieint_epinfo_epdir,
     pie_epinfo_setup          => sieint_epinfo_setup,
     pie_epinfo_setup_received => sieint_epinfo_setup_received,
     pie_rxdata                => sieint_rxdata,
@@ -1552,10 +1546,12 @@ usb_pie_recovery_arb_1 : usb_pie_recovery_arb
     setup_pkt_vld   => rec_setup_pkt_vld,
     setup_pkt       => rec_setup_pkt,
     ctrl_out_data   => rec_ctrl_out_data,
+    ctrl_out_be   => rec_ctrl_out_be,
     ctrl_out_vld    => rec_ctrl_out_vld,
     ctrl_out_last   => rec_ctrl_out_last,
     ctrl_out_rdy    => rec_ctrl_out_rdy,
     ctrl_in_data    => rec_ctrl_in_data,
+    ctrl_in_be    => rec_ctrl_in_be,
     ctrl_in_vld     => rec_ctrl_in_vld,
     ctrl_in_last    => rec_ctrl_in_last,
     ctrl_in_rdy     => rec_ctrl_in_rdy,

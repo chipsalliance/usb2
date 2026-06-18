@@ -451,12 +451,13 @@ addrmap usb_ocp_recovery_reg {
     // DEVICE_RESET, RECOVERY_CTRL, RECOVERY_STATUS, and HW_STATUS commands.
     reg {
         name = "Reset control";
-        desc = "DEVICE_RESET bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7. The live pulse semantics are implemented by the future SV adapter and must match usb_ocp_recovery_regs.sv.";
+        desc = "DEVICE_RESET bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7. Each writable byte carries swmod so the SV recovery FSM sees a one-cycle write strobe directly from the CPUIF path.";
         field {
             name = "Device Reset Control";
-            desc = "Byte 0 requests device reset or management reset. The generated adapter must convert writes into a one-cycle pulse, matching OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7 and usb_ocp_recovery_regs.sv.";
+            desc = "Byte 0 requests device reset or management reset. swmod gives the FSM a one-cycle write strobe, matching OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7.";
             sw = w;
             hw = r;
+            swmod = true;
             reset = 8'h00;
         } RESET_CTRL[7:0];
         field {
@@ -464,6 +465,7 @@ addrmap usb_ocp_recovery_reg {
             desc = "Byte 1 controls forced recovery or flashless boot on the next platform reset. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7.";
             sw = w;
             hw = r;
+            swmod = true;
             reset = 8'h00;
         } FORCED_RECOVERY[15:8];
         field {
@@ -471,6 +473,7 @@ addrmap usb_ocp_recovery_reg {
             desc = "Byte 2 controls interface mastering enable. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7.";
             sw = w;
             hw = r;
+            swmod = true;
             reset = 8'h00;
         } IF_CTRL[23:16];
         field {
@@ -484,27 +487,30 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Recovery configuration/control";
-        desc = "RECOVERY_CTRL bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9; ACTIVATE is write-one, device-clears and follows usb_ocp_recovery_regs.sv.";
+        desc = "RECOVERY_CTRL bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9; CMS / REC_IMG_SEL carry swmod write strobes and ACTIVATE_REC_IMG is hardware-cleared by the recovery FSM consume pulse.";
         field {
             name = "Component Memory Space";
-            desc = "Byte 0 selects the component memory space containing the recovery image. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9.";
+            desc = "Byte 0 selects the component memory space containing the recovery image. swmod gives the FSM a one-cycle write strobe. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9.";
             sw = rw;
             hw = r;
+            swmod = true;
             reset = 8'h00;
         } CMS[7:0];
         field {
             name = "Recovery Image Selection";
-            desc = "Byte 1 selects memory-window or device-stored recovery image source. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9.";
+            desc = "Byte 1 selects memory-window or device-stored recovery image source. swmod gives the FSM a one-cycle write strobe. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9.";
             sw = rw;
             hw = r;
+            swmod = true;
             reset = 8'h00;
         } REC_IMG_SEL[15:8];
         field {
             name = "Activate Recovery Image";
-            desc = "Byte 2 requests activation of the selected recovery image. This byte is write-one, device-clears per OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9 and usb_ocp_recovery_regs.sv recovery_ctrl_activate_consume handling.";
+            desc = "Byte 2 requests activation of the selected recovery image. The host writes 0x0F to request activation (OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9); the recovery FSM consumes the request and hardware-clears the byte via hwclr. swmod gives the FSM a one-cycle write strobe.";
             sw = rw;
             hw = r;
-            onwrite = woclr;
+            hwclr;
+            swmod = true;
             reset = 8'h00;
         } ACTIVATE_REC_IMG[23:16];
         field {

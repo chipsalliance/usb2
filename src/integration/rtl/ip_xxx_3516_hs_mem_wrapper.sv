@@ -389,17 +389,18 @@ module ip_xxx_3516_hs_mem_wrapper
    // vector widths and does not auto-create conflicting implicit nets.
    logic                          rec_setup_pkt_vld_w;
    logic [63:0]                   rec_setup_pkt_w;
-   logic [7:0]                    rec_ctrl_out_data_w;
+   logic [31:0]                   rec_ctrl_out_data_w;
+   logic [3:0]                    rec_ctrl_out_be_w;
    logic                          rec_ctrl_out_vld_w;
    logic                          rec_ctrl_out_last_w;
    logic                          rec_ctrl_out_rdy_w;
-   logic [7:0]                    rec_ctrl_in_data_w;
+   logic [31:0]                   rec_ctrl_in_data_w;
+   logic [3:0]                    rec_ctrl_in_be_w;
    logic                          rec_ctrl_in_vld_w;
    logic                          rec_ctrl_in_last_w;
    logic                          rec_ctrl_in_rdy_w;
    logic                          rec_ctrl_set_stall_w;
    logic                          rec_ctrl_xfer_done_w;
-   logic                          rec_ctrl_claim_w;
 
    // -- Host AHB (Lite converter output) --
    logic [AXI_HOST_ADDR_WIDTH-1:0] host_ahb_haddr;
@@ -841,16 +842,18 @@ module ip_xxx_3516_hs_mem_wrapper
                .rec_setup_pkt_vld   (rec_setup_pkt_vld_w),
                .rec_setup_pkt       (rec_setup_pkt_w),
                .rec_ctrl_out_data   (rec_ctrl_out_data_w),
+               .rec_ctrl_out_be    (rec_ctrl_out_be_w),
                .rec_ctrl_out_vld    (rec_ctrl_out_vld_w),
                .rec_ctrl_out_last   (rec_ctrl_out_last_w),
                .rec_ctrl_out_rdy    (rec_ctrl_out_rdy_w),
                .rec_ctrl_in_data    (rec_ctrl_in_data_w),
+               .rec_ctrl_in_be      (rec_ctrl_in_be_w),
                .rec_ctrl_in_vld     (rec_ctrl_in_vld_w),
                .rec_ctrl_in_last    (rec_ctrl_in_last_w),
                .rec_ctrl_in_rdy     (rec_ctrl_in_rdy_w),
                .rec_ctrl_set_stall  (rec_ctrl_set_stall_w),
                .rec_ctrl_xfer_done  (rec_ctrl_xfer_done_w),
-               .rec_ctrl_claim      (rec_ctrl_claim_w),
+               .rec_ctrl_claim      (),
 
                // DFT: must be 0 for functional operation
                .async_disable(1'b0),
@@ -986,7 +989,7 @@ module ip_xxx_3516_hs_mem_wrapper
    logic [7:0]  ahb_cmd_q;
    logic [7:0]  ahb_off_q;
    logic        ahb_wr_q;
-   logic [7:0]  ahb_wdata_q;
+   logic [31:0] ahb_wdata_q;
 
    // -- AXI-side AHB FSM --
    typedef enum logic [2:0] {
@@ -1007,9 +1010,9 @@ module ip_xxx_3516_hs_mem_wrapper
    logic        ack_axi_sync_q;
 
    // Read data captured in pie clk, sampled in axi clk after ack handshake.
-   logic [7:0]  rdata_pie_q;
+   logic [31:0] rdata_pie_q;
    logic        err_pie_q;
-   logic [7:0]  rdata_axi_q;
+   logic [31:0] rdata_axi_q;
    logic        err_axi_q;
 
    // -- AXI clk: FSM and metadata capture --
@@ -1052,8 +1055,8 @@ module ip_xxx_3516_hs_mem_wrapper
        // pair the adapter expects. PROT_CAP@0x000, DEVICE_ID@0x010,
        // DEVICE_STATUS@0x028, DEVICE_RESET@0x068, RECOVERY_CTRL@0x06C,
        // RECOVERY_STATUS@0x070, HW_STATUS@0x074, INDIRECT_CTRL@0x078,
-       // INDIRECT_STATUS@0x080, INDIRECT_DATA@0x088, INDIRECT_FIFO_CTRL@0x100,
-       // INDIRECT_FIFO_STATUS@0x180, INDIRECT_FIFO_DATA@0x184, VENDOR@0x1A4.
+       // INDIRECT_STATUS@0x080, INDIRECT_DATA@0x088, INDIRECT_FIFO_CTRL@0x184,
+       // INDIRECT_FIFO_STATUS@0x18C, INDIRECT_FIFO_DATA@0x1A0, VENDOR@0x1A4.
        if (a_state_q == A_IDLE && rec_ahb_addr_phase) begin
          casez (dev_ahb_haddr[11:0])
            12'h00?:                  begin ahb_cmd_q <= 8'h22; ahb_off_q <= dev_ahb_haddr[3:0]; end // PROT_CAP 0x000-0x00F
@@ -1100,19 +1103,22 @@ module ip_xxx_3516_hs_mem_wrapper
                ahb_cmd_q <= 8'h2B;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h88;
              end
-           12'h1?: // 0x100-0x17F INDIRECT_FIFO_CTRL (cmd 0x2C), 0x180-0x183 INDIRECT_FIFO_STATUS (cmd 0x2D), 0x184+ INDIRECT_FIFO_DATA (cmd 0x2E), 0x1A4 VENDOR (cmd 0x2F)
-             if (dev_ahb_haddr[11:0] < 12'h180) begin
+           12'h1??: // 0x100-0x183 INDIRECT_DATA cont. (cmd 0x2B), 0x184-0x18B INDIRECT_FIFO_CTRL (cmd 0x2C), 0x18C-0x19F INDIRECT_FIFO_STATUS (cmd 0x2D), 0x1A0-0x1A3 INDIRECT_FIFO_DATA (cmd 0x2E), 0x1A4-0x1A7 VENDOR (cmd 0x2F)
+             if (dev_ahb_haddr[11:0] < 12'h184) begin
+               ahb_cmd_q <= 8'h2B;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h88;
+             end else if (dev_ahb_haddr[11:0] < 12'h18C) begin
                ahb_cmd_q <= 8'h2C;
-               ahb_off_q <= dev_ahb_haddr[7:0];
-             end else if (dev_ahb_haddr[11:0] < 12'h184) begin
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h84;
+             end else if (dev_ahb_haddr[11:0] < 12'h1A0) begin
                ahb_cmd_q <= 8'h2D;
-               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h80;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h8C;
              end else if (dev_ahb_haddr[11:0] < 12'h1A4) begin
                ahb_cmd_q <= 8'h2E;
-               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h84;
-             end else if (dev_ahb_haddr[11:0] == 12'h1A4) begin
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'hA0;
+             end else if (dev_ahb_haddr[11:0] < 12'h1A8) begin
                ahb_cmd_q <= 8'h2F;
-               ahb_off_q <= 8'h00;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'hA4;
              end else begin
                // Out-of-range above VENDOR: forward an invalid cmd so the
                // adapter raises rb_err_q (which now also raises rb_ack_q
@@ -1131,7 +1137,7 @@ module ip_xxx_3516_hs_mem_wrapper
        // hwdata is on the bus during the AHB data phase (one cycle
        // after address phase, when this FSM is in A_DATA).
        if (a_state_q == A_DATA && ahb_wr_q) begin
-         ahb_wdata_q <= dev_ahb_hwdata[7:0];
+         ahb_wdata_q <= dev_ahb_hwdata[31:0];
        end
 
        // req level: raise from A_DATA onwards, drop at A_COMPLETE.
@@ -1149,7 +1155,7 @@ module ip_xxx_3516_hs_mem_wrapper
    // -- PIE clk: 2FF sync for req, PIE FSM that drives ext_rb_* --
    logic        rec_ext_rb_wr;
    logic        rec_ext_rb_rd;
-   logic [7:0]  rec_ext_rb_rdata;
+   logic [31:0] rec_ext_rb_rdata;
    logic        rec_ext_rb_ack;
    logic        rec_ext_rb_err;
 
@@ -1217,7 +1223,7 @@ module ip_xxx_3516_hs_mem_wrapper
                             ? (a_state_q == A_COMPLETE)
                             : legacy_dev_hreadyout;
    assign dev_ahb_hrdata    = rec_ahb_owns_now
-                            ? { 24'h0, rdata_axi_q }
+                            ? rdata_axi_q[31:0]
                             : legacy_dev_hrdata;
    assign dev_ahb_hresp     = rec_ahb_owns_now
                             ? { 1'b0, err_axi_q }
@@ -1236,11 +1242,8 @@ module ip_xxx_3516_hs_mem_wrapper
 
 
    usb_ocp_recovery_top #(
-       .CTRL_EP_NR        (0),
        .CMS_ADDR_W        (REC_CMS_ADDR_W),
-       .NUM_CMS           (REC_NUM_CMS),
-       .PROT_CAP_DEFAULT  (REC_PROT_CAP_DEFAULT),
-       .DEVICE_ID_DEFAULT (REC_DEVICE_ID_DEFAULT)
+       .NUM_CMS           (REC_NUM_CMS)
    ) u_ocp_recovery (
        // Now in pie_clk (utmi_clk) domain (review fix C3).  Reset is
        // 2FF-synced to this clock above (rec_rst).  Sideband and CMS
@@ -1254,16 +1257,17 @@ module ip_xxx_3516_hs_mem_wrapper
        .rec_setup_pkt_vld  (rec_setup_pkt_vld_w),
        .rec_setup_pkt      (rec_setup_pkt_w),
        .rec_ctrl_out_data  (rec_ctrl_out_data_w),
+       .rec_ctrl_out_be   (rec_ctrl_out_be_w),
        .rec_ctrl_out_vld   (rec_ctrl_out_vld_w),
        .rec_ctrl_out_last  (rec_ctrl_out_last_w),
        .rec_ctrl_out_rdy   (rec_ctrl_out_rdy_w),
        .rec_ctrl_in_data   (rec_ctrl_in_data_w),
+       .rec_ctrl_in_be     (rec_ctrl_in_be_w),
        .rec_ctrl_in_vld    (rec_ctrl_in_vld_w),
        .rec_ctrl_in_last   (rec_ctrl_in_last_w),
        .rec_ctrl_in_rdy    (rec_ctrl_in_rdy_w),
        .rec_ctrl_set_stall (rec_ctrl_set_stall_w),
        .rec_ctrl_xfer_done (rec_ctrl_xfer_done_w),
-       .rec_ctrl_claim     (rec_ctrl_claim_w),
 
        // External reg-bus slave -- driven by the PIE-side bridge above.
        // cmd/offset/wdata are stable across the CDC handshake, so they
@@ -1273,7 +1277,6 @@ module ip_xxx_3516_hs_mem_wrapper
        .ext_rb_wr      (rec_ext_rb_wr),
        .ext_rb_rd      (rec_ext_rb_rd),
        .ext_rb_wdata   (ahb_wdata_q),
-       .ext_rb_be      (1'b1),
        .ext_rb_rdata   (rec_ext_rb_rdata),
        .ext_rb_ack     (rec_ext_rb_ack),
        .ext_rb_err     (rec_ext_rb_err),

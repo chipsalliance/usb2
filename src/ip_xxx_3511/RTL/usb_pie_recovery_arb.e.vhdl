@@ -10,22 +10,22 @@
 --    (b) an OCP Recovery v1.1 endpoint living in SystemVerilog above the
 --        ip_xxx_3511_hs / ip_xxx_3516_hs_mem wrapper boundary.
 --
---  Phase 8 architecture
---  --------------------
---  Class-decode is performed INLINE in this arbiter on the captured SETUP
---  beat.  The arbiter is the SOLE router that decides which side handles a
+--  Architecture overview
+--  ---------------------
+--  Class-decode is performed inline in this arbiter on the captured SETUP
+--  beat.  The arbiter is the sole router that decides which side handles a
 --  given EP0 control transfer:
 --    - Recovery-class SETUP        -> SV recovery stack (autonomous HW resp).
---                                     Legacy SIE / MCU EPCS NEVER sees the
+--                                     Legacy SIE / MCU EPCS never sees the
 --                                     SETUP-received notification for the
 --                                     duration of the transfer.
 --    - Any other EP0 SETUP, any    -> legacy SIE / MCU EPCS (bit-identical
 --      non-EP0 transaction, any      pass-through of the un-arbitered IP).
 --      DATA / handshake beat
 --
---  This eliminates the response-side-mux race conditions that motivated the
---  Phase 7 -> Phase 8 rewrite (see /home/ws/caliptra/cwhitehead/copilot/
---  research/usb_ocp_p7_{audit,claim_debug,gate_debug,datapath,prot_cap}.md).
+--  Routing the transfer at the SETUP beat keeps one owner on EP0 for the full
+--  control transaction and prevents the legacy path and the recovery stack
+--  from responding to the same request.
 --
 --  Spec references
 --  ---------------
@@ -59,11 +59,6 @@ use IEEE.numeric_std.all;
 entity usb_pie_recovery_arb is
   generic (
     USB_DATAWIDTH    : integer := 64;
-    -- USB EP number that carries OCP recovery control requests.  Per OCP
-    -- Recovery v1.1 Sec 8.5 the recovery interface uses the device default
-    -- control pipe (EP0).  Kept as a generic for backward compatibility
-    -- with the existing structure-file binding.
-    C_REC_EPNR       : integer := 0;
     -- USB Interface Number whose wIndex[7:0] selects the recovery interface
     -- for class-specific SETUPs (OCP Recovery v1.1 Sec 8.5.1, also USB 2.0
     -- Sec 9.3 Tbl 9-2 wIndex semantics for Interface recipients).
@@ -80,9 +75,6 @@ entity usb_pie_recovery_arb is
     -- ------------------------------------------------------------------
     -- Lower side - PIE snoop inputs.
     -- ------------------------------------------------------------------
-    pie_epinfo_req            : in  std_logic;
-    pie_epinfo_epnr           : in  std_logic_vector(3 downto 0);
-    pie_epinfo_epdir          : in  std_logic;
     pie_epinfo_setup          : in  std_logic;
     pie_epinfo_setup_received : in  std_logic;
     pie_rxdata                : in  std_logic_vector(USB_DATAWIDTH-1 downto 0);
@@ -122,22 +114,22 @@ entity usb_pie_recovery_arb is
     epinfo_to_pie_txdata_valid: out std_logic;
 
     -- ------------------------------------------------------------------
-    -- Upper side - byte-stream surface to the SV recovery stack.
-    -- Same contract that the deleted (Phase 1c) usb_ocp_recovery_ep_adapter
-    -- presented; the SV ctrl_decode + regs + cms_fifo + fsm connect
-    -- unmodified.  Phase 8 change: setup_pkt_vld is PRE-FILTERED -- the SV
-    -- side never sees a non-OCP-class SETUP and consequently no longer
-    -- needs its own SETUP-classifier flop.
+    -- Upper side - 32-bit control-transfer surface to the SV recovery stack.
+    -- setup_pkt_vld is pre-filtered: only OCP-recovery class SETUPs reach the
+    -- SV side, so ctrl_decode can treat every SETUP pulse as a recovery
+    -- request and does not need a second classifier.
     -- ------------------------------------------------------------------
     setup_pkt_vld   : out std_logic;
     setup_pkt       : out std_logic_vector(63 downto 0);
 
-    ctrl_out_data   : out std_logic_vector(7 downto 0);
+    ctrl_out_data   : out std_logic_vector(31 downto 0);
+    ctrl_out_be     : out std_logic_vector(3 downto 0);
     ctrl_out_vld    : out std_logic;
     ctrl_out_last   : out std_logic;
     ctrl_out_rdy    : in  std_logic;
 
-    ctrl_in_data    : in  std_logic_vector(7 downto 0);
+    ctrl_in_data    : in  std_logic_vector(31 downto 0);
+    ctrl_in_be      : in  std_logic_vector(3 downto 0);
     ctrl_in_vld     : in  std_logic;
     ctrl_in_last    : in  std_logic;
     ctrl_in_rdy     : out std_logic;
@@ -147,11 +139,10 @@ entity usb_pie_recovery_arb is
     -- requests SHALL be STALLed).
     ctrl_set_stall  : in  std_logic;
 
-    -- End-of-stage pulse to SV: re-emit of pie_endtransfer ONLY for the
-    -- DATA-stage and STATUS-stage of the claimed transfer (the SETUP-
-    -- stage pie_endtransfer is consumed internally by the claim FSM and
-    -- is NEVER forwarded; this was the iter-8 Phase 7 corruption root
-    -- cause -- see research/usb_ocp_p7_datapath.md Q2).
+    -- End-of-stage pulse to SV: re-emit pie_endtransfer only for the
+    -- DATA-stage and STATUS-stage of the claimed transfer.  The SETUP-stage
+    -- pie_endtransfer is consumed internally by the claim FSM so ctrl_decode
+    -- sees completion only after the routed transfer progresses beyond SETUP.
     ctrl_xfer_done  : out std_logic;
 
     -- ------------------------------------------------------------------
@@ -167,11 +158,10 @@ entity usb_pie_recovery_arb is
     -- Gated copy of pie_epinfo_setup_received for the legacy SIE / MCU
     -- EPCS notification path.  This signal MUST be routed to the legacy
     -- usb_synchronizer in place of the raw pie_epinfo_setup_received so
-    -- that the MCU EPCS firmware NEVER sees a SETUP-received notification
+    -- that the MCU EPCS firmware never sees a SETUP-received notification
     -- for an OCP recovery class transfer.  Otherwise both the SV
-    -- recovery decoder and the MCU firmware would race to respond on the
-    -- same EP0 transfer (Phase 7 failure mode, see
-    -- research/usb_ocp_p7_claim_debug.md).
+    -- recovery decoder and the MCU firmware could respond on the same EP0
+    -- control transfer.
     -- ------------------------------------------------------------------
     legacy_setup_received_gated : out std_logic
   );

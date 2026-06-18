@@ -7,8 +7,8 @@
 // Spec references (OCP Recovery v1.1):
 //   Sec 6   - Recovery process state machine (flowchart).
 //   Sec 7   - Interface functions (reset, push, activation).
-//   Sec 9.2 - DEVICE_STATUS  (command 0x23) encoding.
-//   Sec 9.2 - RECOVERY_STATUS (command 0x2A) encoding.
+//   Sec 9.2 - DEVICE_STATUS  (command 0x24) encoding.
+//   Sec 9.2 - RECOVERY_STATUS (command 0x27) encoding.
 //   Sec 9.2 - RECOVERY_CTRL  (command 0x26) activation byte.
 //   Sec 9.2 - DEVICE_RESET   (command 0x25) reset control byte.
 //
@@ -68,10 +68,9 @@ module usb_ocp_recovery_fsm (
   input  logic [7:0]  device_reset_ctrl,
   input  logic [7:0]  device_reset_forced,
   input  logic [7:0]  device_reset_iface,
-  // Per-byte strobes (rtl_review.md D-26 fix).  recovery_ctrl_wr pulses on
-  // ACTIVATE byte write; _cms / _img_sel pulse on those byte writes so the
-  // FSM never misses an update even if the host stops short of writing the
-  // ACTIVATE byte.
+  // Per-byte strobes.  recovery_ctrl_wr pulses on ACTIVATE byte write;
+  // _cms / _img_sel pulse on those byte writes so the FSM never misses an
+  // update even if the host stops short of writing the ACTIVATE byte.
   input  logic        recovery_ctrl_wr,
   input  logic        recovery_ctrl_wr_cms,
   input  logic        recovery_ctrl_wr_img_sel,
@@ -81,14 +80,13 @@ module usb_ocp_recovery_fsm (
 
   // ACTIVATE woclr feedback to regs (OCP v1.1 Section 9.2 Tbl 9-9 / i3c-rdl
   // line 434).  Pulsed for one cycle when the FSM enters S_ACTIVATE so the
-  // regs block can hw-clear recovery_ctrl_activate_q.  rtl_review.md D-26 / E.
+  // regs block can hw-clear recovery_ctrl_activate_q.
   output logic        recovery_ctrl_activate_consume,
 
   // PROTOCOL_ERROR rclr pulse from regs (OCP v1.1 Section 9.2 Tbl 9-5 /
   // i3c-rdl line 274: onread = rclr).  High for one cycle in the ack window
   // of a successful host read of DEVICE_STATUS byte 1.  Clears the sticky
-  // proto-err latch driving device_status_protocol_err_out.  rtl_review.md
-  // C5 fix.
+  // proto-err latch driving device_status_protocol_err_out.
   input  logic        proto_err_rd_pulse,
 
   // From A4 (FIFO/image push observation)
@@ -101,17 +99,17 @@ module usb_ocp_recovery_fsm (
   // To A3 (status write-back)
   output logic [7:0]  device_status_out,
   output logic [7:0]  device_status_protocol_err_out,
-  // OCP v1.1 Section9.2 Tbl 9-5: REC_REASON_CODE is 16 bits at bytes 2..3.  The
-  // FSM uses only the low byte today but the wire is spec-width so the
-  // regs block sees a clean 2-byte field (rtl_review.md D-24).
+  // OCP v1.1 Section9.2 Tbl 9-5: REC_REASON_CODE is 16 bits at bytes 2..3.
+  // The FSM uses only the low byte today but the wire is spec-width so the
+  // regs block still sees a clean 2-byte field.
   output logic [15:0] device_status_reason_out,
   output logic [7:0]  recovery_status_out,
   output logic [7:0]  recovery_vendor_status_out,
   output logic [7:0]  hw_status_out,
-  // OCP v1.1 Section9.2 Tbl 9-11: HW_STATUS spec layout requires distinct bytes
-  // 1 (VENDOR_HW_STATUS), 2 (CTEMP), 3 (VENDOR_HW_STATUS_LENGTH).  Today
-  // these are tied to 0; the ports exist so the byte layout is spec-correct
-  // and the FSM can extend without re-routing (rtl_review.md D-28).
+  // OCP v1.1 Section9.2 Tbl 9-11: HW_STATUS layout requires distinct bytes
+  // 1 (VENDOR_HW_STATUS), 2 (CTEMP), 3 (VENDOR_HW_STATUS_LENGTH).  These are
+  // tied to 0 today; the ports exist so the byte layout stays spec-correct and
+  // the FSM can extend without re-routing.
   output logic [7:0]  hw_status_vendor_out,
   output logic [7:0]  hw_status_ctemp_out,
   output logic [7:0]  hw_status_vendor_len_out,
@@ -181,7 +179,7 @@ module usb_ocp_recovery_fsm (
   logic       size_err_q, size_err_d;
   logic       auth_err_q, auth_err_d;   // placeholder; latched by rec_trigger-time semantics
   logic       reset_pulse_q, reset_pulse_d; // 1-cycle device_reset_req pulse
-  // C5: sticky PROTOCOL_ERROR latch (OCP Recovery v1.1 Section 9.2 Tbl 9-5).
+  // Sticky PROTOCOL_ERROR latch (OCP Recovery v1.1 Section 9.2 Tbl 9-5).
   // Set when the FSM enters S_ERROR (rising edge of size_err/auth_err);
   // cleared on proto_err_rd_pulse (read-clear by host).  Drives
   // device_status_protocol_err_out so the regs block presents the spec
@@ -217,7 +215,7 @@ module usb_ocp_recovery_fsm (
     auth_err_d    = auth_err_q;
     reset_pulse_d = 1'b0;
     recovery_ctrl_activate_consume = 1'b0;
-    // C5: PROTOCOL_ERROR sticky latch defaults (final value set after case).
+    // PROTOCOL_ERROR sticky latch defaults (final value set after case).
     proto_err_d = proto_err_q;
 
     unique case (state_q)
@@ -232,13 +230,9 @@ module usb_ocp_recovery_fsm (
         end else if (recovery_ctrl_wr_cms) begin
           // Host-initiated recovery: any byte-0 write to RECOVERY_CTRL
           // signals that the host has selected a CMS for recovery and
-          // intends to push an image. OCP Recovery v1.1 Sec 9.2 Tbl 9-9.
-          // This matches the documented "host-initiated recovery via the
-          // command path" intent noted in
-          // src/integration/rtl/caliptra_ss_top.sv comments at the
-          // rec_trigger tie-off. img_idx_d is latched here as a
-          // convenience; a subsequent IMG_SEL byte-1 write will still be
-          // captured by S_DETECTED/S_AWAIT_IMAGE via the
+          // intends to push an image (OCP Recovery v1.1 Sec 9.2 Tbl 9-9).
+          // img_idx_d is latched here as a convenience; a subsequent IMG_SEL
+          // byte-1 write is still captured by S_DETECTED/S_AWAIT_IMAGE via the
           // recovery_ctrl_wr_img_sel strobe.
           img_idx_d = recovery_ctrl_img_sel[3:0];
           state_d   = S_DETECTED;
@@ -251,7 +245,7 @@ module usb_ocp_recovery_fsm (
           reset_pulse_d = 1'b1;
         end else begin
           // Latch recovery-image index on IMG_SEL byte writes (per-byte
-          // strobe so the FSM never misses an update - rtl_review.md D-26).
+          // strobe so the FSM never misses an update).
           if (recovery_ctrl_wr_img_sel) begin
             img_idx_d = recovery_ctrl_img_sel[3:0];
           end

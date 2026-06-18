@@ -1192,6 +1192,7 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.DEVICE_RESET.RESET_CTRL.value = field_storage.DEVICE_RESET.RESET_CTRL.value;
+    assign hwif_out.DEVICE_RESET.RESET_CTRL.swmod = decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr;
     // Field: usb_ocp_recovery_reg.DEVICE_RESET.FORCED_RECOVERY
     always_comb begin
         automatic logic [7:0] next_c;
@@ -1213,6 +1214,7 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.DEVICE_RESET.FORCED_RECOVERY.value = field_storage.DEVICE_RESET.FORCED_RECOVERY.value;
+    assign hwif_out.DEVICE_RESET.FORCED_RECOVERY.swmod = decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr;
     // Field: usb_ocp_recovery_reg.DEVICE_RESET.IF_CTRL
     always_comb begin
         automatic logic [7:0] next_c;
@@ -1234,6 +1236,7 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.DEVICE_RESET.IF_CTRL.value = field_storage.DEVICE_RESET.IF_CTRL.value;
+    assign hwif_out.DEVICE_RESET.IF_CTRL.swmod = decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr;
     // Field: usb_ocp_recovery_reg.RECOVERY_CTRL.CMS
     always_comb begin
         automatic logic [7:0] next_c;
@@ -1255,6 +1258,7 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.RECOVERY_CTRL.CMS.value = field_storage.RECOVERY_CTRL.CMS.value;
+    assign hwif_out.RECOVERY_CTRL.CMS.swmod = decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr;
     // Field: usb_ocp_recovery_reg.RECOVERY_CTRL.REC_IMG_SEL
     always_comb begin
         automatic logic [7:0] next_c;
@@ -1276,14 +1280,18 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.RECOVERY_CTRL.REC_IMG_SEL.value = field_storage.RECOVERY_CTRL.REC_IMG_SEL.value;
+    assign hwif_out.RECOVERY_CTRL.REC_IMG_SEL.swmod = decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr;
     // Field: usb_ocp_recovery_reg.RECOVERY_CTRL.ACTIVATE_REC_IMG
     always_comb begin
         automatic logic [7:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value;
         load_next_c = '0;
-        if(decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr) begin // SW write 1 clear
-            next_c = field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value & ~(decoded_wr_data[23:16] & decoded_wr_biten[23:16]);
+        if(decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value & ~decoded_wr_biten[23:16]) | (decoded_wr_data[23:16] & decoded_wr_biten[23:16]);
+            load_next_c = '1;
+        end else if(hwif_in.RECOVERY_CTRL.ACTIVATE_REC_IMG.hwclr) begin // HW Clear
+            next_c = '0;
             load_next_c = '1;
         end
         field_combo.RECOVERY_CTRL.ACTIVATE_REC_IMG.next = next_c;
@@ -1297,6 +1305,7 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.value = field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value;
+    assign hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.swmod = decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr;
     // Field: usb_ocp_recovery_reg.INDIRECT_CTRL_0.CMS
     always_comb begin
         automatic logic [7:0] next_c;

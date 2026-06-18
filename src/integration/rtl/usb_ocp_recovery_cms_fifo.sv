@@ -1,62 +1,66 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // usb_ocp_recovery_cms_fifo
-// -------------------------
+// -------------------------------------------------------------------------
 // OCP Recovery v1.1 Section 8.2 "Indirect Memory Interface" + Section 9.2
 // INDIRECT_* command backing logic.
 //
-// Services the following recovery commands (routed here by the A3 register
-// file whenever fifo_rb_sel=1):
+// Services the following recovery commands (routed here by the A3 adapter
+// whenever fifo_rb_sel=1):
 //
 //   0x29 INDIRECT_CTRL        - selects active CMS region and byte offset
 //                               used by INDIRECT_DATA (direct window).
 //   0x2A INDIRECT_STATUS (RO) - aggregate indirect-access status.
 //   0x2B INDIRECT_DATA        - direct byte-wise window into the selected
-//                               region at INDIRECT_CTRL.offset.  Each access
-//                               auto-increments the offset by one byte.
+//                               region at INDIRECT_CTRL.offset.
 //   0x2C INDIRECT_FIFO_CTRL   - FIFO region select + reset + image-size.
 //   0x2D INDIRECT_FIFO_STATUS - FIFO empty/full/region-reset/overflow flags
-//                               and the push-side write index (= bytes_pushed)
+//                               and the push-side WRITE_INDEX (DWORD units)
 //                               for the active FIFO region.
-//   0x2E INDIRECT_FIFO_DATA   - streaming byte push (also receives the
-//                               parallel bulk-OUT stream from A1/A6) and
-//                               streaming byte pop.
+//   0x2E INDIRECT_FIFO_DATA   - streaming push and pop.
+//
+// The reg-bus surface (fifo_rb_*) is native 32-bit word + 4-bit byte strobe,
+// matching the word-wide rb_* path used by A2 (ctrl_decode) and the A3 adapter.
+// All byte-level sequencing against the byte-wide external CMS SRAM lives here,
+// inside the rb_state FSM, and exactly one word-level fifo_rb_ack is returned
+// per word access.  Register-only records complete combinationally; SRAM-
+// backed records walk the selected byte lanes one per cycle and acknowledge on
+// the final lane.
+//
+// Accesses launch only from RB_IDLE and the access parameters are latched at
+// launch, so a held upstream strobe cannot corrupt an in-flight word.  A full
+// 64-byte (16-DWORD) INDIRECT_FIFO_DATA push therefore advances head to 64 and
+// reports WRITE_INDEX = 16 in DWORD units.
+//
+// External CMS SRAM interface is unchanged (byte-wide cms_addr/cms_wr/cms_rd/
+// cms_wdata[7:0]/cms_rdata[7:0]); it still propagates byte-wide to the SoC.
 //
 // Micro-architecture
 // ------------------
 // Data plane:
-//   Single-ported external SRAM (cms_addr/cms_wr/cms_rd/cms_wdata/cms_rdata).
-//   The address is formed as {cms_idx, offset_within_region}.  For the
-//   default parameters (CMS_ADDR_W=16, NUM_CMS=2) that is
-//   {region[0], offset[14:0]}, i.e. two 32 KiB regions.
+//   Single-ported external byte SRAM (cms_addr/cms_wr/cms_rd/cms_wdata/
+//   cms_rdata).  Address = {cms_idx, offset_within_region}.
 //
 // Control plane:
-//   - Per-region 32-bit head pointer (push / FIFO write index) and tail
-//     pointer (pop / FIFO read index).  Region-local cap = REGION_BYTES,
-//     which is 1 << (CMS_ADDR_W - CMS_IDX_W).
-//   - INDIRECT_CTRL.offset is a 32-bit counter, pre-loaded by software and
-//     auto-incremented by INDIRECT_DATA accesses (Sec 8.2 "Indirect Access
-//     Window" semantics).
-//   - bytes_pushed is a mirror of head_q[fifo_ctrl_cms_q], exposed to A5
-//     so the FSM can see push progress without re-decoding the register
-//     file.
+//   - Per-region 32-bit-equivalent head (push / WRITE_INDEX) and tail (pop /
+//     READ_INDEX) pointers, PTR_W bits each (byte-granular internally; emitted
+//     in DWORD units per OCP v1.1 Sec 9.2 Tbl 9-11 / 9-15).
+//   - INDIRECT_CTRL.offset is the direct-window byte cursor.
+//   - image_size_q is the expected push byte count (programmed in DWORD units
+//     by 0x2C, shifted to bytes internally).
 //
-// Arbitration on the single SRAM port
-//   Priority 1 : bulk-OUT push write    (bout_vld & bout_rdy)
-//   Priority 2 : FIFO-DATA (0x2E) write via reg-bus
-//   Priority 3 : DIRECT (0x2B) or FIFO (0x2E) read
-// Register-bus reads are held (fifo_rb_ack deasserted for one extra cycle)
-// when a bulk-OUT push is in flight, so pushes never stall.  This is OCP
-// Sec 8.2 compliant: the indirect read path has no real-time requirement
-// while an image push is active.
-//
-// Register-bus timing
-//   - Writes and reads to purely-flopped state (0x29, 0x2A, 0x2C, 0x2D)
-//     complete in the same cycle: fifo_rb_ack is asserted combinationally.
-//   - Writes to 0x2B / 0x2E complete in the cycle the SRAM sees the write
-//     (one cycle if not arbitrated out).
-//   - Reads from 0x2B / 0x2E take two cycles: cycle 0 issues cms_rd,
-//     cycle 1 returns cms_rdata with fifo_rb_ack high.
+// Word access engine (rb_state FSM)
+//   - Register records (0x29/0x2A/0x2C/0x2D) read/write purely-flopped state:
+//     32-bit word assembled / strobed-write in the same cycle (combinational
+//     fifo_rb_ack), FSM stays RB_IDLE.
+//   - SRAM records (0x2B/0x2E):
+//       * WRITE: walk the set strobe lanes, one byte / cycle, writing
+//         seq_data_q[lane] to the live pointer and advancing the pointer +
+//         image accounting.  Word-level ack on the final lane.
+//       * READ : walk the set strobe lanes, issue cms_rd at the live pointer
+//         (RB_RD), capture cms_rdata into seq_data_q[lane] and advance the
+//         pointer (RB_RDC).  When the last lane is captured, RB_RDONE presents
+//         the assembled 32-bit word with the word-level ack.
 //
 // Reset: synchronous, active-high `rst` (SV integration convention).
 
@@ -67,14 +71,17 @@ module usb_ocp_recovery_cms_fifo #(
   input  logic clk,
   input  logic rst,
 
-  // Sub-reg-bus from A3 (only asserted when cmd is INDIRECT_*)
+  // Sub-reg-bus from A3 (only asserted when cmd is INDIRECT_*).  Native
+  // 32-bit word + 4-bit byte strobe.  fifo_rb_offset is a WORD index into the
+  // command record (low bits select the DWORD within a multi-word record).
   input  logic        fifo_rb_sel,
   input  logic [7:0]  fifo_rb_cmd,
   input  logic [15:0] fifo_rb_offset,
   input  logic        fifo_rb_wr,
   input  logic        fifo_rb_rd,
-  input  logic [7:0]  fifo_rb_wdata,
-  output logic [7:0]  fifo_rb_rdata,
+  input  logic [31:0] fifo_rb_wdata,
+  input  logic [3:0]  fifo_rb_wstrb,
+  output logic [31:0] fifo_rb_rdata,
   output logic        fifo_rb_ack,
   output logic        fifo_rb_err,
 
@@ -82,11 +89,11 @@ module usb_ocp_recovery_cms_fifo #(
   output logic        image_push_active,
   output logic        image_push_done,    // pulse when image size reached
   output logic        fifo_overflow,
-  output logic [31:0] image_size,         // from 0x2C
+  output logic [31:0] image_size,         // from 0x2C (bytes)
   output logic [31:0] bytes_pushed,
-  output logic [7:0]  current_cms,
 
-  // External SRAM-like port (backing store for CMS regions)
+  // External SRAM-like port (backing store for CMS regions) -- BYTE-WIDE,
+  // UNCHANGED (propagates to the SoC top).
   output logic [CMS_ADDR_W-1:0] cms_addr,
   output logic                  cms_wr,
   output logic                  cms_rd,
@@ -108,7 +115,7 @@ module usb_ocp_recovery_cms_fifo #(
       else $fatal(1, "NUM_CMS must be >= 1");
   end
 
-  // OCP Recovery v1.1 Section9.2 command opcodes - centralized.
+  // OCP Recovery v1.1 Section 9.2 command opcodes - centralized.
 `include "usb_ocp_recovery_pkg.svh"
   localparam logic [7:0] CMD_INDIRECT_CTRL        = OCP_CMD_INDIRECT_CTRL;
   localparam logic [7:0] CMD_INDIRECT_STATUS      = OCP_CMD_INDIRECT_STATUS;
@@ -121,44 +128,40 @@ module usb_ocp_recovery_cms_fifo #(
   // Flopped state
   // ------------------------------------------------------------------
   // INDIRECT_CTRL (0x29)
-  logic [31:0] ind_ctrl_offset_q;   // byte offset within region
+  logic [31:0] ind_ctrl_offset_q;   // byte cursor within region (DWORD units)
   logic [7:0]  ind_ctrl_cms_q;      // region index
 
   // INDIRECT_FIFO_CTRL (0x2C)
   logic [7:0]  fifo_cms_q;          // region index for streaming push/pop
-  logic [31:0] image_size_q;        // expected image byte count
+  logic [31:0] image_size_q;        // expected image size (DWORD units)
 
-  // Per-region FIFO pointers.  C8 (rtl_review.md F section): width down
-  // from 32b to PTR_W = REGION_OFFSET_W + 1 (the extra bit lets head==tail
-  // distinguish full vs empty when the region is wrapped).  For default
-  // CMS_ADDR_W=16/NUM_CMS=2 that is 16 bits, saving 16 flops per pointer
-  // (64 flops total for 2 regions, 2 pointers each).
+  // Per-region FIFO pointers (byte-granular internally).  PTR_W has the extra
+  // bit to distinguish full vs empty on wrap.
   localparam int PTR_W = REGION_OFFSET_W + 1;
-  logic [PTR_W-1:0] head_q [NUM_CMS];    // write index (bytes pushed into region)
+  logic [PTR_W-1:0] head_q [NUM_CMS];    // write index (bytes pushed)
   logic [PTR_W-1:0] tail_q [NUM_CMS];    // read index  (bytes popped)
 
   // Status bits (0x2D)
-  logic        overflow_q;          // sticky, cleared on FIFO reset
+  logic        overflow_q;          // sticky, cleared on FIFO reset / w1c
   logic        region_reset_q;      // sticky one-shot, cleared by SW write-1
   logic        image_done_q;        // sticky; pulses out as image_push_done
-  // M5: dedicated image_push_active flop.  Set on the first successful
-  // 0x2E (INDIRECT_FIFO_DATA) write into the current FIFO region, cleared
-  // by region reset or image-done.  Avoids the prior `head_q != 0`
-  // heuristic which had a one-cycle race window at region-reset and was
-  // ambiguous after a wrap.
-  logic        image_push_active_q;
+  logic        image_push_active_q; // set by first 0x2E push, cleared on
+                                     // region reset / image complete.
 
-  // Register-bus read pipeline for SRAM-backed reads (0x2B / 0x2E)
-  typedef enum logic [1:0] {
+  // ------------------------------------------------------------------
+  // Word access engine (SRAM-backed accesses)
+  // ------------------------------------------------------------------
+  typedef enum logic [2:0] {
     RB_IDLE,
-    RB_MEM_RD,     // cms_rd issued in prior cycle; sample rdata this cycle
-    RB_MEM_WAIT    // read deferred while a bulk push holds the SRAM port
+    RB_WR,         // writing the set strobe lanes, one byte / cycle
+    RB_RD,         // issue cms_rd for the current lane
+    RB_RDC,        // capture cms_rdata for the current lane
+    RB_RDONE       // present assembled word + word-level ack
   } rb_state_e;
   rb_state_e   rb_state_q;
-  logic [CMS_ADDR_W-1:0] rb_pend_addr_q;
-  logic        rb_pend_inc_ctrl_q; // 1: increment ind_ctrl_offset when done
-  logic        rb_pend_inc_tail_q; // 1: increment tail_q[fifo_cms_q] when done
-  logic [7:0]  rb_pend_cms_q;      // cms index for tail increment
+  logic [3:0]  seq_mask_q;          // remaining strobe lanes to service
+  logic [31:0] seq_data_q;          // write word latched / read word assembled
+  logic        seq_is_data_q;       // 1 = 0x2B direct window, 0 = 0x2E FIFO
 
   // ------------------------------------------------------------------
   // Helper: form the flat SRAM address
@@ -173,10 +176,20 @@ module usb_ocp_recovery_cms_fifo #(
     return {idx, off};
   endfunction
 
+  // Lowest set lane index in a 4-bit mask (priority encoder).
+  function automatic logic [1:0] lowest_lane (input logic [3:0] m);
+    if      (m[0]) lowest_lane = 2'd0;
+    else if (m[1]) lowest_lane = 2'd1;
+    else if (m[2]) lowest_lane = 2'd2;
+    else           lowest_lane = 2'd3;
+  endfunction
+
   // ------------------------------------------------------------------
-  // Combinational decode
+  // Combinational command decode
   // ------------------------------------------------------------------
   logic is_ctrl, is_status, is_data, is_fifo_ctrl, is_fifo_status, is_fifo_data;
+  logic is_reg_cmd;     // purely-flopped register record (same-cycle ack)
+  logic is_sram_cmd;    // SRAM-backed record (0x2B / 0x2E)
   logic rb_req;
 
   always_comb begin
@@ -186,27 +199,28 @@ module usb_ocp_recovery_cms_fifo #(
     is_fifo_ctrl   = fifo_rb_sel && (fifo_rb_cmd == CMD_INDIRECT_FIFO_CTRL);
     is_fifo_status = fifo_rb_sel && (fifo_rb_cmd == CMD_INDIRECT_FIFO_STATUS);
     is_fifo_data   = fifo_rb_sel && (fifo_rb_cmd == CMD_INDIRECT_FIFO_DATA);
+    is_reg_cmd     = is_ctrl || is_status || is_fifo_ctrl || is_fifo_status;
+    is_sram_cmd    = is_data || is_fifo_data;
     rb_req         = fifo_rb_sel && (fifo_rb_wr || fifo_rb_rd);
   end
 
+  // Word index within a multi-word command record.
+  logic [2:0] word_idx;
+  always_comb word_idx = fifo_rb_offset[2:0];
+
   // ------------------------------------------------------------------
-  // Per-region derived flags
+  // Per-region derived flags / constants
   // ------------------------------------------------------------------
   localparam logic [31:0] REGION_BYTES = 32'(1) << REGION_OFFSET_W;
 
-  // OCP Recovery v1.1 Sec 9.2 Tbl 9-11 INDIRECT_FIFO_STATUS fields:
-  //   FIFO_SIZE         - total size of the FIFO region in 4-byte
-  //                       (DWORD) units (Tbl 9-11 unit column).  Each
-  //                       CMS region backs one FIFO, so this equals the
-  //                       per-region byte cap >> OCP_IMG_UNIT_LOG2.
-  //   MAX_TRANSFER_SIZE - largest contiguous push a host may issue
-  //                       before it must resync to WRITE_INDEX, again
-  //                       in DWORD units (Tbl 9-11 unit column).  Our
-  //                       byte-wide FIFO accepts an entire region in
-  //                       one burst, so expose REGION_BYTES >> 2 here
-  //                       as well.
+  // OCP Recovery v1.1 Sec 9.2 Tbl 9-11: FIFO_SIZE / MAX_TRANSFER_SIZE in
+  // 4-byte (DWORD) units.
   localparam logic [31:0] FIFO_SIZE_DWORDS     = REGION_BYTES >> OCP_IMG_UNIT_LOG2;
   localparam logic [31:0] MAX_XFER_SIZE_DWORDS = REGION_BYTES >> OCP_IMG_UNIT_LOG2;
+
+  // OCP Recovery v1.1 Sec 9.2 Tbl 9-13 INDIRECT_STATUS REGION_SIZE: 48-bit,
+  // DWORD units.  Compile-time constant from the region depth.
+  localparam logic [47:0] REGION_SIZE_DWORDS = 48'(REGION_BYTES >> OCP_IMG_UNIT_LOG2);
 
   logic [CMS_IDX_W-1:0] push_idx;
   logic [CMS_IDX_W-1:0] ctrl_idx;
@@ -215,12 +229,7 @@ module usb_ocp_recovery_cms_fifo #(
     ctrl_idx = ind_ctrl_cms_q[CMS_IDX_W-1:0];
   end
 
-  // Zero-extended 32-bit views of the per-region pointers for arithmetic
-  // and emission against 32b spec-side fields (image_size_bytes, REGION_BYTES,
-  // WRITE_INDEX/READ_INDEX bytes 4..7 of INDIRECT_FIFO_STATUS).
-  // C10: WRITE_INDEX/READ_INDEX in INDIRECT_FIFO_STATUS are spec-encoded
-  // in DWORD units per OCP v1.1 Sec 9.2 Tbl 9-11.  Internally the head/tail
-  // pointers tick per byte; shift by OCP_IMG_UNIT_LOG2 (=2) when emitting.
+  // Zero-extended 32-bit pointer views + DWORD-unit emission (Tbl 9-11).
   logic [31:0] head_push_32;
   logic [31:0] head_ctrl_32;
   logic [31:0] tail_push_32;
@@ -234,11 +243,9 @@ module usb_ocp_recovery_cms_fifo #(
     tail_push_dw = tail_push_32 >> OCP_IMG_UNIT_LOG2;
   end
 
-  // OCP Recovery v1.1 Section9.2 Tbl 9-13 / 9-15: IMAGE_OFFSET (INDIRECT_CTRL) and
-  // IMAGE_SIZE (INDIRECT_FIFO_CTRL) are expressed in 4-byte (DWORD) units on
-  // the wire.  Convert to a byte address by left-shifting by 2 before
-  // forming an SRAM address or comparing against the byte-granular head/tail
-  // pointers.  rtl_review.md D-29/D-2C fix.
+  // OCP v1.1 Sec 9.2 Tbl 9-13 / 9-15: IMAGE_OFFSET and IMAGE_SIZE are on the
+  // wire in 4-byte (DWORD) units; convert to bytes for SRAM addressing and
+  // pointer comparison.
   logic [31:0] ind_ctrl_offset_bytes;
   logic [31:0] image_size_bytes;
   always_comb begin
@@ -248,107 +255,51 @@ module usb_ocp_recovery_cms_fifo #(
 
   logic push_region_full;
   logic push_region_empty;
-  logic image_size_reached;
-
   always_comb begin
     push_region_full   = (head_push_32 >= REGION_BYTES) ||
                          ((image_size_q != '0) && (head_push_32 >= image_size_bytes));
     push_region_empty  = (head_q[push_idx] == tail_q[push_idx]);
-    image_size_reached = (image_size_q != '0) && (head_push_32 >= image_size_bytes);
   end
 
   // ------------------------------------------------------------------
-  // SRAM arbitration
+  // Launch / completion decode for the word access engine
   // ------------------------------------------------------------------
-  // Priority: bulk-OUT push write > reg-bus FIFO/DATA write > reg-bus read.
-  // A reg-bus read that loses arbitration parks in RB_MEM_WAIT and retries
-  // next cycle.
-  // bulk-OUT path removed (Phase 1c C11)
-  logic sram_regbus_wr;
-  logic sram_regbus_rd_issue;
-
+  // Degenerate accesses (no strobe) complete immediately as a no-op ack.
+  // Error launches (push full / pop empty) ack+err immediately with no SRAM
+  // access.  Otherwise a multi-cycle SRAM sequence is launched from RB_IDLE.
+  logic launch_err_wr;
+  logic launch_err_rd;
+  logic launch_err;
+  logic sram_wr_launch;
+  logic sram_rd_launch;
+  logic sram_zero_strobe;
+  logic rb_idle;
   always_comb begin
-    // Defaults
-    cms_addr  = '0;
-    cms_wr    = 1'b0;
-    cms_rd    = 1'b0;
-    cms_wdata = '0;
-    sram_regbus_wr       = 1'b0;
-    sram_regbus_rd_issue = 1'b0;
-
-    // EP0-only path (Phase 1c C11): bulk-OUT removed.  Image data now
-    // ingresses solely via 0x2E reg-bus writes.
-    if (is_fifo_data && fifo_rb_wr && !push_region_full) begin
-      // Reg-bus FIFO write (software pushing via 0x2E).  Same arbitration
-      // class as bulk-OUT but lower priority because bulk-OUT is the hot
-      // streaming path.
-      cms_addr       = make_addr(fifo_cms_q, head_push_32);
-      cms_wdata      = fifo_rb_wdata;
-      cms_wr         = 1'b1;
-      sram_regbus_wr = 1'b1;
-    end
-    else if (is_data && fifo_rb_wr) begin
-      // 0x2B direct-window write at INDIRECT_CTRL.offset (4-byte units).
-      cms_addr       = make_addr(ind_ctrl_cms_q, ind_ctrl_offset_bytes);
-      cms_wdata      = fifo_rb_wdata;
-      cms_wr         = 1'b1;
-      sram_regbus_wr = 1'b1;
-    end
-    else if ((rb_state_q == RB_IDLE) && fifo_rb_rd &&
-             (is_data || (is_fifo_data && !push_region_empty))) begin
-      // 0x2B or 0x2E read launch.
-      if (is_data) begin
-        cms_addr = make_addr(ind_ctrl_cms_q, ind_ctrl_offset_bytes);
-      end else begin
-        cms_addr = make_addr(fifo_cms_q, tail_push_32);
-      end
-      cms_rd               = 1'b1;
-      sram_regbus_rd_issue = 1'b1;
-    end
-    else if (rb_state_q == RB_MEM_WAIT) begin
-      // Retry a stalled read now that the write slot is free.
-      cms_addr             = rb_pend_addr_q;
-      cms_rd               = 1'b1;
-      sram_regbus_rd_issue = 1'b1;
-    end
+    rb_idle         = (rb_state_q == RB_IDLE);
+    launch_err_wr   = rb_idle && is_fifo_data && fifo_rb_wr && push_region_full;
+    launch_err_rd   = rb_idle && is_fifo_data && fifo_rb_rd && push_region_empty;
+    launch_err      = launch_err_wr || launch_err_rd;
+    // Degenerate (no-strobe) SRAM access: complete immediately as a no-op ack.
+    sram_zero_strobe= rb_idle && is_sram_cmd && (fifo_rb_wr || fifo_rb_rd) &&
+                      (fifo_rb_wstrb == 4'h0);
+    sram_wr_launch  = rb_idle && is_sram_cmd && fifo_rb_wr &&
+                      !launch_err && (fifo_rb_wstrb != 4'h0);
+    sram_rd_launch  = rb_idle && is_sram_cmd && fifo_rb_rd &&
+                      !launch_err && (fifo_rb_wstrb != 4'h0);
   end
 
-  // bulk-OUT handshake removed (Phase 1c C11).
-  // ------------------------------------------------------------------
+  // mask_last: the remaining-lane mask has at most one bit set (current lane
+  // is the final lane of the access).
+  logic mask_last;
+  always_comb mask_last = ((seq_mask_q & (seq_mask_q - 4'h1)) == 4'h0);
 
   // ------------------------------------------------------------------
-  // Read-back status word assembly (0x2A, 0x2D) and read mux
+  // Status bytes (0x2A, 0x2D)
   // ------------------------------------------------------------------
-  // Layout (byte-addressable via fifo_rb_offset[2:0]):
-  //
-  // 0x2A INDIRECT_STATUS
-  //   [0]      status byte  = {4'b0, reset, region, full, empty}
-  //   [1]      reserved     = 8'h00
-  //   [2]      payload_size = 8'h02 (256 B / 0x08 per Sec 8.2); here 0x02
-  //                          advertises that each transfer is 4 bytes
-  //                          (spec-compliant default for a byte FIFO).
-  //   [3]      reserved     = 8'h00
-  //   [4..7]   write_index  (bytes pushed into direct-window region)
-  //
-  // 0x2D INDIRECT_FIFO_STATUS (OCP Recovery v1.1 Sec 9.2 Tbl 9-11, 20 B)
-  //   [0]       status byte  = {3'b0, image_done, overflow, region_reset,
-  //                             full, empty} for the fifo_cms_q region
-  //   [1..3]    reserved     = 8'h00
-  //   [4..7]    WRITE_INDEX  (= bytes pushed into fifo_cms_q region)
-  //   [8..11]   READ_INDEX   (= bytes popped from fifo_cms_q region)
-  //   [12..15]  FIFO_SIZE         (LE, compile-time constant)
-  //   [16..19]  MAX_TRANSFER_SIZE (LE, compile-time constant)
-  //
-  // Bits follow Sec 8.2 "Indirect FIFO Status" (empty, full, region-reset,
-  // overflow).  The image_done bit at [0][4] is an implementation-defined
-  // mirror of the push-complete event; software may also infer it from
-  // write_index == image_size.
-
   logic [7:0] status_byte_2a;
   logic [7:0] status_byte_2d;
   logic ctrl_region_empty;
   logic ctrl_region_full;
-
   always_comb begin
     ctrl_region_empty = (head_q[ctrl_idx] == tail_q[ctrl_idx]);
     ctrl_region_full  = (head_ctrl_32 >= REGION_BYTES);
@@ -366,142 +317,132 @@ module usb_ocp_recovery_cms_fifo #(
   end
 
   // ------------------------------------------------------------------
-  // C3 fix (rtl_review.md section D/0x2A): INDIRECT_STATUS bytes 2..7
-  // are the 48-bit REGION_SIZE field in 4-byte (DWORD) units per OCP
-  // Recovery v1.1 Section 9.2 Tbl 9-13 and the systemrdl bit_field
-  // REGION_SIZE position=16 width=48 (third_party/usb2/systemrdl/
-  // usb_ocp_recovery.regs line 213).  Previously the mux emitted
-  // head_q[ctrl_idx] (write-index, wrong semantic name).
-  //
-  // REGION_SIZE is a compile-time constant derived from the CMS region
-  // depth.  Each backing region holds REGION_BYTES bytes (1 << REGION_OFFSET_W),
-  // so REGION_SIZE (in DWORDs) is REGION_BYTES >> 2.  Computed once at
-  // elaboration; no flops.
+  // Register-record read mux (32-bit word assembled per WORD index)
   // ------------------------------------------------------------------
-  localparam logic [47:0] REGION_SIZE_DWORDS = 48'(REGION_BYTES >> 2);
-
-  // Register-bus read data mux.  SRAM-backed reads drop through to
-  // cms_rdata when rb_state_q == RB_MEM_RD.
+  logic [31:0] reg_rdata;
   always_comb begin
-    fifo_rb_rdata = 8'h00;
+    reg_rdata = 32'h0;
     if (is_ctrl) begin
-      unique case (fifo_rb_offset[2:0])
-        3'd0: fifo_rb_rdata = ind_ctrl_offset_q[7:0];
-        3'd1: fifo_rb_rdata = ind_ctrl_offset_q[15:8];
-        3'd2: fifo_rb_rdata = ind_ctrl_offset_q[23:16];
-        3'd3: fifo_rb_rdata = ind_ctrl_offset_q[31:24];
-        3'd4: fifo_rb_rdata = ind_ctrl_cms_q;
-        default: fifo_rb_rdata = 8'h00;
+      // 0x29 INDIRECT_CTRL: word0 = IMAGE_OFFSET[31:0]; word1 byte0 = CMS.
+      unique case (word_idx)
+        3'd0:    reg_rdata = ind_ctrl_offset_q;
+        3'd1:    reg_rdata = {24'h0, ind_ctrl_cms_q};
+        default: reg_rdata = 32'h0;
       endcase
     end
     else if (is_status) begin
-      // OCP Recovery v1.1 Section 9.2 Tbl 9-13 INDIRECT_STATUS layout:
-      //   byte 0    : STATUS_FLAGS
-      //   byte 1    : REGION_TYPE (0x00 = code/recovery image)
-      //   bytes 2..7: REGION_SIZE (48-bit LE, 4-byte units)
-      // Matches systemrdl bit_fields STATUS_FLAGS / REGION_TYPE /
-      // REGION_SIZE (usb_ocp_recovery.regs lines 207-215).  C3 fix.
-      unique case (fifo_rb_offset[2:0])
-        3'd0:    fifo_rb_rdata = status_byte_2a;
-        3'd1:    fifo_rb_rdata = 8'h00;                  // REGION_TYPE: code/recovery
-        3'd2:    fifo_rb_rdata = REGION_SIZE_DWORDS[7:0];
-        3'd3:    fifo_rb_rdata = REGION_SIZE_DWORDS[15:8];
-        3'd4:    fifo_rb_rdata = REGION_SIZE_DWORDS[23:16];
-        3'd5:    fifo_rb_rdata = REGION_SIZE_DWORDS[31:24];
-        3'd6:    fifo_rb_rdata = REGION_SIZE_DWORDS[39:32];
-        3'd7:    fifo_rb_rdata = REGION_SIZE_DWORDS[47:40];
-        default: fifo_rb_rdata = 8'h00;
+      // 0x2A INDIRECT_STATUS (OCP v1.1 Sec 9.2 Tbl 9-13):
+      //   byte0 STATUS_FLAGS, byte1 REGION_TYPE (0=code), bytes2..7 REGION_SIZE
+      //   (48-bit LE, DWORD units).
+      unique case (word_idx)
+        3'd0:    reg_rdata = {REGION_SIZE_DWORDS[15:0], 8'h00, status_byte_2a};
+        3'd1:    reg_rdata = REGION_SIZE_DWORDS[47:16];
+        default: reg_rdata = 32'h0;
       endcase
     end
     else if (is_fifo_ctrl) begin
-      // OCP Recovery v1.1 Section9.2 Tbl 9-15: INDIRECT_FIFO_CTRL layout is
-      //   byte 0    CMS, byte 1 RESET, bytes 2..5 IMAGE_SIZE (4-byte units).
-      // i3c-rdl secure_firmware_recovery_interface.rdl INDIRECT_FIFO_CTRL_1
-      // bit 0 (line ~660+).  rtl_review.md D-2D fix.
-      unique case (fifo_rb_offset[2:0])
-        3'd0:    fifo_rb_rdata = fifo_cms_q;
-        3'd1:    fifo_rb_rdata = {7'b0, region_reset_q};
-        3'd2:    fifo_rb_rdata = image_size_q[7:0];
-        3'd3:    fifo_rb_rdata = image_size_q[15:8];
-        3'd4:    fifo_rb_rdata = image_size_q[23:16];
-        3'd5:    fifo_rb_rdata = image_size_q[31:24];
-        default: fifo_rb_rdata = 8'h00;
+      // 0x2C INDIRECT_FIFO_CTRL (OCP v1.1 Sec 9.2 Tbl 9-15):
+      //   byte0 CMS, byte1 RESET, bytes2..5 IMAGE_SIZE (DWORD units).
+      unique case (word_idx)
+        3'd0:    reg_rdata = {image_size_q[15:0],
+                              {7'b0, region_reset_q},
+                              fifo_cms_q};
+        3'd1:    reg_rdata = {16'h0, image_size_q[31:16]};
+        default: reg_rdata = 32'h0;
       endcase
     end
     else if (is_fifo_status) begin
-      // OCP Recovery v1.1 Sec 9.2 Tbl 9-11: full 20-byte layout.
-      unique case (fifo_rb_offset[4:0])
-        5'd0:    fifo_rb_rdata = status_byte_2d;
-        // Byte 1 = REGION_TYPE; 0x00 = code-space per OCP v1.1 Section9.2 Tbl 9-11
-        // (rtl_review.md Phase 1b C4: drive explicitly rather than relying on
-        // default mux fall-through).
-        5'd1:    fifo_rb_rdata = 8'h00;
-        // Bytes 2..3 = reserved (zero per spec).
-        5'd2:    fifo_rb_rdata = 8'h00;
-        5'd3:    fifo_rb_rdata = 8'h00;
-        5'd4:    fifo_rb_rdata = head_push_dw[7:0];
-        5'd5:    fifo_rb_rdata = head_push_dw[15:8];
-        5'd6:    fifo_rb_rdata = head_push_dw[23:16];
-        5'd7:    fifo_rb_rdata = head_push_dw[31:24];
-        5'd8:    fifo_rb_rdata = tail_push_dw[7:0];
-        5'd9:    fifo_rb_rdata = tail_push_dw[15:8];
-        5'd10:   fifo_rb_rdata = tail_push_dw[23:16];
-        5'd11:   fifo_rb_rdata = tail_push_dw[31:24];
-        5'd12:   fifo_rb_rdata = FIFO_SIZE_DWORDS[7:0];
-        5'd13:   fifo_rb_rdata = FIFO_SIZE_DWORDS[15:8];
-        5'd14:   fifo_rb_rdata = FIFO_SIZE_DWORDS[23:16];
-        5'd15:   fifo_rb_rdata = FIFO_SIZE_DWORDS[31:24];
-        5'd16:   fifo_rb_rdata = MAX_XFER_SIZE_DWORDS[7:0];
-        5'd17:   fifo_rb_rdata = MAX_XFER_SIZE_DWORDS[15:8];
-        5'd18:   fifo_rb_rdata = MAX_XFER_SIZE_DWORDS[23:16];
-        5'd19:   fifo_rb_rdata = MAX_XFER_SIZE_DWORDS[31:24];
-        default: fifo_rb_rdata = 8'h00;
+      // 0x2D INDIRECT_FIFO_STATUS (OCP v1.1 Sec 9.2 Tbl 9-11, 20 B / 5 words):
+      //   word0 byte0 STATUS_FLAGS, byte1 REGION_TYPE (0), bytes2..3 reserved
+      //   word1 WRITE_INDEX (DWORD units)
+      //   word2 READ_INDEX  (DWORD units)
+      //   word3 FIFO_SIZE          (DWORD units)
+      //   word4 MAX_TRANSFER_SIZE  (DWORD units)
+      unique case (word_idx)
+        3'd0:    reg_rdata = {24'h0, status_byte_2d};
+        3'd1:    reg_rdata = head_push_dw;
+        3'd2:    reg_rdata = tail_push_dw;
+        3'd3:    reg_rdata = FIFO_SIZE_DWORDS;
+        3'd4:    reg_rdata = MAX_XFER_SIZE_DWORDS;
+        default: reg_rdata = 32'h0;
       endcase
     end
-    else if ((is_data || is_fifo_data) && (rb_state_q == RB_MEM_RD)) begin
-      fifo_rb_rdata = cms_rdata;
+  end
+
+  // Register-bus read data: register records combinationally; SRAM reads
+  // present the assembled word in RB_RDONE.
+  always_comb begin
+    if (rb_state_q == RB_RDONE) fifo_rb_rdata = seq_data_q;
+    else                        fifo_rb_rdata = reg_rdata;
+  end
+
+  // ------------------------------------------------------------------
+  // SRAM port drive (combinational)
+  // ------------------------------------------------------------------
+  logic [1:0]  cur_lane;            // lane being serviced this cycle
+  logic [31:0] wr_ptr_bytes;        // live byte offset for the write/read op
+  logic [7:0]  wr_region;
+  always_comb begin
+    cur_lane = lowest_lane(seq_mask_q);
+    if (seq_is_data_q) begin
+      // 0x2B direct window: cursor = INDIRECT_CTRL.offset (DWORD units).
+      wr_region    = ind_ctrl_cms_q;
+      wr_ptr_bytes = ind_ctrl_offset_bytes;
+    end else begin
+      // 0x2E FIFO: push pointer = head, pop pointer = tail.
+      wr_region    = fifo_cms_q;
+      wr_ptr_bytes = (rb_state_q == RB_WR) ? head_push_32 : tail_push_32;
     end
+  end
+
+  always_comb begin
+    cms_addr  = '0;
+    cms_wr    = 1'b0;
+    cms_rd    = 1'b0;
+    cms_wdata = '0;
+
+    unique case (rb_state_q)
+      RB_WR: begin
+        // Write the current lane's byte (skip if push region went full).
+        if (|seq_mask_q &&
+            !(seq_is_data_q == 1'b0 && push_region_full)) begin
+          cms_addr  = make_addr(wr_region, wr_ptr_bytes);
+          cms_wdata = seq_data_q[cur_lane*8 +: 8];
+          cms_wr    = 1'b1;
+        end
+      end
+      RB_RD: begin
+        if (|seq_mask_q) begin
+          cms_addr = make_addr(wr_region, wr_ptr_bytes);
+          cms_rd   = 1'b1;
+        end
+      end
+      default: ; // RB_IDLE / RB_RDC / RB_RDONE: no SRAM drive
+    endcase
   end
 
   // ------------------------------------------------------------------
   // Register-bus handshake (ack/err)
   // ------------------------------------------------------------------
-  logic reg_wr_ack;
-  logic reg_rd_ack;
-  logic mem_wr_ack;
-  logic mem_rd_ack;
-
   always_comb begin
-    // Same-cycle ack for flopped-register paths.
-    reg_wr_ack = rb_req && fifo_rb_wr &&
-                 (is_ctrl || is_status || is_fifo_ctrl || is_fifo_status);
-    reg_rd_ack = rb_req && fifo_rb_rd &&
-                 (is_ctrl || is_status || is_fifo_ctrl || is_fifo_status);
-    // SRAM writes complete the cycle they are issued (single-port write).
-    // OCP Recovery v1.1 Sec 8.2: indirect FIFO pushes (0x2E reg-bus
-    // writes and parallel bulk-OUT) MUST NOT lose data.  When a bulk-OUT
-    // push wins arbitration against a concurrent reg-bus 0x2E write,
-    // the reg-bus byte is NOT written to SRAM -- so we must NOT ACK it.
-    // The reg-bus master must hold fifo_rb_wr/wdata and retry next
-    // cycle, matching the RB_MEM_WAIT stall pattern used for reads.
-    mem_wr_ack = sram_regbus_wr;
-    // SRAM read completes the cycle after launch (RB_MEM_RD).
-    mem_rd_ack = (rb_state_q == RB_MEM_RD);
+    // Register records: same-cycle ack.
+    // SRAM no-op (zero strobe write): same-cycle ack.
+    // SRAM error launch (push full / pop empty): same-cycle ack+err.
+    // SRAM write: ack on the final lane (RB_WR && mask_last).
+    // SRAM read:  ack in RB_RDONE (assembled word valid).
+    fifo_rb_ack = (rb_req && is_reg_cmd)
+                | sram_zero_strobe
+                | launch_err
+                | ((rb_state_q == RB_WR) && mask_last)
+                | (rb_state_q == RB_RDONE);
 
-    fifo_rb_ack = reg_wr_ack | reg_rd_ack | mem_wr_ack | mem_rd_ack;
-
-    // fifo_rb_err: unsupported command while selected, or read from an
-    // empty FIFO, or write to a full FIFO / past image_size.
+    // Errors: unsupported command while selected, push to a full FIFO, pop
+    // from an empty FIFO.
     fifo_rb_err = 1'b0;
-    if (fifo_rb_sel && !(is_ctrl || is_status || is_data ||
-                         is_fifo_ctrl || is_fifo_status || is_fifo_data)) begin
+    if (fifo_rb_sel && !(is_reg_cmd || is_sram_cmd)) begin
       fifo_rb_err = rb_req;
     end
-    if (is_fifo_data && fifo_rb_wr && push_region_full) begin
-      fifo_rb_err = 1'b1;
-    end
-    if (is_fifo_data && fifo_rb_rd && push_region_empty &&
-        (rb_state_q == RB_IDLE)) begin
+    if (launch_err) begin
       fifo_rb_err = 1'b1;
     end
   end
@@ -510,139 +451,157 @@ module usb_ocp_recovery_cms_fifo #(
   // Sequential logic
   // ------------------------------------------------------------------
   integer i;
-  logic image_done_pulse;
 
   always_ff @(posedge clk) begin
     if (rst) begin
-      ind_ctrl_offset_q  <= '0;
-      ind_ctrl_cms_q     <= '0;
-      fifo_cms_q         <= '0;
-      image_size_q       <= '0;
-      overflow_q         <= 1'b0;
-      region_reset_q     <= 1'b0;
-      image_done_q       <= 1'b0;
-      image_push_active_q<= 1'b0;
-      image_done_pulse   <= 1'b0;
-      rb_state_q         <= RB_IDLE;
-      rb_pend_addr_q     <= '0;
-      rb_pend_inc_ctrl_q <= 1'b0;
-      rb_pend_inc_tail_q <= 1'b0;
-      rb_pend_cms_q      <= '0;
+      ind_ctrl_offset_q   <= '0;
+      ind_ctrl_cms_q      <= '0;
+      fifo_cms_q          <= '0;
+      image_size_q        <= '0;
+      overflow_q          <= 1'b0;
+      region_reset_q      <= 1'b0;
+      image_done_q        <= 1'b0;
+      image_push_active_q <= 1'b0;
+      rb_state_q          <= RB_IDLE;
+      seq_mask_q          <= 4'h0;
+      seq_data_q          <= '0;
+      seq_is_data_q       <= 1'b0;
       for (i = 0; i < NUM_CMS; i++) begin
         head_q[i] <= '0;
         tail_q[i] <= '0;
       end
     end else begin
-      image_done_pulse <= 1'b0;
 
-      // -- INDIRECT_CTRL (0x29) writes --------------------------------
+      // ============================================================
+      // Register-record writes (same-cycle ack; only fire in RB_IDLE
+      // since the upstream holds one command per access and SRAM ops use
+      // the 0x2B/0x2E commands).
+      // ============================================================
+
+      // -- INDIRECT_CTRL (0x29) ------------------------------------
       if (is_ctrl && fifo_rb_wr) begin
-        unique case (fifo_rb_offset[2:0])
-          3'd0: ind_ctrl_offset_q[7:0]   <= fifo_rb_wdata;
-          3'd1: ind_ctrl_offset_q[15:8]  <= fifo_rb_wdata;
-          3'd2: ind_ctrl_offset_q[23:16] <= fifo_rb_wdata;
-          3'd3: ind_ctrl_offset_q[31:24] <= fifo_rb_wdata;
-          3'd4: ind_ctrl_cms_q           <= fifo_rb_wdata;
-          default: ;
-        endcase
-      end
-
-      // -- INDIRECT_FIFO_CTRL (0x2C) writes --------------------------
-      if (is_fifo_ctrl && fifo_rb_wr) begin
-        unique case (fifo_rb_offset[2:0])
-          3'd0: fifo_cms_q <= fifo_rb_wdata;
-          3'd1: begin
-            // bit 0 = region reset (self-clearing one-shot).  Clears head
-            // pointer, tail pointer, overflow, image-done for the region
-            // currently selected by fifo_cms_q.
-            if (fifo_rb_wdata[0]) begin
-              head_q[push_idx]     <= '0;
-              tail_q[push_idx]     <= '0;
-              overflow_q           <= 1'b0;
-              image_done_q         <= 1'b0;
-              region_reset_q       <= 1'b1;
-              image_push_active_q  <= 1'b0;
-            end
+        unique case (word_idx)
+          3'd0: begin
+            if (fifo_rb_wstrb[0]) ind_ctrl_offset_q[7:0]   <= fifo_rb_wdata[7:0];
+            if (fifo_rb_wstrb[1]) ind_ctrl_offset_q[15:8]  <= fifo_rb_wdata[15:8];
+            if (fifo_rb_wstrb[2]) ind_ctrl_offset_q[23:16] <= fifo_rb_wdata[23:16];
+            if (fifo_rb_wstrb[3]) ind_ctrl_offset_q[31:24] <= fifo_rb_wdata[31:24];
           end
-          3'd2: image_size_q[7:0]   <= fifo_rb_wdata;
-          3'd3: image_size_q[15:8]  <= fifo_rb_wdata;
-          3'd4: image_size_q[23:16] <= fifo_rb_wdata;
-          3'd5: image_size_q[31:24] <= fifo_rb_wdata;
+          3'd1: begin
+            if (fifo_rb_wstrb[0]) ind_ctrl_cms_q <= fifo_rb_wdata[7:0];
+          end
           default: ;
         endcase
       end
 
-      // -- INDIRECT_FIFO_STATUS (0x2D) write-1-to-clear --------------
-      // Sec 8.2: overflow and region-reset status bits are sticky and
-      // cleared by writing 1.  Match the full 5-bit offset since the
-      // 0x2D record is 20 bytes wide (status byte is at offset 0 only).
-      if (is_fifo_status && fifo_rb_wr && (fifo_rb_offset[4:0] == 5'd0)) begin
+      // -- INDIRECT_FIFO_CTRL (0x2C) -------------------------------
+      if (is_fifo_ctrl && fifo_rb_wr) begin
+        unique case (word_idx)
+          3'd0: begin
+            if (fifo_rb_wstrb[0]) fifo_cms_q <= fifo_rb_wdata[7:0];
+            // byte1 bit0 = region reset (self-clearing one-shot).
+            if (fifo_rb_wstrb[1] && fifo_rb_wdata[8]) begin
+              head_q[push_idx]    <= '0;
+              tail_q[push_idx]    <= '0;
+              overflow_q          <= 1'b0;
+              image_done_q        <= 1'b0;
+              region_reset_q      <= 1'b1;
+              image_push_active_q <= 1'b0;
+            end
+            if (fifo_rb_wstrb[2]) image_size_q[7:0]   <= fifo_rb_wdata[23:16];
+            if (fifo_rb_wstrb[3]) image_size_q[15:8]  <= fifo_rb_wdata[31:24];
+          end
+          3'd1: begin
+            if (fifo_rb_wstrb[0]) image_size_q[23:16] <= fifo_rb_wdata[7:0];
+            if (fifo_rb_wstrb[1]) image_size_q[31:24] <= fifo_rb_wdata[15:8];
+          end
+          default: ;
+        endcase
+      end
+
+      // -- INDIRECT_FIFO_STATUS (0x2D) write-1-to-clear -----------
+      // STATUS_FLAGS at word0 byte0 (Sec 8.2 sticky overflow/region-reset/
+      // image-done bits cleared by writing 1).
+      if (is_fifo_status && fifo_rb_wr && (word_idx == 3'd0) && fifo_rb_wstrb[0]) begin
         if (fifo_rb_wdata[2]) region_reset_q <= 1'b0;
         if (fifo_rb_wdata[3]) overflow_q     <= 1'b0;
         if (fifo_rb_wdata[4]) image_done_q   <= 1'b0;
       end
 
-      // -- Bulk-OUT push removed (Phase 1c C11) --------------------
-
-      // -- Reg-bus write to 0x2E: advance head -----------------------
-      if (sram_regbus_wr && is_fifo_data && fifo_rb_wr) begin
-        head_q[push_idx]    <= head_q[push_idx] + PTR_W'(1);
-        image_push_active_q <= 1'b1;
-        if ((image_size_q != '0) &&
-            ((head_push_32 + 32'd1) >= image_size_bytes) && !image_done_q) begin
-          image_done_q        <= 1'b1;
-          image_done_pulse    <= 1'b1;
-          image_push_active_q <= 1'b0;
-        end
-      end
-      if (is_fifo_data && fifo_rb_wr && push_region_full) begin
-        overflow_q <= 1'b1;
-      end
-
-      // -- Reg-bus write to 0x2B: advance ctrl offset ----------------
-      if (sram_regbus_wr && is_data && fifo_rb_wr) begin
-        ind_ctrl_offset_q <= ind_ctrl_offset_q + 32'd1;
-        head_q[ctrl_idx]  <= head_q[ctrl_idx] + PTR_W'(1);
-      end
-
-      // -- Read state machine for 0x2B / 0x2E reads ------------------
+      // ============================================================
+      // Word access engine for SRAM records (0x2B / 0x2E)
+      // ============================================================
       unique case (rb_state_q)
         RB_IDLE: begin
-          if (sram_regbus_rd_issue) begin
-            rb_state_q         <= RB_MEM_RD;
-            rb_pend_addr_q     <= cms_addr;
-            rb_pend_inc_ctrl_q <= is_data;
-            rb_pend_inc_tail_q <= is_fifo_data;
-            rb_pend_cms_q      <= fifo_cms_q;
+          if (sram_wr_launch) begin
+            rb_state_q    <= RB_WR;
+            seq_mask_q    <= fifo_rb_wstrb;
+            seq_data_q    <= fifo_rb_wdata;
+            seq_is_data_q <= is_data;
+          end else if (sram_rd_launch) begin
+            rb_state_q    <= RB_RD;
+            seq_mask_q    <= fifo_rb_wstrb;
+            seq_data_q    <= '0;
+            seq_is_data_q <= is_data;
           end
-          else if (fifo_rb_rd && (is_data || is_fifo_data) && !push_region_empty
-                   && sram_regbus_wr) begin
-            // Read lost arbitration to a write; park and retry.
-            rb_state_q         <= RB_MEM_WAIT;
-            rb_pend_addr_q     <= is_data
-                                  ? make_addr(ind_ctrl_cms_q, ind_ctrl_offset_q)
-                                  : make_addr(fifo_cms_q, tail_push_32);
-            rb_pend_inc_ctrl_q <= is_data;
-            rb_pend_inc_tail_q <= is_fifo_data;
-            rb_pend_cms_q      <= fifo_cms_q;
+          // Reg-bus push to a full FIFO sets the sticky overflow flag.
+          if (launch_err_wr) begin
+            overflow_q <= 1'b1;
           end
         end
 
-        RB_MEM_WAIT: begin
-          if (!sram_regbus_wr) begin
-            rb_state_q <= RB_MEM_RD;
+        // ---- SRAM write: one strobe lane per cycle ----------------
+        RB_WR: begin
+          if (|seq_mask_q) begin
+            if (!seq_is_data_q) begin
+              // 0x2E FIFO push.
+              if (!push_region_full) begin
+                head_q[push_idx]    <= head_q[push_idx] + PTR_W'(1);
+                image_push_active_q <= 1'b1;
+                if ((image_size_q != '0) &&
+                    ((head_push_32 + 32'd1) >= image_size_bytes) &&
+                    !image_done_q) begin
+                  image_done_q        <= 1'b1;
+                  image_push_active_q <= 1'b0;
+                end
+              end else begin
+                overflow_q <= 1'b1;
+              end
+            end else begin
+              // 0x2B direct-window write: advance the window cursor.
+              ind_ctrl_offset_q <= ind_ctrl_offset_q + 32'd1;
+              head_q[ctrl_idx]  <= head_q[ctrl_idx] + PTR_W'(1);
+            end
+            seq_mask_q <= seq_mask_q & ~(4'(4'h1 << cur_lane));
+          end
+          if (mask_last) begin
+            rb_state_q <= RB_IDLE;
           end
         end
 
-        RB_MEM_RD: begin
-          // Retire: bump pointers and return to idle.
-          if (rb_pend_inc_ctrl_q) begin
+        // ---- SRAM read: issue cms_rd for the current lane ---------
+        RB_RD: begin
+          rb_state_q <= RB_RDC;
+        end
+
+        // ---- SRAM read: capture cms_rdata, advance pointer --------
+        RB_RDC: begin
+          seq_data_q[cur_lane*8 +: 8] <= cms_rdata;
+          if (!seq_is_data_q) begin
+            tail_q[push_idx] <= tail_q[push_idx] + PTR_W'(1);
+          end else begin
             ind_ctrl_offset_q <= ind_ctrl_offset_q + 32'd1;
           end
-          if (rb_pend_inc_tail_q) begin
-            tail_q[rb_pend_cms_q[CMS_IDX_W-1:0]] <=
-                tail_q[rb_pend_cms_q[CMS_IDX_W-1:0]] + PTR_W'(1);
+          seq_mask_q <= seq_mask_q & ~(4'(4'h1 << cur_lane));
+          if (mask_last) begin
+            rb_state_q <= RB_RDONE;   // present assembled word + ack
+          end else begin
+            rb_state_q <= RB_RD;      // next lane
           end
+        end
+
+        // ---- SRAM read complete: word + ack presented this cycle --
+        RB_RDONE: begin
           rb_state_q <= RB_IDLE;
         end
 
@@ -655,26 +614,25 @@ module usb_ocp_recovery_cms_fifo #(
   // Outputs to A5 FSM
   // ------------------------------------------------------------------
   always_comb begin
-    // M5: dedicated active flag (set by first 0x2E push into the region,
-    // cleared by region reset / image complete).  Reset deassert and
-    // image_done both clear; reads remain valid throughout.
     image_push_active = image_push_active_q;
-    image_push_done   = image_done_pulse;
+    // image_push_done feeds the A5 recovery FSM, which must transition
+    // S_AWAIT_IMAGE -> S_PUSH_ACTIVE -> S_IMAGE_LOADED to consume it.  A
+    // 1-cycle done pulse would race that multi-state walk (the word-width push
+    // completes in a fast burst), so the FSM could miss it and hang in
+    // S_PUSH_ACTIVE.  Drive it from the STICKY image_done_q (held until region
+    // reset or INDIRECT_FIFO_STATUS write-1-to-clear) so the FSM catches the
+    // image-complete event whenever it reaches S_PUSH_ACTIVE.
+    image_push_done   = image_done_q;
     fifo_overflow     = overflow_q;
-    image_size        = image_size_bytes; // bytes (4-byte unit shift applied)
-    bytes_pushed      = head_push_32;     // 32b zero-extended view (C8)
-    current_cms       = fifo_cms_q;
+    image_size        = image_size_bytes; // bytes
+    bytes_pushed      = head_push_32;      // 32b zero-extended view
   end
-
-  // ------------------------------------------------------------------
-  // Bulk-IN mirror removed (Phase 1c C11)
-  // ------------------------------------------------------------------
 
   // ------------------------------------------------------------------
   // Assertions
   // ------------------------------------------------------------------
-  // No reg-bus command unknown to this block should get through A3.
   // synthesis translate_off
+`ifndef SYNTHESIS
   always_ff @(posedge clk) begin
     if (!rst && fifo_rb_sel) begin
       assert (!$isunknown(fifo_rb_cmd))
@@ -685,6 +643,7 @@ module usb_ocp_recovery_cms_fifo #(
         else $error("SRAM port: simultaneous cms_wr and cms_rd");
     end
   end
+`endif
   // synthesis translate_on
 
 endmodule : usb_ocp_recovery_cms_fifo

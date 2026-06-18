@@ -265,6 +265,14 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__DEVICE_STATUS_15__in_t;
 
     typedef struct {
+        logic hwclr;
+    } usb_ocp_recovery_reg__RECOVERY_CTRL__ACTIVATE_REC_IMG__in_t;
+
+    typedef struct {
+        usb_ocp_recovery_reg__RECOVERY_CTRL__ACTIVATE_REC_IMG__in_t ACTIVATE_REC_IMG;
+    } usb_ocp_recovery_reg__RECOVERY_CTRL__in_t;
+
+    typedef struct {
         logic [3:0] next;
     } usb_ocp_recovery_reg__RECOVERY_STATUS__DEV_REC_STATUS__in_t;
 
@@ -1034,6 +1042,7 @@ package usb_ocp_recovery_reg_pkg;
         usb_ocp_recovery_reg__DEVICE_STATUS_13__in_t DEVICE_STATUS_13;
         usb_ocp_recovery_reg__DEVICE_STATUS_14__in_t DEVICE_STATUS_14;
         usb_ocp_recovery_reg__DEVICE_STATUS_15__in_t DEVICE_STATUS_15;
+        usb_ocp_recovery_reg__RECOVERY_CTRL__in_t RECOVERY_CTRL;
         usb_ocp_recovery_reg__RECOVERY_STATUS__in_t RECOVERY_STATUS;
         usb_ocp_recovery_reg__HW_STATUS__in_t HW_STATUS;
         usb_ocp_recovery_reg__INDIRECT_STATUS_0__in_t INDIRECT_STATUS_0;
@@ -1111,14 +1120,17 @@ package usb_ocp_recovery_reg_pkg;
 
     typedef struct {
         logic [7:0] value;
+        logic swmod;
     } usb_ocp_recovery_reg__DEVICE_RESET__RESET_CTRL__out_t;
 
     typedef struct {
         logic [7:0] value;
+        logic swmod;
     } usb_ocp_recovery_reg__DEVICE_RESET__FORCED_RECOVERY__out_t;
 
     typedef struct {
         logic [7:0] value;
+        logic swmod;
     } usb_ocp_recovery_reg__DEVICE_RESET__IF_CTRL__out_t;
 
     typedef struct {
@@ -1129,14 +1141,17 @@ package usb_ocp_recovery_reg_pkg;
 
     typedef struct {
         logic [7:0] value;
+        logic swmod;
     } usb_ocp_recovery_reg__RECOVERY_CTRL__CMS__out_t;
 
     typedef struct {
         logic [7:0] value;
+        logic swmod;
     } usb_ocp_recovery_reg__RECOVERY_CTRL__REC_IMG_SEL__out_t;
 
     typedef struct {
         logic [7:0] value;
+        logic swmod;
     } usb_ocp_recovery_reg__RECOVERY_CTRL__ACTIVATE_REC_IMG__out_t;
 
     typedef struct {

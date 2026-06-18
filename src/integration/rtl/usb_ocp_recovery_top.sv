@@ -1,23 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //------------------------------------------------------------------------------
-// usb_ocp_recovery_top.sv  (Phase 1c)
+// usb_ocp_recovery_top.sv
 //
-// OCP Recovery v1.1 USB-transported function - integration wrapper.
-//
-// Phase 1c changes (vs Phase 1b):
-//   - DELETED: A1 (usb_ocp_recovery_ep_adapter) - PIE byte-stream conversion
-//     now lives in VHDL (usb_pie_recovery_arb.{e,m}.vhdl) so the SV top no
-//     longer needs to bind the VHDL adapter.  Upper-side byte streams are
-//     now driven by parent SV ports (rec_setup_pkt_*, rec_ctrl_*).
-//   - DELETED: AXI4-Lite subordinate adapter + s_axil_* port group.  An AHB
-//     sub-decoder now lives in the parent SV wrapper and drives the reg-bus
-//     slave port group (rb_*) directly.
-//   - DELETED: Bulk endpoint streams (bout_*/bin_*/bulk_*).  Per the EP0-only
-//     architecture decision (Phase 1b spec correction C11), all OCP records
-//     including INDIRECT_FIFO_DATA cross EP0.
-//   - KEPT: Internal USB-vs-external reg-bus arbiter.  External master is
-//     now the AHB sub-decoder (renamed ext_rb_*).  USB-priority semantics
-//     are preserved.
+// OCP Recovery v1.1 USB transport integration wrapper.  This module accepts
+// the pre-filtered EP0 recovery stream from usb_pie_recovery_arb, decodes the
+// class request, arbitrates USB-vs-external register access, and connects the
+// regblock, CMS FIFO backing store, and recovery FSM.
 //
 // Instantiates:
 //   A2 : usb_ocp_recovery_ctrl_decode (SV)
@@ -31,35 +19,27 @@
 //------------------------------------------------------------------------------
 
 module usb_ocp_recovery_top #(
-  parameter int unsigned  CTRL_EP_NR     = 0,
   parameter int           CMS_ADDR_W     = 16,
-  parameter int           NUM_CMS        = 2,
-  // OCP Recovery v1.1 Section 8.5.2 RECOMMENDS interface number 0 for the
-  // recovery interface.  Phase 8: the class-match filter now lives in the
-  // VHDL arbiter (usb_pie_recovery_arb generic C_REC_IFACE_NUM) so this
-  // SV parameter is documentation-only here -- if a future SoC integrator
-  // relocates the OCP recovery interface, BOTH this parameter and the
-  // VHDL generic must be updated in lock-step.
-  parameter logic [7:0]   REC_IFACE_NUM     = 8'h00,
-  parameter logic [127:0] PROT_CAP_DEFAULT  = '0,
-  parameter logic [191:0] DEVICE_ID_DEFAULT = '0
+  parameter int           NUM_CMS        = 2
 )(
   input  logic                    clk,
   input  logic                    rst,
 
   //----------------------------------------------------------------------------
-  // Upper-side byte-stream surface (driven by VHDL usb_pie_recovery_arb).
-  // Matches the legacy A1 adapter's upper-side contract.
+  // Upper-side 32-bit control-transfer surface driven by VHDL
+  // usb_pie_recovery_arb.
   //----------------------------------------------------------------------------
   input  logic                    rec_setup_pkt_vld,
   input  logic [63:0]             rec_setup_pkt,
 
-  input  logic [7:0]              rec_ctrl_out_data,
+  input  logic [31:0]             rec_ctrl_out_data,
+  input  logic [3:0]              rec_ctrl_out_be,
   input  logic                    rec_ctrl_out_vld,
   input  logic                    rec_ctrl_out_last,
   output logic                    rec_ctrl_out_rdy,
 
-  output logic [7:0]              rec_ctrl_in_data,
+  output logic [31:0]             rec_ctrl_in_data,
+  output logic [3:0]              rec_ctrl_in_be,
   output logic                    rec_ctrl_in_vld,
   output logic                    rec_ctrl_in_last,
   input  logic                    rec_ctrl_in_rdy,
@@ -67,23 +47,19 @@ module usb_ocp_recovery_top #(
   output logic                    rec_ctrl_set_stall,
   input  logic                    rec_ctrl_xfer_done,
 
-  // Claim status from the VHDL arbiter: '1' while the arbiter has claimed
-  // an OCP recovery class transfer (SETUP / DATA / STATUS stages).  Phase
-  // 8: the arbiter owns claim derivation; this port is consumed here only
-  // for visibility / assertions (no functional fan-out into ctrl_decode).
-  input  logic                    rec_ctrl_claim,
-
   //----------------------------------------------------------------------------
   // External register-bus slave (driven by AHB sub-decoder upstream).
-  // Same byte-wide protocol as the internal A2->A3 reg-bus.
+  // Word-wide (32-bit) management path: the SoC AXI master issues word-
+  // aligned accesses, so a full 32-bit data word maps directly onto the
+  // word-native A2->A3 reg-bus.  ext_rb_offset remains a BYTE offset for
+  // compatibility with the wrapper's byte-address capture.
   //----------------------------------------------------------------------------
   input  logic [7:0]              ext_rb_cmd,
   input  logic [15:0]             ext_rb_offset,
   input  logic                    ext_rb_wr,
   input  logic                    ext_rb_rd,
-  input  logic [7:0]              ext_rb_wdata,
-  input  logic                    ext_rb_be,
-  output logic [7:0]              ext_rb_rdata,
+  input  logic [31:0]             ext_rb_wdata,
+  output logic [31:0]             ext_rb_rdata,
   output logic                    ext_rb_ack,
   output logic                    ext_rb_err,
 
@@ -118,36 +94,37 @@ module usb_ocp_recovery_top #(
   // Internal wiring
   //////////////////////////////////////////////////////////////////////////////
 
-  // --- A2 (USB master) reg-bus ---
+  // --- A2 (USB master) reg-bus (word-wide; offset is a WORD index) ---
   logic [7:0]                 usb_rb_cmd;
   logic [15:0]                usb_rb_offset;
   logic                       usb_rb_wr;
   logic                       usb_rb_rd;
-  logic [7:0]                 usb_rb_wdata;
-  logic                       usb_rb_be;
-  logic [7:0]                 usb_rb_rdata;
+  logic [31:0]                usb_rb_wdata;
+  logic [3:0]                 usb_rb_wstrb;
+  logic [31:0]                usb_rb_rdata;
   logic                       usb_rb_ack;
   logic                       usb_rb_err;
 
-  // --- Arbitrated reg-bus into A3 ---
+  // --- Arbitrated reg-bus into A3 (word-wide) ---
   logic [7:0]                 rb_cmd;
   logic [15:0]                rb_offset;
   logic                       rb_wr;
   logic                       rb_rd;
-  logic [7:0]                 rb_wdata;
-  logic                       rb_be;
-  logic [7:0]                 rb_rdata;
+  logic [31:0]                rb_wdata;
+  logic [3:0]                 rb_wstrb;
+  logic [31:0]                rb_rdata;
   logic                       rb_ack;
   logic                       rb_err;
 
-  // --- A3 <-> A4 FIFO-routed reg-bus ---
+  // --- A3 <-> A4 FIFO-routed reg-bus (32-bit word + byte strobe) ---
   logic                       fifo_rb_sel;
   logic [7:0]                 fifo_rb_cmd;
   logic [15:0]                fifo_rb_offset;
   logic                       fifo_rb_wr;
   logic                       fifo_rb_rd;
-  logic [7:0]                 fifo_rb_wdata;
-  logic [7:0]                 fifo_rb_rdata;
+  logic [31:0]                fifo_rb_wdata;
+  logic [3:0]                 fifo_rb_wstrb;
+  logic [31:0]                fifo_rb_rdata;
   logic                       fifo_rb_ack;
   logic                       fifo_rb_err;
 
@@ -186,24 +163,20 @@ module usb_ocp_recovery_top #(
   logic                       fifo_overflow;
   logic [31:0]                image_size;
   logic [31:0]                bytes_pushed;
-  logic [7:0]                 current_cms;
 
   //////////////////////////////////////////////////////////////////////////////
   // Reg-bus arbiter: USB priority, external (AHB) preempts when USB idle.
   // 1-cycle ack window owner tracking captured in owner_q.
   //   owner_q = 2'b01 -> USB, 2'b10 -> EXT.
   //
-  // EXT in-flight gating (C2/C3 robustness): once EXT is granted, hold
-  // off subsequent EXT grants until its ack lands.  This makes the
-  // arbiter safe against an EXT master that legitimately holds wr/rd
-  // high for multiple cycles, which the new dev_axi_aclk -> pie_clk
-  // CDC bridge does while it waits for the request to round-trip across
-  // the clock domain.  Without this gate, a held-high wr/rd would be
-  // re-issued to A3/A4 each cycle, re-firing pulse strobes
-  // (recovery_ctrl_wr_q, device_reset_wr_q, ...) -- the C2/C7 class of
-  // bug observed when the AHB sub-decoder held wr for two cycles.
-  // USB side already pulses rb_wr per byte from ctrl_decode and is
-  // intentionally NOT gated to preserve its 1-cycle ack semantics.
+  // EXT in-flight gating: once EXT is granted, hold off subsequent EXT
+  // grants until its ack lands.  This protects multi-cycle cms_fifo accesses
+  // when the upstream bridge legitimately holds wr/rd high while the request
+  // round-trips across the clock domain.  Without the gate, a held-high EXT
+  // request would be re-issued to A3/A4 each cycle and side-effecting pulses
+  // such as recovery_ctrl_wr and device_reset_wr would fire repeatedly.
+  // USB side already pulses rb_wr per word from ctrl_decode and is
+  // intentionally not gated to preserve its 1-cycle ack semantics.
   //////////////////////////////////////////////////////////////////////////////
 
   logic [1:0] owner_q;
@@ -216,7 +189,12 @@ module usb_ocp_recovery_top #(
   always_comb begin
     usb_req_now = usb_rb_wr | usb_rb_rd;
     ext_req_now = ext_rb_wr | ext_rb_rd;
-    grant_usb   = usb_req_now;
+    // USB has priority for NEW accesses, but an EXT access that is already
+    // in flight must not be preempted: INDIRECT_FIFO_DATA / INDIRECT_DATA are
+    // SRAM-backed in cms_fifo and ack several cycles after the one-cycle
+    // grant_ext, so the EXT request must be held (and USB held off) until the
+    // multi-cycle ack returns, otherwise the read deadlocks.
+    grant_usb   = usb_req_now & ~ext_in_flight_q;
     grant_ext   = ext_req_now & ~usb_req_now & (owner_q != 2'b01)
                               & ~ext_in_flight_q;
   end
@@ -227,21 +205,32 @@ module usb_ocp_recovery_top #(
     rb_wr     = 1'b0;
     rb_rd     = 1'b0;
     rb_wdata  = '0;
-    rb_be     = 1'b0;
+    rb_wstrb  = 4'h0;
     if (grant_usb) begin
+      // USB master is word-native (ctrl_decode already supplies a word
+      // offset, 32-bit data and a byte-lane strobe).
       rb_cmd    = usb_rb_cmd;
       rb_offset = usb_rb_offset;
       rb_wr     = usb_rb_wr;
       rb_rd     = usb_rb_rd;
       rb_wdata  = usb_rb_wdata;
-      rb_be     = usb_rb_be;
-    end else if (grant_ext) begin
+      rb_wstrb  = usb_rb_wstrb;
+    end else if (grant_ext | ext_in_flight_q) begin
+      // EXT (SoC AXI/AHB sub-decoder) is word-native: the SoC master issues
+      // word-aligned 32-bit accesses, so the full data word maps directly
+      // onto the word-wide A3 reg-bus.  ext_rb_offset is a BYTE offset; the
+      // low 2 bits are zero on word-aligned accesses, so the word index is
+      // ext_rb_offset[15:2].  Writes drive all four lanes (rb_wstrb=4'hF);
+      // reads also mark all four lanes so the adapter / FIFO path returns the
+      // complete word.  The bus is held for the whole in-flight window so a
+      // multi-cycle cms_fifo SRAM read keeps its command/address stable until
+      // it acks.
       rb_cmd    = ext_rb_cmd;
-      rb_offset = ext_rb_offset;
+      rb_offset = {2'b00, ext_rb_offset[15:2]};
       rb_wr     = ext_rb_wr;
       rb_rd     = ext_rb_rd;
       rb_wdata  = ext_rb_wdata;
-      rb_be     = ext_rb_be;
+      rb_wstrb  = 4'hF;
     end
   end
 
@@ -270,28 +259,30 @@ module usb_ocp_recovery_top #(
   assign usb_rb_ack   = rb_ack & (owner_q == 2'b01);
   assign usb_rb_err   = rb_err & (owner_q == 2'b01);
 
-  assign ext_rb_rdata = rb_rdata;
-  assign ext_rb_ack   = rb_ack & (grant_ext | (owner_q == 2'b10));
-  assign ext_rb_err   = rb_err & (grant_ext | (owner_q == 2'b10));
+  // EXT is word-native: return the full 32-bit read word.  ext_rb_offset is
+  // held stable by the AHB sub-decoder across the CDC handshake.  The ack/err
+  // are qualified with ext_in_flight_q so a multi-cycle cms_fifo SRAM read,
+  // which acks several cycles after the one-cycle grant_ext (owner_q==EXT only
+  // lasts that one cycle), is still forwarded back to the SoC AXI master.
+  assign ext_rb_rdata = rb_rdata[31:0];
+  assign ext_rb_ack   = rb_ack & (grant_ext | (owner_q == 2'b10) | ext_in_flight_q);
+  assign ext_rb_err   = rb_err & (grant_ext | (owner_q == 2'b10) | ext_in_flight_q);
 
   //////////////////////////////////////////////////////////////////////////////
-  // EP0 SETUP routing -- Phase 8 architecture
+  // EP0 SETUP routing
   //
-  // The VHDL arbiter (usb_pie_recovery_arb) performs OCP class decode
-  // INLINE on the captured SETUP beat and pre-filters rec_setup_pkt_vld
-  // so that only OCP-class SETUPs ever pulse into this SV stack.  All
-  // non-OCP SETUPs flow through the arbiter to the legacy SIE
-  // unmodified, so standard USB enumeration (GET_DESCRIPTOR / SET_ADDRESS
-  // / SET_CONFIGURATION / GET_STATUS / ...) continues to be handled by
-  // the MCU EPCS.  See usb_pie_recovery_arb.{e,m}.vhdl for the class-
-  // match definition (OCP Recovery v1.1 Sec 8.5.1; USB 2.0 Sec 9.3
-  // Tbl 9-2 SETUP byte layout).
+  // The VHDL arbiter (usb_pie_recovery_arb) performs OCP class decode inline
+  // on the captured SETUP beat and pre-filters rec_setup_pkt_vld so that only
+  // OCP-class SETUPs ever pulse into this SV stack.  All non-OCP SETUPs flow
+  // through the arbiter to the legacy SIE unmodified, so standard USB
+  // enumeration (GET_DESCRIPTOR / SET_ADDRESS / SET_CONFIGURATION /
+  // GET_STATUS / ...) continues to be handled by the MCU EPCS.  See
+  // usb_pie_recovery_arb.{e,m}.vhdl for the class-match definition
+  // (OCP Recovery v1.1 Sec 8.5.1; USB 2.0 Sec 9.3 Tbl 9-2 SETUP byte layout).
   //
-  // Consequence: this module no longer needs a SETUP-classifier
-  // (setup_is_ocp_c), a setup-vld filter (setup_pkt_vld_filtered) or
-  // its own claim flop (rec_claim_q).  All three were removed in the
-  // Phase 8 rewrite -- they were the source of the multi-cycle latency
-  // and race conditions documented in research/usb_ocp_p7_*.md.
+  // Because the arbiter delivers only claimed SETUPs, this module treats every
+  // rec_setup_pkt_vld pulse as a recovery request and does not need a second
+  // SETUP classifier or a local claim flop.
   //////////////////////////////////////////////////////////////////////////////
 
 
@@ -306,10 +297,12 @@ module usb_ocp_recovery_top #(
     .setup_pkt_vld   (rec_setup_pkt_vld),
     .setup_pkt       (rec_setup_pkt),
     .ctrl_out_data   (rec_ctrl_out_data),
+    .ctrl_out_be     (rec_ctrl_out_be),
     .ctrl_out_vld    (rec_ctrl_out_vld),
     .ctrl_out_last   (rec_ctrl_out_last),
     .ctrl_out_rdy    (rec_ctrl_out_rdy),
     .ctrl_in_data    (rec_ctrl_in_data),
+    .ctrl_in_be      (rec_ctrl_in_be),
     .ctrl_in_vld     (rec_ctrl_in_vld),
     .ctrl_in_last    (rec_ctrl_in_last),
     .ctrl_in_rdy     (rec_ctrl_in_rdy),
@@ -321,21 +314,21 @@ module usb_ocp_recovery_top #(
     .rb_wr           (usb_rb_wr),
     .rb_rd           (usb_rb_rd),
     .rb_wdata        (usb_rb_wdata),
-    .rb_be           (usb_rb_be),
+    .rb_wstrb        (usb_rb_wstrb),
     .rb_rdata        (usb_rb_rdata),
     .rb_ack          (usb_rb_ack),
     .rb_err          (usb_rb_err)
   );
 
   //////////////////////////////////////////////////////////////////////////////
-  // A3 : byte-wide reg-bus adapter + peakrdl-generated regblock
+  // A3 : word-wide reg-bus adapter + peakrdl-generated regblock
   //
-  // The adapter (usb_ocp_recovery_rb_adapter) translates the byte-granular
-  // rb_* protocol into the regblock's 32-bit passthrough CPU interface and
-  // owns the FSM-facing sideband contract (DEVICE_RESET / RECOVERY_CTRL
-  // latches, HW_STATUS write pulse, PROTOCOL_ERROR rclr pulse, FIFO branch
-  // routing).  The regblock (usb_ocp_recovery_reg) is generated by peakrdl
-  // from third_party/usb2/systemrdl/usb_ocp_recovery_reg.rdl and is the single
+  // The adapter (usb_ocp_recovery_rb_adapter) translates the word-wide rb_*
+  // protocol into the regblock's 32-bit passthrough CPU interface and owns the
+  // FSM-facing sideband contract (DEVICE_RESET / RECOVERY_CTRL strobes,
+  // HW_STATUS write pulse, PROTOCOL_ERROR rclr pulse, FIFO branch routing).
+  // The regblock (usb_ocp_recovery_reg) is generated by peakrdl from
+  // third_party/usb2/systemrdl/usb_ocp_recovery_reg.rdl and is the single
   // source of truth for field layout, reset values, and the SoC byte-flat
   // address window.
   //////////////////////////////////////////////////////////////////////////////
@@ -365,7 +358,7 @@ module usb_ocp_recovery_top #(
     .rb_wr           (rb_wr),
     .rb_rd           (rb_rd),
     .rb_wdata        (rb_wdata),
-    .rb_be           (rb_be),
+    .rb_wstrb        (rb_wstrb),
     .rb_rdata        (rb_rdata),
     .rb_ack          (rb_ack),
     .rb_err          (rb_err),
@@ -376,6 +369,7 @@ module usb_ocp_recovery_top #(
     .fifo_rb_wr      (fifo_rb_wr),
     .fifo_rb_rd      (fifo_rb_rd),
     .fifo_rb_wdata   (fifo_rb_wdata),
+    .fifo_rb_wstrb   (fifo_rb_wstrb),
     .fifo_rb_rdata   (fifo_rb_rdata),
     .fifo_rb_ack     (fifo_rb_ack),
     .fifo_rb_err     (fifo_rb_err),
@@ -391,21 +385,64 @@ module usb_ocp_recovery_top #(
     .cpuif_wr_ack    (cpuif_wr_ack),
     .cpuif_wr_err    (cpuif_wr_err),
 
-    .device_reset_wr                  (device_reset_wr),
-    .device_reset_ctrl                (device_reset_ctrl),
-    .device_reset_forced              (device_reset_forced),
-    .device_reset_iface               (device_reset_iface),
-    .recovery_ctrl_wr                 (recovery_ctrl_wr),
-    .recovery_ctrl_wr_cms             (recovery_ctrl_wr_cms),
-    .recovery_ctrl_wr_img_sel         (recovery_ctrl_wr_img_sel),
-    .recovery_ctrl_cms                (recovery_ctrl_cms),
-    .recovery_ctrl_img_sel            (recovery_ctrl_img_sel),
-    .recovery_ctrl_activate           (recovery_ctrl_activate),
-    .recovery_ctrl_activate_consume   (recovery_ctrl_activate_consume),
     .hw_status_wr                     (hw_status_wr),
     .hw_status_wdata                  (hw_status_wdata),
     .proto_err_rd_pulse               (proto_err_rd_pulse)
   );
+
+  // --------------------------------------------------------------------------
+  // swmod input-conditioning block.
+  //
+  // PeakRDL swmod is combinational in the write-accept cycle while the field
+  // .value is registered one cycle later, so swmod leads the value by exactly
+  // one cycle.  The recovery FSM (A5) expects a coincident {strobe,value}
+  // pair, so each swmod pulse is delayed by one cycle to align with the
+  // registered .value at T+1.  The .value lines are passed combinationally
+  // because they are already registered inside the regblock and present the new
+  // data at T+1, coincident with the delayed strobe.  Raw combinational swmod
+  // is never wired directly to the FSM because it would sample the old value on
+  // the strobe cycle.
+  // --------------------------------------------------------------------------
+  logic swmod_dr_reset_q;
+  logic swmod_dr_forced_q;
+  logic swmod_dr_iface_q;
+  logic swmod_rc_cms_q;
+  logic swmod_rc_img_sel_q;
+  logic swmod_rc_activate_q;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      swmod_dr_reset_q    <= 1'b0;
+      swmod_dr_forced_q   <= 1'b0;
+      swmod_dr_iface_q    <= 1'b0;
+      swmod_rc_cms_q      <= 1'b0;
+      swmod_rc_img_sel_q  <= 1'b0;
+      swmod_rc_activate_q <= 1'b0;
+    end else begin
+      swmod_dr_reset_q    <= rb_hwif_out.DEVICE_RESET.RESET_CTRL.swmod;
+      swmod_dr_forced_q   <= rb_hwif_out.DEVICE_RESET.FORCED_RECOVERY.swmod;
+      swmod_dr_iface_q    <= rb_hwif_out.DEVICE_RESET.IF_CTRL.swmod;
+      swmod_rc_cms_q      <= rb_hwif_out.RECOVERY_CTRL.CMS.swmod;
+      swmod_rc_img_sel_q  <= rb_hwif_out.RECOVERY_CTRL.REC_IMG_SEL.swmod;
+      swmod_rc_activate_q <= rb_hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.swmod;
+    end
+  end
+
+  // DEVICE_RESET strobe = any of the three writable bytes written this word.
+  assign device_reset_wr     = swmod_dr_reset_q | swmod_dr_forced_q |
+                               swmod_dr_iface_q;
+  assign device_reset_ctrl   = rb_hwif_out.DEVICE_RESET.RESET_CTRL.value;
+  assign device_reset_forced = rb_hwif_out.DEVICE_RESET.FORCED_RECOVERY.value;
+  assign device_reset_iface  = rb_hwif_out.DEVICE_RESET.IF_CTRL.value;
+
+  // RECOVERY_CTRL per-byte + activate strobes.
+  assign recovery_ctrl_wr_cms     = swmod_rc_cms_q;
+  assign recovery_ctrl_wr_img_sel = swmod_rc_img_sel_q;
+  assign recovery_ctrl_wr         = swmod_rc_cms_q | swmod_rc_img_sel_q |
+                                    swmod_rc_activate_q;
+  assign recovery_ctrl_cms        = rb_hwif_out.RECOVERY_CTRL.CMS.value;
+  assign recovery_ctrl_img_sel    = rb_hwif_out.RECOVERY_CTRL.REC_IMG_SEL.value;
+  assign recovery_ctrl_activate   = rb_hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.value;
 
   // --------------------------------------------------------------------------
   // hwif_in wiring.
@@ -485,6 +522,12 @@ module usb_ocp_recovery_top #(
     rb_hwif_in.HW_STATUS.VENDOR_HW_STATUS.next     = hw_status_vendor_out;
     rb_hwif_in.HW_STATUS.CTEMP.next                = hw_status_ctemp_out;
     rb_hwif_in.HW_STATUS.VENDOR_HW_STATUS_LEN.next = hw_status_vendor_len_out;
+
+    // RECOVERY_CTRL.ACTIVATE_REC_IMG hardware-clear (OCP Recovery v1.1
+    // Sec 9.2 Tbl 9-9): the recovery FSM pulses recovery_ctrl_activate_consume
+    // when it consumes the activation request; hwclr zeroes the byte so a
+    // subsequent host read returns 0.
+    rb_hwif_in.RECOVERY_CTRL.ACTIVATE_REC_IMG.hwclr = recovery_ctrl_activate_consume;
   end
 
   usb_ocp_recovery_reg u_a3_regblock (
@@ -525,6 +568,7 @@ module usb_ocp_recovery_top #(
     .fifo_rb_wr      (fifo_rb_wr),
     .fifo_rb_rd      (fifo_rb_rd),
     .fifo_rb_wdata   (fifo_rb_wdata),
+    .fifo_rb_wstrb   (fifo_rb_wstrb),
     .fifo_rb_rdata   (fifo_rb_rdata),
     .fifo_rb_ack     (fifo_rb_ack),
     .fifo_rb_err     (fifo_rb_err),
@@ -534,7 +578,6 @@ module usb_ocp_recovery_top #(
     .fifo_overflow     (fifo_overflow),
     .image_size        (image_size),
     .bytes_pushed      (bytes_pushed),
-    .current_cms       (current_cms),
 
     .cms_addr        (cms_addr),
     .cms_wr          (cms_wr),
