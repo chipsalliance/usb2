@@ -64,15 +64,6 @@ module usb_ocp_recovery_top #(
   output logic                    ext_rb_err,
 
   //----------------------------------------------------------------------------
-  // CMS external SRAM (single-ported, byte-wide).
-  //----------------------------------------------------------------------------
-  output logic [CMS_ADDR_W-1:0]   cms_addr,
-  output logic                    cms_wr,
-  output logic                    cms_rd,
-  output logic [7:0]              cms_wdata,
-  input  logic [7:0]              cms_rdata,
-
-  //----------------------------------------------------------------------------
   // Static capability inputs (tied by SoC integrator).
   //----------------------------------------------------------------------------
   input  logic [127:0]            prot_cap_in,
@@ -577,13 +568,7 @@ module usb_ocp_recovery_top #(
     .image_push_done   (image_push_done),
     .fifo_overflow     (fifo_overflow),
     .image_size        (image_size),
-    .bytes_pushed      (bytes_pushed),
-
-    .cms_addr        (cms_addr),
-    .cms_wr          (cms_wr),
-    .cms_rd          (cms_rd),
-    .cms_wdata       (cms_wdata),
-    .cms_rdata       (cms_rdata)
+    .bytes_pushed      (bytes_pushed)
   );
 
   //////////////////////////////////////////////////////////////////////////////

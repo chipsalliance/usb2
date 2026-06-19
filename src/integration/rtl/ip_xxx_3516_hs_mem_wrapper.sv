@@ -331,13 +331,6 @@ module ip_xxx_3516_hs_mem_wrapper
 				   // dev_axi -> AHB path (see rec_ahb_subdec below; OCP
 				   // Recovery v1.1 Section 8.5).
 
-				   // CMS external SRAM (from A4, byte-wide)
-				   output [REC_CMS_ADDR_W-1:0]      cms_addr,
-				   output                            cms_wr,
-				   output                            cms_rd,
-				   output [7:0]                     cms_wdata,
-				   input  [7:0]                     cms_rdata,
-
 				   // Sideband inputs (SoC -> recovery FSM)
 				   input                             rec_trigger,
 				   input                             soc_boot_ack,
@@ -1282,12 +1275,6 @@ module ip_xxx_3516_hs_mem_wrapper
        .ext_rb_ack     (rec_ext_rb_ack),
        .ext_rb_err     (rec_ext_rb_err),
 
-       // CMS external SRAM passthrough
-       .cms_addr  (cms_addr),
-       .cms_wr    (cms_wr),
-       .cms_rd    (cms_rd),
-       .cms_wdata (cms_wdata),
-       .cms_rdata (cms_rdata),
 
        // Static capability tie-offs (from parameters)
        .prot_cap_in  (REC_PROT_CAP_DEFAULT),
