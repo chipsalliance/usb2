@@ -67,13 +67,14 @@ module ip_xxx_3516_hs_mem_wrapper
   // - bytes[0..7] = ASCII magic "OCP RECV" (little-endian on wire).
   // - byte[8]     = Major = 1
   // - byte[9]     = Minor = 1
-  // - bytes[10..11] = CAPABILITIES bitmap, little-endian = 0x16BB:
+  // - bytes[10..11] = CAPABILITIES bitmap, little-endian = 0x169B:
   //     bit  0 = Identification         (CMD 0x23/IDENT)
   //     bit  1 = Forced Recovery        (CMD 0x24/RECOVERY_CTRL)
   //     bit  3 = Device Reset           (CMD 0x26/RESET)
   //     bit  4 = Device Status          (CMD 0x25/DEV_STATUS)
-  //     bit  5 = Recovery memory access (CMD 0x28/INDIRECT_CTRL)
-  //     bit  7 = Push C-image support
+  //     bit  5 = Recovery memory access (INDIRECT_CTRL/STATUS/DATA direct
+  //              CMS-memory window, CMD 0x29/0x2A/0x2B) -- direct memory window unsupported.
+  //     bit  7 = Push C-image support   (FIFO streaming boot)
   //     bit  9 = Hardware status        (CMD 0x27/HW_STATUS)
   //     bit 10 = Vendor command         (CMD 0x2F/VENDOR)
   //     bit 12 = FIFO CMS support       (CMD 0x2C/INDIRECT_FIFO_CTRL,
@@ -87,7 +88,7 @@ module ip_xxx_3516_hs_mem_wrapper
   // needed (review delta C9 fix).
   parameter logic [127:0] REC_PROT_CAP_DEFAULT  =
       { 8'h00, 8'h00, 8'h00, 8'h02,             // [15:12] resv, HB, MRT, NUM_CMS=2
-        8'h16, 8'hBB,                            // [11:10] capabilities = 0x16BB
+        8'h16, 8'h9B,                            // [11:10] capabilities = 0x169B (FIFO-only; bit5 direct CMS-memory cleared)
         8'h01, 8'h01,                            // [9:8]   minor=1, major=1
         8'h56, 8'h43, 8'h45, 8'h52,              // [7:4]   'V','C','E','R'
         8'h20, 8'h50, 8'h43, 8'h4F },            // [3:0]   ' ','P','C','O'

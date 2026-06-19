@@ -25,11 +25,12 @@
 // command-window byte of that word.  This matches OCP Recovery v1.1 Sec 9.2
 // (little-endian) and the PeakRDL little-endian field placement.
 //
-// FIFO branch: commands 0x2A/0x2B/0x2C/0x2D/0x2E (INDIRECT_STATUS,
-// INDIRECT_DATA, INDIRECT_FIFO_*) are routed to A4 (usb_ocp_recovery_cms_fifo).
-// This adapter forwards the word + strobe + word offset straight through and
-// returns cms_fifo's word-level ack/err/rdata combinationally; cms_fifo owns
-// the byte-wise sequencing against external CMS SRAM.
+// FIFO branch: commands 0x2C/0x2D/0x2E (INDIRECT_FIFO_*) are routed to A4
+// (usb_ocp_recovery_cms_fifo).  This adapter forwards the word + strobe + word
+// offset straight through and returns cms_fifo's word-level ack/err/rdata
+// combinationally; cms_fifo owns the byte-wise sequencing against external CMS
+// SRAM.  The direct CMS-memory window (0x29/0x2A/0x2B) is not implemented: it is
+// advertised unsupported in PROT_CAP and dropped/ACKed as an invalid command.
 //
 // Latency:
 //   - Regblock cmd ack: 1 cycle after rb_wr/rb_rd (registered), single-cycle
@@ -113,11 +114,10 @@ module usb_ocp_recovery_rb_adapter (
   //   RECOVERY_CTRL    @ 0x06C  (cmd 0x26,  3 B, CPUIF/swmod)
   //   RECOVERY_STATUS  @ 0x070  (cmd 0x27,  2 B)
   //   HW_STATUS        @ 0x074  (cmd 0x28,  4 B, write is sideband-only)
-  //   INDIRECT_CTRL_0  @ 0x078  (cmd 0x29,  6 B)
-  //   INDIRECT_STATUS  @ 0x080  (cmd 0x2A, FIFO-routed)
-  //   INDIRECT_DATA    @ 0x088  (cmd 0x2B, FIFO-routed)
   //   INDIRECT_FIFO_*  @ 0x100+ (cmds 0x2C..0x2E, FIFO-routed)
   //   VENDOR           @ 0x1A4  (cmd 0x2F,  1 B stub)
+  //   Direct CMS-memory window 0x29/0x2A/0x2B (INDIRECT_CTRL/STATUS/DATA) is
+  //   not implemented; unrecognized -> invalid-command drop/ack path.
   // --------------------------------------------------------------------------
   localparam logic [7:0] CMD_PROT_CAP             = 8'h22;
   localparam logic [7:0] CMD_DEVICE_ID            = 8'h23;
@@ -126,9 +126,10 @@ module usb_ocp_recovery_rb_adapter (
   localparam logic [7:0] CMD_RECOVERY_CTRL        = 8'h26;
   localparam logic [7:0] CMD_RECOVERY_STATUS      = 8'h27;
   localparam logic [7:0] CMD_HW_STATUS            = 8'h28;
-  localparam logic [7:0] CMD_INDIRECT_CTRL        = 8'h29;
-  localparam logic [7:0] CMD_INDIRECT_STATUS      = 8'h2A;
-  localparam logic [7:0] CMD_INDIRECT_DATA        = 8'h2B;
+  // Direct CMS-memory window commands 0x29/0x2A/0x2B (INDIRECT_CTRL /
+  // INDIRECT_STATUS / INDIRECT_DATA) are NOT implemented by this transport:
+  // they are advertised as unsupported in PROT_CAP (FIFO-only) and fall through
+  // to the invalid-command drop/ack path below (rdata=0, ack with err, no hang).
   localparam logic [7:0] CMD_INDIRECT_FIFO_CTRL   = 8'h2C;
   localparam logic [7:0] CMD_INDIRECT_FIFO_STATUS = 8'h2D;
   localparam logic [7:0] CMD_INDIRECT_FIFO_DATA   = 8'h2E;
@@ -144,8 +145,6 @@ module usb_ocp_recovery_rb_adapter (
   logic is_fifo_cmd;
   always_comb begin
     unique case (rb_cmd)
-      CMD_INDIRECT_STATUS,
-      CMD_INDIRECT_DATA,
       CMD_INDIRECT_FIFO_CTRL,
       CMD_INDIRECT_FIFO_STATUS,
       CMD_INDIRECT_FIFO_DATA: is_fifo_cmd = 1'b1;
@@ -171,7 +170,6 @@ module usb_ocp_recovery_rb_adapter (
       CMD_RECOVERY_CTRL:   begin cmd_base = 12'h06C; cmd_len = 16'd3;  end
       CMD_RECOVERY_STATUS: begin cmd_base = 12'h070; cmd_len = 16'd2;  end
       CMD_HW_STATUS:       begin cmd_base = 12'h074; cmd_len = 16'd4;  end
-      CMD_INDIRECT_CTRL:   begin cmd_base = 12'h078; cmd_len = 16'd6;  end
       CMD_VENDOR:          begin cmd_base = 12'h1A4; cmd_len = 16'd1;  end
       default:             is_local_cmd = 1'b0;
     endcase
