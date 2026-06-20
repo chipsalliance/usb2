@@ -18,21 +18,24 @@
 // 0x2B INDIRECT_DATA) is NOT implemented: PROT_CAP advertises FIFO-only and the
 // A3 adapter drops/ACKs those commands as unrecognized.
 //
-// Storage micro-architecture (P9-0.1-B)
+// Storage micro-architecture (P9-0.1-C)
 // -------------------------------------
 // The INDIRECT_FIFO_DATA payload is backed by a single internal DWORD FIFO
-// (caliptra_prim_fifo_async) used SYNCHRONOUSLY: clk_wr_i = clk_rd_i = clk.
-// The previous external byte-wide CMS SRAM + multi-cycle byte-engine FSM has
-// been removed.  Every 0x2E access (push or pop) is single-cycle:
+// (caliptra_prim_fifo_async) used ASYNCHRONOUSLY: the WRITE/push side is on
+// clk (utmi_clk); the READ/pop side is on clk_rd (dev_axi_aclk), exposed as a
+// module port so Caliptra's AXI 0x2E reads pop the FIFO natively, bypassing
+// the utmi-clk CDC bridge.  Every 0x2E push is single-cycle:
 //
 // Data plane:
 //   - Width=32 (one DWORD), Depth=32 (holds the recovery image, power-of-2).
-//   - PUSH: wvalid_i = accepted 0x2E write; wdata_i = fifo_rb_wdata.
-//   - POP : rready_i = real 0x2E read of available data; rdata_o is the DWORD.
+//   - PUSH (clk)   : wvalid_i = accepted 0x2E write; wdata_i = fifo_rb_wdata.
+//   - POP  (clk_rd): rready_i = fifo_rd_ready from the wrapper a_state FSM;
+//                    rdata_o = fifo_rd_data (popped DWORD).
 //
 // Control plane:
 //   - write_index_q : 32-bit cumulative DWORD push counter (this clk domain).
-//   - read_index_q  : 32-bit cumulative DWORD pop  counter (this clk domain).
+//   - READ_INDEX    : derived (write_index_q - write-side occupancy); the pop
+//                     counter was removed (pops are native in dev_axi_aclk).
 //   - image_size_q  : expected image size programmed by 0x2C (DWORD units).
 //   - image_done_q  : sticky; set when write_index_q >= image_size_q (DWORDs).
 //   - overflow_q    : sticky; set on a dropped push (FIFO full or image done).
@@ -60,6 +63,19 @@ module usb_ocp_recovery_cms_fifo #(
 )(
   input  logic clk,
   input  logic rst,
+
+  // ----------------------------------------------------------------------
+  // Async FIFO READ port (P9-0.1-C): exposed so the dev_axi_aclk-domain
+  // wrapper can pop INDIRECT_FIFO_DATA (0x2E) reads natively, bypassing the
+  // utmi-clk CDC bridge.  The async FIFO read port is now clocked by clk_rd
+  // (= dev_axi_aclk); the write/push side stays on clk (= utmi_clk).
+  // ----------------------------------------------------------------------
+  input  logic clk_rd,                                  // dev_axi_aclk
+  input  logic rst_rd_n,                                // dev_axi_aresetn (active-low)
+  output logic        fifo_rd_valid,
+  input  logic        fifo_rd_ready,
+  output logic [31:0] fifo_rd_data,
+  output logic [$clog2(FIFO_DEPTH+1)-1:0] fifo_rd_depth,
 
   // Sub-reg-bus from A3 (only asserted when cmd is INDIRECT_*).  Native
   // 32-bit word + 4-bit byte strobe.  fifo_rb_offset is a WORD index into the
@@ -114,7 +130,10 @@ module usb_ocp_recovery_cms_fifo #(
 
   // Cumulative DWORD counters (this clk domain; no CDC this stage).
   logic [31:0] write_index_q;       // pushed DWORD count (WRITE_INDEX)
-  logic [31:0] read_index_q;        // popped DWORD count (READ_INDEX)
+  // NOTE (P9-0.1-C): the pop-side read_index_q counter has been REMOVED.
+  // Pops now occur natively in the dev_axi_aclk domain via the exposed FIFO
+  // read port, so there is no utmi-domain pop event to count here.  The 0x2D
+  // READ_INDEX is instead DERIVED from the write-side occupancy below.
 
   // Status bits (0x2D)
   logic        overflow_q;          // sticky, cleared on FIFO reset / w1c
@@ -132,10 +151,9 @@ module usb_ocp_recovery_cms_fifo #(
   logic                       fifo_wready;
   logic [FIFO_WIDTH-1:0]      fifo_wdata;
   logic [$clog2(FIFO_DEPTH+1)-1:0] fifo_wdepth;
-  logic                       fifo_rvalid;
-  logic                       fifo_rready;
-  logic [FIFO_WIDTH-1:0]      fifo_rdata;
-  logic [$clog2(FIFO_DEPTH+1)-1:0] fifo_rdepth;
+  // Read-port nets (fifo_rd_valid / fifo_rd_ready / fifo_rd_data /
+  // fifo_rd_depth) are now module ports in the dev_axi_aclk domain; the async
+  // FIFO read port connects to them directly (see instance below).
 
   // ------------------------------------------------------------------
   // Combinational command decode
@@ -173,31 +191,44 @@ module usb_ocp_recovery_cms_fifo #(
   logic fifo_empty;
   logic fifo_full;
   always_comb begin
-    fifo_empty = (fifo_wdepth == '0);   // equivalently ~fifo_rvalid
+    fifo_empty = (fifo_wdepth == '0);   // write-side occupancy zero
     fifo_full  = ~fifo_wready;          // equivalently wdepth == Depth
   end
 
   // ------------------------------------------------------------------
-  // 0x2E push / pop datapath (single-cycle)
+  // 0x2E push datapath (single-cycle).  Pops are handled natively in the
+  // dev_axi_aclk domain through the exposed read port (P9-0.1-C), so there is
+  // no utmi-domain pop_accept here.
   // ------------------------------------------------------------------
   logic push_accept;   // accepted push (advances FIFO + write_index_q)
   logic push_drop;     // dropped push (FIFO full or image already complete)
-  logic pop_accept;    // accepted pop  (advances FIFO + read_index_q)
   always_comb begin
     push_accept = is_fifo_data && fifo_rb_wr && fifo_wready && !image_complete;
     push_drop   = is_fifo_data && fifo_rb_wr && (!fifo_wready || image_complete);
-    pop_accept  = is_fifo_data && fifo_rb_rd && fifo_rvalid;
   end
 
-  // FIFO write/read strobes + data.
+  // FIFO write strobe + data (read strobe comes from fifo_rd_ready port).
   always_comb begin
     fifo_wvalid = push_accept;
     fifo_wdata  = fifo_rb_wdata;
-    fifo_rready = pop_accept;
   end
 
   // ------------------------------------------------------------------
-  // Status byte (0x2D) - SAME bit positions as the prior implementation:
+  // READ_INDEX (0x2D word2) derivation (P9-0.1-C).
+  // READ_INDEX is derived from the write-side occupancy (gray-synced inside
+  // the async FIFO), so it needs no separate read-counter CDC; it
+  // conservatively lags actual reads.  read_index = write_index - occupancy
+  // (DWORD units).  Underflow-safe: occupancy (fifo_wdepth) can never exceed
+  // the cumulative push count, but the subtraction is guarded explicitly.
+  // ------------------------------------------------------------------
+  logic [31:0] fifo_wdepth_ext;
+  logic [31:0] read_index_derived;
+  always_comb begin
+    fifo_wdepth_ext    = {{(32-$clog2(FIFO_DEPTH+1)){1'b0}}, fifo_wdepth};
+    read_index_derived = (write_index_q >= fifo_wdepth_ext)
+                       ? (write_index_q - fifo_wdepth_ext)
+                       : 32'h0;
+  end
   //   bit4 image_done, bit3 overflow, bit2 region_reset, bit1 full, bit0 empty.
   // ------------------------------------------------------------------
   logic [7:0] status_byte_2d;
@@ -231,13 +262,13 @@ module usb_ocp_recovery_cms_fifo #(
       // 0x2D INDIRECT_FIFO_STATUS (OCP v1.1 Sec 9.2 Tbl 9-11, 20 B / 5 words):
       //   word0 byte0 STATUS_FLAGS, byte1 REGION_TYPE (0), bytes2..3 reserved
       //   word1 WRITE_INDEX (DWORD units) = write_index_q
-      //   word2 READ_INDEX  (DWORD units) = read_index_q
+      //   word2 READ_INDEX  (DWORD units) = write_index_q - occupancy (derived)
       //   word3 FIFO_SIZE          (DWORD units) = Depth
       //   word4 MAX_TRANSFER_SIZE  (DWORD units) = Depth
       unique case (word_idx)
         3'd0:    reg_rdata = {24'h0, status_byte_2d};
         3'd1:    reg_rdata = write_index_q;
-        3'd2:    reg_rdata = read_index_q;
+        3'd2:    reg_rdata = read_index_derived;
         3'd3:    reg_rdata = FIFO_SIZE_DWORDS;
         3'd4:    reg_rdata = MAX_XFER_SIZE_DWORDS;
         default: reg_rdata = 32'h0;
@@ -245,10 +276,13 @@ module usb_ocp_recovery_cms_fifo #(
     end
   end
 
-  // Register-bus read data: 0x2E data reads present the popped DWORD (0 when
-  // empty); register records present the assembled word combinationally.
+  // Register-bus read data (P9-0.1-C): real 0x2E DATA reads no longer happen on
+  // this utmi-domain rb path (they are serviced natively in dev_axi_aclk via
+  // the exposed read port).  A defensive 0x2E rb READ that should no longer
+  // occur returns 0 and is still ACKed (no bus hang).  Register records
+  // (0x2C/0x2D) present the assembled word combinationally.
   always_comb begin
-    if (is_fifo_data && fifo_rb_rd) fifo_rb_rdata = fifo_rvalid ? fifo_rdata : 32'h0;
+    if (is_fifo_data && fifo_rb_rd) fifo_rb_rdata = 32'h0;
     else                            fifo_rb_rdata = reg_rdata;
   end
 
@@ -275,13 +309,22 @@ module usb_ocp_recovery_cms_fifo #(
   always_comb begin
     fifo_flush = is_fifo_ctrl && fifo_rb_wr && (word_idx == 3'd0) &&
                  fifo_rb_wstrb[1] && fifo_rb_wdata[8];
-    // Active-low reset to the internal FIFO: module rst (high) or a region
-    // reset flushes the FIFO contents.
+    // Active-low reset to the internal FIFO WRITE side: module rst (high) or a
+    // region reset flushes the FIFO contents on the utmi (write/push) domain.
     fifo_rst_n = ~(rst | fifo_flush);
+    // TODO (P9-0.1-C CDC): cross-domain region-reset flush of the read pointer
+    // is not handled; safe only because region-reset occurs while the FIFO is
+    // empty/idle.  A mid-stream region-reset would desync wptr/rptr -- handle
+    // via a synced flush before enabling streamed (Depth-exceeding) images.
   end
 
   // ------------------------------------------------------------------
-  // Internal DWORD FIFO instance (synchronous: clk_wr_i = clk_rd_i = clk)
+  // Internal DWORD FIFO instance (asynchronous P9-0.1-C):
+  //   write/push side -> clk    (utmi_clk), reset = fifo_rst_n (rst|flush)
+  //   read /pop  side -> clk_rd (dev_axi_aclk), reset = rst_rd_n (AXI only)
+  // rst_rd_ni is the dev_axi reset ONLY -- fifo_flush is a utmi event and
+  // folding it into the AXI-domain read reset would be a CDC hazard (see the
+  // TODO above).
   // ------------------------------------------------------------------
   caliptra_prim_fifo_async #(
     .Width (FIFO_WIDTH),
@@ -294,12 +337,12 @@ module usb_ocp_recovery_cms_fifo #(
     .wdata_i   (fifo_wdata),
     .wdepth_o  (fifo_wdepth),
 
-    .clk_rd_i  (clk),
-    .rst_rd_ni (fifo_rst_n),
-    .rvalid_o  (fifo_rvalid),
-    .rready_i  (fifo_rready),
-    .rdata_o   (fifo_rdata),
-    .rdepth_o  (fifo_rdepth)
+    .clk_rd_i  (clk_rd),
+    .rst_rd_ni (rst_rd_n),
+    .rvalid_o  (fifo_rd_valid),
+    .rready_i  (fifo_rd_ready),
+    .rdata_o   (fifo_rd_data),
+    .rdepth_o  (fifo_rd_depth)
   );
 
   // ------------------------------------------------------------------
@@ -310,7 +353,6 @@ module usb_ocp_recovery_cms_fifo #(
       fifo_cms_q          <= '0;
       image_size_q        <= '0;
       write_index_q       <= '0;
-      read_index_q        <= '0;
       overflow_q          <= 1'b0;
       region_reset_q      <= 1'b0;
       image_done_q        <= 1'b0;
@@ -328,7 +370,6 @@ module usb_ocp_recovery_cms_fifo #(
             // FIFO (via fifo_flush -> fifo_rst_n) and zeroes the counters.
             if (fifo_rb_wstrb[1] && fifo_rb_wdata[8]) begin
               write_index_q       <= '0;
-              read_index_q        <= '0;
               overflow_q          <= 1'b0;
               image_done_q        <= 1'b0;
               region_reset_q      <= 1'b1;
@@ -376,13 +417,6 @@ module usb_ocp_recovery_cms_fifo #(
       // ----------------------------------------------------------------
       if (push_drop) begin
         overflow_q <= 1'b1;
-      end
-
-      // ----------------------------------------------------------------
-      // 0x2E pop (accepted): advance READ_INDEX.
-      // ----------------------------------------------------------------
-      if (pop_accept) begin
-        read_index_q <= read_index_q + 32'd1;
       end
     end
   end

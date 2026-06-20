@@ -979,6 +979,24 @@ module ip_xxx_3516_hs_mem_wrapper
                              & dev_ahb_hreadymux
                              & rec_addr_in_window;
 
+   // -- Native INDIRECT_FIFO_DATA (0x2E) read predecode (P9-0.1-C) --
+   // INDIRECT_FIFO_DATA occupies byte aperture 0x1A0-0x1A3.  A read of this
+   // window is serviced NATIVELY in the dev_axi_aclk domain by popping the
+   // exposed async FIFO read port, bypassing the utmi-clk CDC bridge.
+   logic addr_is_fifo_data;
+   logic is_fifo_data_read;
+   assign addr_is_fifo_data = (dev_ahb_haddr[11:0] >= 12'h1A0)
+                            & (dev_ahb_haddr[11:0] <  12'h1A4);
+   assign is_fifo_data_read = rec_ahb_addr_phase
+                            & addr_is_fifo_data
+                            & ~dev_ahb_hwrite;
+
+   // -- Exposed async FIFO read-port nets (dev_axi_aclk domain) --
+   logic        fifo_rd_valid;
+   logic        fifo_rd_ready;
+   logic [31:0] fifo_rd_data;
+   logic [5:0]  fifo_rd_depth;   // $clog2(32+1)=6 bits for default Depth=32
+
    // -- Captured beat metadata (dev_axi_aclk domain, stable across CDC) --
    logic [7:0]  ahb_cmd_q;
    logic [7:0]  ahb_off_q;
@@ -991,7 +1009,8 @@ module ip_xxx_3516_hs_mem_wrapper
      A_DATA      = 3'd1,  // capture hwdata (writes), assert req
      A_AWAIT_ACK = 3'd2,  // wait for ack to come back through sync
      A_COMPLETE  = 3'd3,  // drive hreadyout=1 for one cycle
-     A_COOLDOWN  = 3'd4   // hold req=0 until ack_sync drops
+     A_COOLDOWN  = 3'd4,  // hold req=0 until ack_sync drops
+     A_NREAD     = 3'd5   // native 0x2E FIFO read: 1-cycle pop in dev_axi_aclk
    } a_state_e;
    a_state_e a_state_q, a_state_d;
 
@@ -1013,14 +1032,22 @@ module ip_xxx_3516_hs_mem_wrapper
    always_comb begin
      a_state_d = a_state_q;
      unique case (a_state_q)
-       A_IDLE:      if (rec_ahb_addr_phase)              a_state_d = A_DATA;
-       A_DATA:                                            a_state_d = A_AWAIT_ACK;
-       A_AWAIT_ACK: if (ack_axi_sync_q)                  a_state_d = A_COMPLETE;
-       A_COMPLETE:                                        a_state_d = A_COOLDOWN;
-       A_COOLDOWN:  if (!ack_axi_sync_q)                 a_state_d = A_IDLE;
-       default:                                           a_state_d = A_IDLE;
+       A_IDLE:      if (is_fifo_data_read)             a_state_d = A_NREAD;
+                    else if (rec_ahb_addr_phase)       a_state_d = A_DATA;
+       A_NREAD:                                        a_state_d = A_COMPLETE;
+       A_DATA:                                          a_state_d = A_AWAIT_ACK;
+       A_AWAIT_ACK: if (ack_axi_sync_q)                a_state_d = A_COMPLETE;
+       A_COMPLETE:                                      a_state_d = A_COOLDOWN;
+       A_COOLDOWN:  if (!ack_axi_sync_q)               a_state_d = A_IDLE;
+       default:                                         a_state_d = A_IDLE;
      endcase
    end
+
+   // Native 0x2E read single-pop strobe: asserted for exactly the one
+   // dev_axi_aclk cycle the FSM spends in A_NREAD.  The async FIFO rdata_o is
+   // combinational on its read pointer, so it is captured into rdata_axi_q in
+   // this same cycle BEFORE the pop advances the pointer next cycle.
+   assign fifo_rd_ready = (a_state_q == A_NREAD);
 
    always_ff @(posedge dev_axi_aclk or negedge dev_axi_aresetn) begin
      if (!dev_axi_aresetn) begin
@@ -1051,7 +1078,11 @@ module ip_xxx_3516_hs_mem_wrapper
        // RECOVERY_STATUS@0x070, HW_STATUS@0x074, INDIRECT_CTRL@0x078,
        // INDIRECT_STATUS@0x080, INDIRECT_DATA@0x088, INDIRECT_FIFO_CTRL@0x184,
        // INDIRECT_FIFO_STATUS@0x18C, INDIRECT_FIFO_DATA@0x1A0, VENDOR@0x1A4.
-       if (a_state_q == A_IDLE && rec_ahb_addr_phase) begin
+       // P9-0.1-C: a native INDIRECT_FIFO_DATA read (is_fifo_data_read) is
+       // serviced via the FIFO read port and must NEVER enter the utmi
+       // bridge -- guarded with !is_fifo_data_read so ahb_cmd_q is NOT
+       // captured (no stray 0x2E) and req_axi_q is NOT raised for it.
+       if (a_state_q == A_IDLE && rec_ahb_addr_phase && !is_fifo_data_read) begin
          casez (dev_ahb_haddr[11:0])
            12'h00?:                  begin ahb_cmd_q <= 8'h22; ahb_off_q <= dev_ahb_haddr[3:0]; end // PROT_CAP 0x000-0x00F
            12'h01?, 12'h02?:         // DEVICE_ID 0x010-0x027 (24 B)
@@ -1142,6 +1173,16 @@ module ip_xxx_3516_hs_mem_wrapper
        if (a_state_q == A_AWAIT_ACK && ack_axi_sync_q) begin
          rdata_axi_q <= rdata_pie_q;
          err_axi_q   <= err_pie_q;
+       end
+
+       // P9-0.1-C native 0x2E FIFO read: capture the popped DWORD in A_NREAD
+       // (combinational fifo_rd_data on the current read pointer) BEFORE the
+       // single fifo_rd_ready pulse advances the pointer.  Reuses rdata_axi_q
+       // + the A_COMPLETE response mux, identical to the bridge path from the
+       // master's view.  req_axi_q stays de-asserted (P_PRESENT never entered).
+       if (a_state_q == A_NREAD) begin
+         rdata_axi_q <= fifo_rd_valid ? fifo_rd_data : 32'h0;
+         err_axi_q   <= 1'b0;
        end
      end
    end
@@ -1246,6 +1287,18 @@ module ip_xxx_3516_hs_mem_wrapper
        // combined fixes report).
        .clk  (utmi_clk),
        .rst  (rec_rst),
+
+       // P9-0.1-C: async FIFO read port lives in the dev_axi_aclk domain so
+       // INDIRECT_FIFO_DATA (0x2E) reads pop natively here, bypassing the CDC
+       // bridge.  fifo_rd_ready is driven by the A_NREAD branch of the
+       // a_state FSM above (single-pop), fifo_rd_data captured into
+       // rdata_axi_q and replayed through the existing A_COMPLETE mux.
+       .clk_rd        (dev_axi_aclk),
+       .rst_rd_n      (dev_axi_aresetn),
+       .fifo_rd_valid (fifo_rd_valid),
+       .fifo_rd_ready (fifo_rd_ready),
+       .fifo_rd_data  (fifo_rd_data),
+       .fifo_rd_depth (fifo_rd_depth),
 
        // PIE byte-stream surface (driven by VHDL usb_pie_recovery_arb)
        .rec_setup_pkt_vld  (rec_setup_pkt_vld_w),

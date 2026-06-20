@@ -20,10 +20,24 @@
 
 module usb_ocp_recovery_top #(
   parameter int           CMS_ADDR_W     = 16,
-  parameter int           NUM_CMS        = 2
+  parameter int           NUM_CMS        = 2,
+  parameter int           FIFO_DEPTH_DWORDS = 32
 )(
   input  logic                    clk,
   input  logic                    rst,
+
+  //----------------------------------------------------------------------------
+  // Async FIFO READ port (P9-0.1-C).  Plumbed straight through to the A4
+  // cms_fifo so the dev_axi_aclk-domain wrapper can pop INDIRECT_FIFO_DATA
+  // (0x2E) reads natively, bypassing the utmi-clk CDC bridge.  clk_rd is
+  // dev_axi_aclk; rst_rd_n is dev_axi_aresetn (active-low).
+  //----------------------------------------------------------------------------
+  input  logic                    clk_rd,
+  input  logic                    rst_rd_n,
+  output logic                    fifo_rd_valid,
+  input  logic                    fifo_rd_ready,
+  output logic [31:0]             fifo_rd_data,
+  output logic [$clog2(FIFO_DEPTH_DWORDS+1)-1:0] fifo_rd_depth,
 
   //----------------------------------------------------------------------------
   // Upper-side 32-bit control-transfer surface driven by VHDL
@@ -548,10 +562,19 @@ module usb_ocp_recovery_top #(
 
   usb_ocp_recovery_cms_fifo #(
     .CMS_ADDR_W (CMS_ADDR_W),
-    .NUM_CMS    (NUM_CMS)
+    .NUM_CMS    (NUM_CMS),
+    .FIFO_DEPTH (FIFO_DEPTH_DWORDS)
   ) u_a4_cms_fifo (
     .clk             (clk),
     .rst             (rst),
+
+    // Async FIFO read port (dev_axi_aclk domain) -- P9-0.1-C native pop.
+    .clk_rd          (clk_rd),
+    .rst_rd_n        (rst_rd_n),
+    .fifo_rd_valid   (fifo_rd_valid),
+    .fifo_rd_ready   (fifo_rd_ready),
+    .fifo_rd_data    (fifo_rd_data),
+    .fifo_rd_depth   (fifo_rd_depth),
 
     .fifo_rb_sel     (fifo_rb_sel),
     .fifo_rb_cmd     (fifo_rb_cmd),
