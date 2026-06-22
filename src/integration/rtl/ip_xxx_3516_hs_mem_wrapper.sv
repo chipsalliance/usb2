@@ -589,8 +589,8 @@ module ip_xxx_3516_hs_mem_wrapper
    // AXI-to-AHB Converter instances
    // ================================================================
 
-   // -- Device (AXI4-Lite) --
-   axilite_to_ahb #(
+   // -- Device (AXI4, burst-capable) --
+   axi_to_ahb #(
        .AW       (AXI_DEV_ADDR_WIDTH),
        .DW       (AXI_DATA_WIDTH),
        .IW       (AXI_ID_WIDTH),
