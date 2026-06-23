@@ -65,7 +65,7 @@ module usb_ocp_recovery_reg (
     //--------------------------------------------------------------------------
     // Address Decode
     //--------------------------------------------------------------------------
-    typedef struct {
+    typedef struct packed{
         logic PROT_CAP_0;
         logic PROT_CAP_1;
         logic PROT_CAP_2;
@@ -299,463 +299,467 @@ module usb_ocp_recovery_reg (
     //--------------------------------------------------------------------------
     // Field logic
     //--------------------------------------------------------------------------
-    typedef struct {
-        struct {
-            struct {
+    typedef struct packed{
+        struct packed{
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } PROT_ERROR;
         } DEVICE_STATUS_0;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } RESET_CTRL;
-            struct {
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } FORCED_RECOVERY;
-            struct {
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } IF_CTRL;
         } DEVICE_RESET;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } CMS;
-            struct {
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } REC_IMG_SEL;
-            struct {
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } ACTIVATE_REC_IMG;
         } RECOVERY_CTRL;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } CMS;
-            struct {
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } RESERVED_15_8;
-            struct {
+            struct packed{
                 logic [15:0] next;
                 logic load_next;
             } INDIRECT_OFFSET_LOW;
         } INDIRECT_CTRL_0;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [15:0] next;
                 logic load_next;
             } INDIRECT_OFFSET_HIGH;
         } INDIRECT_CTRL_1;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_3_0;
         } INDIRECT_DATA_0;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_7_4;
         } INDIRECT_DATA_1;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_11_8;
         } INDIRECT_DATA_2;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_15_12;
         } INDIRECT_DATA_3;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_19_16;
         } INDIRECT_DATA_4;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_23_20;
         } INDIRECT_DATA_5;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_27_24;
         } INDIRECT_DATA_6;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_31_28;
         } INDIRECT_DATA_7;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_35_32;
         } INDIRECT_DATA_8;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_39_36;
         } INDIRECT_DATA_9;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_43_40;
         } INDIRECT_DATA_10;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_47_44;
         } INDIRECT_DATA_11;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_51_48;
         } INDIRECT_DATA_12;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_55_52;
         } INDIRECT_DATA_13;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_59_56;
         } INDIRECT_DATA_14;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_63_60;
         } INDIRECT_DATA_15;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_67_64;
         } INDIRECT_DATA_16;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_71_68;
         } INDIRECT_DATA_17;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_75_72;
         } INDIRECT_DATA_18;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_79_76;
         } INDIRECT_DATA_19;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_83_80;
         } INDIRECT_DATA_20;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_87_84;
         } INDIRECT_DATA_21;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_91_88;
         } INDIRECT_DATA_22;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_95_92;
         } INDIRECT_DATA_23;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_99_96;
         } INDIRECT_DATA_24;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_103_100;
         } INDIRECT_DATA_25;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_107_104;
         } INDIRECT_DATA_26;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_111_108;
         } INDIRECT_DATA_27;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_115_112;
         } INDIRECT_DATA_28;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_119_116;
         } INDIRECT_DATA_29;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_123_120;
         } INDIRECT_DATA_30;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_127_124;
         } INDIRECT_DATA_31;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_131_128;
         } INDIRECT_DATA_32;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_135_132;
         } INDIRECT_DATA_33;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_139_136;
         } INDIRECT_DATA_34;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_143_140;
         } INDIRECT_DATA_35;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_147_144;
         } INDIRECT_DATA_36;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_151_148;
         } INDIRECT_DATA_37;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_155_152;
         } INDIRECT_DATA_38;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_159_156;
         } INDIRECT_DATA_39;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_163_160;
         } INDIRECT_DATA_40;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_167_164;
         } INDIRECT_DATA_41;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_171_168;
         } INDIRECT_DATA_42;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_175_172;
         } INDIRECT_DATA_43;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_179_176;
         } INDIRECT_DATA_44;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_183_180;
         } INDIRECT_DATA_45;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_187_184;
         } INDIRECT_DATA_46;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_191_188;
         } INDIRECT_DATA_47;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_195_192;
         } INDIRECT_DATA_48;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_199_196;
         } INDIRECT_DATA_49;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_203_200;
         } INDIRECT_DATA_50;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_207_204;
         } INDIRECT_DATA_51;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_211_208;
         } INDIRECT_DATA_52;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_215_212;
         } INDIRECT_DATA_53;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_219_216;
         } INDIRECT_DATA_54;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_223_220;
         } INDIRECT_DATA_55;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_227_224;
         } INDIRECT_DATA_56;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_231_228;
         } INDIRECT_DATA_57;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_235_232;
         } INDIRECT_DATA_58;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_239_236;
         } INDIRECT_DATA_59;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_243_240;
         } INDIRECT_DATA_60;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_247_244;
         } INDIRECT_DATA_61;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA_251_248;
         } INDIRECT_DATA_62;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } CMS;
-            struct {
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } RESET;
-        } INDIRECT_FIFO_CTRL_0;
-        struct {
-            struct {
-                logic [31:0] next;
+            struct packed{
+                logic [15:0] next;
                 logic load_next;
-            } IMAGE_SIZE;
+            } IMAGE_SIZE_LO;
+        } INDIRECT_FIFO_CTRL_0;
+        struct packed{
+            struct packed{
+                logic [15:0] next;
+                logic load_next;
+            } IMAGE_SIZE_HI;
         } INDIRECT_FIFO_CTRL_1;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA;
         } INDIRECT_FIFO_DATA;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } VENDOR_DATA;
@@ -763,385 +767,388 @@ module usb_ocp_recovery_reg (
     } field_combo_t;
     field_combo_t field_combo;
 
-    typedef struct {
-        struct {
-            struct {
+    typedef struct packed{
+        struct packed{
+            struct packed{
                 logic [7:0] value;
             } PROT_ERROR;
         } DEVICE_STATUS_0;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [7:0] value;
             } RESET_CTRL;
-            struct {
+            struct packed{
                 logic [7:0] value;
             } FORCED_RECOVERY;
-            struct {
+            struct packed{
                 logic [7:0] value;
             } IF_CTRL;
         } DEVICE_RESET;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [7:0] value;
             } CMS;
-            struct {
+            struct packed{
                 logic [7:0] value;
             } REC_IMG_SEL;
-            struct {
+            struct packed{
                 logic [7:0] value;
             } ACTIVATE_REC_IMG;
         } RECOVERY_CTRL;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [7:0] value;
             } CMS;
-            struct {
+            struct packed{
                 logic [7:0] value;
             } RESERVED_15_8;
-            struct {
+            struct packed{
                 logic [15:0] value;
             } INDIRECT_OFFSET_LOW;
         } INDIRECT_CTRL_0;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [15:0] value;
             } INDIRECT_OFFSET_HIGH;
         } INDIRECT_CTRL_1;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_3_0;
         } INDIRECT_DATA_0;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_7_4;
         } INDIRECT_DATA_1;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_11_8;
         } INDIRECT_DATA_2;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_15_12;
         } INDIRECT_DATA_3;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_19_16;
         } INDIRECT_DATA_4;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_23_20;
         } INDIRECT_DATA_5;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_27_24;
         } INDIRECT_DATA_6;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_31_28;
         } INDIRECT_DATA_7;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_35_32;
         } INDIRECT_DATA_8;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_39_36;
         } INDIRECT_DATA_9;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_43_40;
         } INDIRECT_DATA_10;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_47_44;
         } INDIRECT_DATA_11;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_51_48;
         } INDIRECT_DATA_12;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_55_52;
         } INDIRECT_DATA_13;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_59_56;
         } INDIRECT_DATA_14;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_63_60;
         } INDIRECT_DATA_15;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_67_64;
         } INDIRECT_DATA_16;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_71_68;
         } INDIRECT_DATA_17;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_75_72;
         } INDIRECT_DATA_18;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_79_76;
         } INDIRECT_DATA_19;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_83_80;
         } INDIRECT_DATA_20;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_87_84;
         } INDIRECT_DATA_21;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_91_88;
         } INDIRECT_DATA_22;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_95_92;
         } INDIRECT_DATA_23;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_99_96;
         } INDIRECT_DATA_24;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_103_100;
         } INDIRECT_DATA_25;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_107_104;
         } INDIRECT_DATA_26;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_111_108;
         } INDIRECT_DATA_27;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_115_112;
         } INDIRECT_DATA_28;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_119_116;
         } INDIRECT_DATA_29;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_123_120;
         } INDIRECT_DATA_30;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_127_124;
         } INDIRECT_DATA_31;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_131_128;
         } INDIRECT_DATA_32;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_135_132;
         } INDIRECT_DATA_33;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_139_136;
         } INDIRECT_DATA_34;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_143_140;
         } INDIRECT_DATA_35;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_147_144;
         } INDIRECT_DATA_36;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_151_148;
         } INDIRECT_DATA_37;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_155_152;
         } INDIRECT_DATA_38;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_159_156;
         } INDIRECT_DATA_39;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_163_160;
         } INDIRECT_DATA_40;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_167_164;
         } INDIRECT_DATA_41;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_171_168;
         } INDIRECT_DATA_42;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_175_172;
         } INDIRECT_DATA_43;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_179_176;
         } INDIRECT_DATA_44;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_183_180;
         } INDIRECT_DATA_45;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_187_184;
         } INDIRECT_DATA_46;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_191_188;
         } INDIRECT_DATA_47;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_195_192;
         } INDIRECT_DATA_48;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_199_196;
         } INDIRECT_DATA_49;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_203_200;
         } INDIRECT_DATA_50;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_207_204;
         } INDIRECT_DATA_51;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_211_208;
         } INDIRECT_DATA_52;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_215_212;
         } INDIRECT_DATA_53;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_219_216;
         } INDIRECT_DATA_54;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_223_220;
         } INDIRECT_DATA_55;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_227_224;
         } INDIRECT_DATA_56;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_231_228;
         } INDIRECT_DATA_57;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_235_232;
         } INDIRECT_DATA_58;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_239_236;
         } INDIRECT_DATA_59;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_243_240;
         } INDIRECT_DATA_60;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_247_244;
         } INDIRECT_DATA_61;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA_251_248;
         } INDIRECT_DATA_62;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [7:0] value;
             } CMS;
-            struct {
+            struct packed{
                 logic [7:0] value;
             } RESET;
+            struct packed{
+                logic [15:0] value;
+            } IMAGE_SIZE_LO;
         } INDIRECT_FIFO_CTRL_0;
-        struct {
-            struct {
-                logic [31:0] value;
-            } IMAGE_SIZE;
+        struct packed{
+            struct packed{
+                logic [15:0] value;
+            } IMAGE_SIZE_HI;
         } INDIRECT_FIFO_CTRL_1;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [31:0] value;
             } DATA;
         } INDIRECT_FIFO_DATA;
-        struct {
-            struct {
+        struct packed{
+            struct packed{
                 logic [7:0] value;
             } VENDOR_DATA;
         } VENDOR;
@@ -2944,27 +2951,48 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.INDIRECT_FIFO_CTRL_0.RESET.value = field_storage.INDIRECT_FIFO_CTRL_0.RESET.value;
-    // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE
+    // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO
     always_comb begin
-        automatic logic [31:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value;
+        next_c = field_storage.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO.value;
         load_next_c = '0;
-        if(decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
+        if(decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO.value & ~decoded_wr_biten[31:16]) | (decoded_wr_data[31:16] & decoded_wr_biten[31:16]);
             load_next_c = '1;
         end
-        field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next = next_c;
-        field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.load_next = load_next_c;
+        field_combo.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO.next = next_c;
+        field_combo.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value <= 32'h0;
-        end else if(field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.load_next) begin
-            field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value <= field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next;
+            field_storage.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO.value <= 16'h0;
+        end else if(field_combo.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO.load_next) begin
+            field_storage.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO.value <= field_combo.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO.next;
         end
     end
-    assign hwif_out.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value = field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value;
+    assign hwif_out.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO.value = field_storage.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO.value;
+    // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI
+    always_comb begin
+        automatic logic [15:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI.value & ~decoded_wr_biten[15:0]) | (decoded_wr_data[15:0] & decoded_wr_biten[15:0]);
+            load_next_c = '1;
+        end
+        field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI.next = next_c;
+        field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI.value <= 16'h0;
+        end else if(field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI.load_next) begin
+            field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI.value <= field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI.next;
+        end
+    end
+    assign hwif_out.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI.value = field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI.value;
     // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_DATA.DATA
     always_comb begin
         automatic logic [31:0] next_c;
@@ -3026,7 +3054,7 @@ module usb_ocp_recovery_reg (
     logic [31:0] readback_data;
 
     // Assign readback values to a flattened array
-    logic [31:0] readback_array[107];
+    logic [107-1:0][31:0] readback_array;
     assign readback_array[0][31:0] = (decoded_reg_strb.PROT_CAP_0 && !decoded_req_is_wr) ? hwif_in.PROT_CAP_0.REC_MAGIC_STRING_0.next : '0;
     assign readback_array[1][31:0] = (decoded_reg_strb.PROT_CAP_1 && !decoded_req_is_wr) ? hwif_in.PROT_CAP_1.REC_MAGIC_STRING_1.next : '0;
     assign readback_array[2][15:0] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? hwif_in.PROT_CAP_2.REC_PROT_VERSION.next : '0;
@@ -3156,8 +3184,9 @@ module usb_ocp_recovery_reg (
     assign readback_array[96][31:0] = (decoded_reg_strb.INDIRECT_DATA_62 && !decoded_req_is_wr) ? field_storage.INDIRECT_DATA_62.DATA_251_248.value : '0;
     assign readback_array[97][7:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_CTRL_0.CMS.value : '0;
     assign readback_array[97][15:8] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_CTRL_0.RESET.value : '0;
-    assign readback_array[97][31:16] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? 16'h0 : '0;
-    assign readback_array[98][31:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value : '0;
+    assign readback_array[97][31:16] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_CTRL_0.IMAGE_SIZE_LO.value : '0;
+    assign readback_array[98][15:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE_HI.value : '0;
+    assign readback_array[98][31:16] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && !decoded_req_is_wr) ? 16'h0 : '0;
     assign readback_array[99][0:0] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.EMPTY.next : '0;
     assign readback_array[99][1:1] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.FULL.next : '0;
     assign readback_array[99][2:2] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.REGION_RESET.next : '0;
@@ -3188,4 +3217,7 @@ module usb_ocp_recovery_reg (
     assign cpuif_rd_ack = readback_done;
     assign cpuif_rd_data = readback_data;
     assign cpuif_rd_err = readback_err;
+
+`CALIPTRA_ASSERT_KNOWN(ERR_HWIF_IN, hwif_in, clk, rst)
+
 endmodule

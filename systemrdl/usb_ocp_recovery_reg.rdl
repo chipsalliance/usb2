@@ -1545,7 +1545,7 @@ addrmap usb_ocp_recovery_reg {
     // INDIRECT_FIFO_CTRL, INDIRECT_FIFO_STATUS, INDIRECT_FIFO_DATA, and VENDOR commands.
     reg {
         name = "Indirect FIFO Control 0";
-        desc = "INDIRECT_FIFO_CTRL bytes 0-1 plus pad bytes. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary; live reset behavior aligns with usb_ocp_recovery_cms_fifo.sv.";
+        desc = "INDIRECT_FIFO_CTRL bytes 0-3: CMS (byte 0), RESET (byte 1), and IMAGE_SIZE[15:0] (bytes 2-3). OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary: IMAGE_SIZE occupies command bytes 2-5 and therefore straddles the two DWORD-aligned control registers. Field placement matches usb_ocp_recovery_cms_fifo.sv.";
         field {
             name = "Component Memory Space";
             desc = "Byte 0 selects the FIFO-backed component memory space. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
@@ -1562,24 +1562,31 @@ addrmap usb_ocp_recovery_reg {
             reset = 8'h00;
         } RESET[15:8];
         field {
-            name = "Reserved";
-            desc = "Bytes 2-3 are padding introduced by the DWORD-aligned RDL view and are not part of the OCP command payload.";
-            sw = r;
-            hw = na;
+            name = "Image Size Low";
+            desc = "Bytes 2-3: low 16 bits of IMAGE_SIZE (image size to load, in 4-byte units). OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary places IMAGE_SIZE at command bytes 2-5; this register holds bytes 2-3. Matches usb_ocp_recovery_cms_fifo.sv.";
+            sw = rw;
+            hw = r;
             reset = 16'h0000;
-        } RESERVED_31_16[31:16];
+        } IMAGE_SIZE_LO[31:16];
     } INDIRECT_FIFO_CTRL_0 @ 0x184;
 
     reg {
         name = "Indirect FIFO Control 1";
-        desc = "INDIRECT_FIFO_CTRL bytes 2-5. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary. IMAGE_SIZE byte placement matches usb_ocp_recovery_cms_fifo.sv.";
+        desc = "INDIRECT_FIFO_CTRL bytes 4-7: IMAGE_SIZE[31:16] (bytes 4-5) plus pad bytes 6-7. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary: IMAGE_SIZE occupies command bytes 2-5 and straddles the two DWORD-aligned control registers. Field placement matches usb_ocp_recovery_cms_fifo.sv.";
         field {
-            name = "Image Size";
-            desc = "Bytes 2-5 hold IMAGE_SIZE in 4-byte units. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
+            name = "Image Size High";
+            desc = "Bytes 4-5: high 16 bits of IMAGE_SIZE (image size to load, in 4-byte units). OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary places IMAGE_SIZE at command bytes 2-5; this register holds bytes 4-5. Matches usb_ocp_recovery_cms_fifo.sv.";
             sw = rw;
             hw = r;
-            reset = 32'h00000000;
-        } IMAGE_SIZE[31:0];
+            reset = 16'h0000;
+        } IMAGE_SIZE_HI[15:0];
+        field {
+            name = "Reserved";
+            desc = "Bytes 6-7 are padding introduced by the DWORD-aligned RDL view and are not part of the OCP command payload.";
+            sw = r;
+            hw = na;
+            reset = 16'h0000;
+        } RESERVED_31_16[31:16];
     } INDIRECT_FIFO_CTRL_1 @ 0x188;
 
     reg {
