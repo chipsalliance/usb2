@@ -38,7 +38,8 @@
 //                     counter was removed (pops are native in dev_axi_aclk).
 //   - image_size_q  : expected image size programmed by 0x2C (DWORD units).
 //   - image_done_q  : sticky; set when write_index_q >= image_size_q (DWORDs).
-//   - overflow_q    : sticky; set on a dropped push (FIFO full or image done).
+//   - overflow_q    : sticky; set only on a genuine FIFO-full drop (FIFO full
+//                     while the image is still incomplete).
 //   - region_reset_q / image_push_active_q sideband bits.
 //   - fifo_flush    : 1-cycle pulse on INDIRECT_FIFO_CTRL region-reset; drives
 //                     the FIFO's active-low reset (with rst) so a region reset
@@ -200,11 +201,16 @@ module usb_ocp_recovery_cms_fifo #(
   // dev_axi_aclk domain through the exposed read port (P9-0.1-C), so there is
   // no utmi-domain pop_accept here.
   // ------------------------------------------------------------------
-  logic push_accept;   // accepted push (advances FIFO + write_index_q)
-  logic push_drop;     // dropped push (FIFO full or image already complete)
+  logic push_accept;      // accepted push (advances FIFO + write_index_q)
+  logic push_drop_full;   // genuine FIFO-full overflow drop (FIFO full, image not yet complete)
   always_comb begin
-    push_accept = is_fifo_data && fifo_rb_wr && fifo_wready && !image_complete;
-    push_drop   = is_fifo_data && fifo_rb_wr && (!fifo_wready || image_complete);
+    push_accept    = is_fifo_data && fifo_rb_wr && fifo_wready && !image_complete;
+    // Overflow is a GENUINE FIFO-full drop only: a push that cannot be stored
+    // because the FIFO is full while the image is still incomplete.  A push that
+    // arrives after the image is already complete is expected excess data and is
+    // silently dropped (still ACKed) WITHOUT flagging overflow, so a trailing
+    // post-image push cannot spuriously drive the recovery FSM to S_ERROR.
+    push_drop_full = is_fifo_data && fifo_rb_wr && !fifo_wready && !image_complete;
   end
 
   // FIFO write strobe + data (read strobe comes from fifo_rd_ready port).
@@ -412,10 +418,12 @@ module usb_ocp_recovery_cms_fifo #(
       end
 
       // ----------------------------------------------------------------
-      // 0x2E push (dropped): FIFO full or image already complete -> sticky
-      // overflow, still ACKed (no hang).
+      // 0x2E push (dropped): a genuine FIFO-full drop while the image is
+      // still incomplete sets sticky overflow.  Excess pushes after the
+      // image is complete are dropped silently (no overflow).  All drops are
+      // still ACKed elsewhere (no hang).
       // ----------------------------------------------------------------
-      if (push_drop) begin
+      if (push_drop_full) begin
         overflow_q <= 1'b1;
       end
     end
