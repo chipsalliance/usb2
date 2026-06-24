@@ -257,12 +257,23 @@ module usb_ocp_recovery_top #(
     end
   end
 
-  // Response demux.  USB uses 1-cycle-late ack via owner_q.  EXT uses
-  // (grant_ext | owner_q==EXT) to also cover the cms_fifo same-cycle
-  // combinational ack path.
+  // Response demux.  The USB master's forward push path is combinational
+  // (grant_usb -> rb_wr -> cms_fifo push commits in the grant cycle), so its
+  // ack returned to the producer MUST also be combinational and qualified by
+  // the same combinational grant_usb -- NOT the registered owner_q.  Gating on
+  // owner_q (which only asserts the cycle AFTER grant_usb) delayed ctrl_out_rdy
+  // by one cycle while the push already committed, so the VHDL arbiter held its
+  // read index and the SV consumer pushed the first OUT DWORD twice (and the
+  // last DWORD was dropped at image_complete).  Using grant_usb lands the ack
+  // in the same cycle as the push so producer index and consumer push advance
+  // one-to-one from the first word.  This mirrors the EXT ack qualifier below.
+  // For register reads rb_ack is itself registered one cycle late inside the
+  // rb_adapter and grant_usb stays asserted until the ack is consumed, so their
+  // timing is unchanged.  No combinational loop: usb_rb_wr/usb_rb_rd do not
+  // depend on usb_rb_ack.
   assign usb_rb_rdata = rb_rdata;
-  assign usb_rb_ack   = rb_ack & (owner_q == 2'b01);
-  assign usb_rb_err   = rb_err & (owner_q == 2'b01);
+  assign usb_rb_ack   = rb_ack & grant_usb;
+  assign usb_rb_err   = rb_err & grant_usb;
 
   // EXT is word-native: return the full 32-bit read word.  ext_rb_offset is
   // held stable by the AHB sub-decoder across the CDC handshake.  The ack/err
