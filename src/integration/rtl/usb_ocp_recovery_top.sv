@@ -80,7 +80,6 @@ module usb_ocp_recovery_top #(
   //----------------------------------------------------------------------------
   // Static capability inputs (tied by SoC integrator).
   //----------------------------------------------------------------------------
-  input  logic [127:0]            prot_cap_in,
   input  logic [191:0]            device_id_in,
 
   //----------------------------------------------------------------------------
@@ -463,10 +462,12 @@ module usb_ocp_recovery_top #(
   // --------------------------------------------------------------------------
   // hwif_in wiring.
   //
-  // PROT_CAP (16 B) and DEVICE_ID (24 B) are fed from the SoC integrator
-  // ties (prot_cap_in / device_id_in).  The .next inputs are sampled
-  // continuously by hw=w / we=false fields, so they appear in the host
-  // read window with no extra storage cycle.
+  // PROT_CAP (16 B) fields are static read-only constants in the RDL
+  // (sw=r; hw=na); the regblock returns their reset directly with no hwif
+  // drive. DEVICE_ID (24 B) is fed from the SoC integrator tie
+  // (device_id_in). Those .next inputs are sampled continuously by
+  // hw=w / we=false fields, so they appear in the host read window with no
+  // extra storage cycle.
   //
   // DEVICE_STATUS_0 fields (DEV_STATUS / PROT_ERROR / REC_REASON_CODE)
   // come from the FSM (Sec 9.2 Tbl 9-5).  DEVICE_STATUS_1..15 carry the
@@ -495,15 +496,10 @@ module usb_ocp_recovery_top #(
   always_comb begin
     rb_hwif_in = '{default: '0};
 
-    // PROT_CAP: 4 DWORDs from prot_cap_in[127:0].
-    rb_hwif_in.PROT_CAP_0.REC_MAGIC_STRING_0.next = prot_cap_in[31:0];
-    rb_hwif_in.PROT_CAP_1.REC_MAGIC_STRING_1.next = prot_cap_in[63:32];
-    rb_hwif_in.PROT_CAP_2.REC_PROT_VERSION.next   = prot_cap_in[79:64];
-    rb_hwif_in.PROT_CAP_2.AGENT_CAPS.next         = prot_cap_in[95:80];
-    rb_hwif_in.PROT_CAP_3.NUM_OF_CMS_REGIONS.next = prot_cap_in[103:96];
-    rb_hwif_in.PROT_CAP_3.MAX_RESP_TIME.next      = prot_cap_in[111:104];
-    rb_hwif_in.PROT_CAP_3.HEARTBEAT_PERIOD.next   = prot_cap_in[119:112];
-    rb_hwif_in.PROT_CAP_3.RESERVED_31_24.next     = prot_cap_in[127:120];
+    // PROT_CAP fields are static read-only constants in the RDL (sw=r;
+    // hw=na). Their read-back values come directly from the regblock reset,
+    // so no hwif .next mirroring is required (RDL reset is the single source
+    // of truth). See usb_ocp_recovery_reg.rdl PROT_CAP_0..3.
 
     // DEVICE_ID: 6 DWORDs from device_id_in[191:0].  DEVICE_ID_0 is split
     // into DESC_TYPE[7:0] / VENDOR_SPECIFIC_STR_LENGTH[15:8] / DATA_3_2[31:16];

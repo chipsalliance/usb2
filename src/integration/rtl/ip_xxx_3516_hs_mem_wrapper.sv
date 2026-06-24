@@ -63,35 +63,6 @@ module ip_xxx_3516_hs_mem_wrapper
   parameter        AXI_REC_ADDR_WIDTH   = 32,
   parameter int    REC_CMS_ADDR_W       = 16,
   parameter int    REC_NUM_CMS          = 2,
-  // PROT_CAP bytes 0..15 (OCP Recovery v1.1 Sec 9.2 cmd 0x22 Tbl 9-3).
-  // - bytes[0..7] = ASCII magic "OCP RECV" (little-endian on wire).
-  // - byte[8]     = Major = 1
-  // - byte[9]     = Minor = 1
-  // - bytes[10..11] = CAPABILITIES bitmap, little-endian = 0x169B:
-  //     bit  0 = Identification         (CMD 0x23/IDENT)
-  //     bit  1 = Forced Recovery        (CMD 0x24/RECOVERY_CTRL)
-  //     bit  3 = Device Reset           (CMD 0x26/RESET)
-  //     bit  4 = Device Status          (CMD 0x25/DEV_STATUS)
-  //     bit  5 = Recovery memory access (INDIRECT_CTRL/STATUS/DATA direct
-  //              CMS-memory window, CMD 0x29/0x2A/0x2B) -- direct memory window unsupported.
-  //     bit  7 = Push C-image support   (FIFO streaming boot)
-  //     bit  9 = Hardware status        (CMD 0x27/HW_STATUS)
-  //     bit 10 = Vendor command         (CMD 0x2F/VENDOR)
-  //     bit 12 = FIFO CMS support       (CMD 0x2C/INDIRECT_FIFO_CTRL,
-  //                                      0x2D/INDIRECT_FIFO_STATUS,
-  //                                      0x2E/INDIRECT_FIFO_DATA)
-  // - byte[12]    = NUM_CMS_REGIONS = 2 (per REC_NUM_CMS)
-  // - byte[13]    = MAX_RESPONSE_TIME (0 => spec default)
-  // - byte[14]    = HEARTBEAT_PERIOD  (0 => not implemented)
-  // - byte[15]    = reserved
-  // Override by parameter at the SoC if a different capability bitmap is
-  // needed (review delta C9 fix).
-  parameter logic [127:0] REC_PROT_CAP_DEFAULT  =
-      { 8'h00, 8'h00, 8'h00, 8'h02,             // [15:12] resv, HB, MRT, NUM_CMS=2
-        8'h16, 8'h9B,                            // [11:10] capabilities = 0x169B (FIFO-only; bit5 direct CMS-memory cleared)
-        8'h01, 8'h01,                            // [9:8]   minor=1, major=1
-        8'h56, 8'h43, 8'h45, 8'h52,              // [7:4]   'V','C','E','R'
-        8'h20, 8'h50, 8'h43, 8'h4F },            // [3:0]   ' ','P','C','O'
   parameter logic [191:0] REC_DEVICE_ID_DEFAULT = 192'h0
  )  
  (
@@ -1330,7 +1301,6 @@ module ip_xxx_3516_hs_mem_wrapper
 
 
        // Static capability tie-offs (from parameters)
-       .prot_cap_in  (REC_PROT_CAP_DEFAULT),
        .device_id_in (REC_DEVICE_ID_DEFAULT),
 
        // Sideband

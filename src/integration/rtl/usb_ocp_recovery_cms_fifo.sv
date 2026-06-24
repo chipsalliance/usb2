@@ -254,13 +254,15 @@ module usb_ocp_recovery_cms_fifo #(
   always_comb begin
     reg_rdata = 32'h0;
     if (is_fifo_ctrl) begin
-      // 0x2C INDIRECT_FIFO_CTRL (OCP v1.1 Sec 9.2 Tbl 9-15):
-      //   byte0 CMS, byte1 RESET, bytes2..5 IMAGE_SIZE (DWORD units).
+      // 0x2C INDIRECT_FIFO_CTRL read-back:
+      //   CTRL_0: byte0 CMS, byte1 RESET, bytes2..3 reserved (0).
+      //   CTRL_1: bits[31:0] = full 32-bit IMAGE_SIZE (DWORD units).
+      // NOTE: capture parses IMAGE_SIZE from OCP command bytes 2..5
       unique case (word_idx)
-        3'd0:    reg_rdata = {image_size_q[15:0],
+        3'd0:    reg_rdata = {16'h0,
                               {7'b0, region_reset_q},
                               fifo_cms_q};
-        3'd1:    reg_rdata = {16'h0, image_size_q[31:16]};
+        3'd1:    reg_rdata = image_size_q[31:0];
         default: reg_rdata = 32'h0;
       endcase
     end

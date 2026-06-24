@@ -32,10 +32,9 @@ addrmap usb_ocp_recovery_reg {
         desc = "PROT_CAP bytes 0-3. OCP Recovery v1.1 Sec 9.2 PROT_CAP command/Table 9-3.";
         field {
             name = "Recovery protocol magic string 0";
-            desc = "ASCII bytes 0-3 of the OCP RECV magic string. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
+            desc = "ASCII bytes 0-3 of the OCP RECV magic string. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
             sw = r;
-            hw = w;
-            we = false;
+            hw = na;
             reset = 32'h2050434F;
         } REC_MAGIC_STRING_0[31:0];
     } PROT_CAP_0 @ 0x000;
@@ -45,10 +44,9 @@ addrmap usb_ocp_recovery_reg {
         desc = "PROT_CAP bytes 4-7. OCP Recovery v1.1 Sec 9.2 PROT_CAP command/Table 9-3.";
         field {
             name = "Recovery protocol magic string 1";
-            desc = "ASCII bytes 4-7 of the OCP RECV magic string. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
+            desc = "ASCII bytes 4-7 of the OCP RECV magic string. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
             sw = r;
-            hw = w;
-            we = false;
+            hw = na;
             reset = 32'h56434552;
         } REC_MAGIC_STRING_1[31:0];
     } PROT_CAP_1 @ 0x004;
@@ -58,20 +56,128 @@ addrmap usb_ocp_recovery_reg {
         desc = "PROT_CAP bytes 8-11. OCP Recovery v1.1 Sec 9.2 PROT_CAP command/Table 9-3.";
         field {
             name = "Recovery protocol version";
-            desc = "Bytes 8-9 encode major=1 and minor=1 for OCP Recovery v1.1. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
+            desc = "Bytes 8-9 encode major=1 and minor=1 for OCP Recovery v1.1. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
             sw = r;
-            hw = w;
-            we = false;
+            hw = na;
             reset = 16'h0101;
         } REC_PROT_VERSION[15:0];
+        // ----------------------------------------------------------------
+        // AGENT_CAPS (PROT_CAP bytes 10-11) -- OCP Recovery v1.1 Sec 9.2
+        // PROT_CAP / Table 9-3 "Recovery Protocol Capabilities" bitmap.
+        // Bit names taken from the spec capability list (mirrored in the
+        // I3C reference RDL secure_firmware_recovery_interface.rdl).
+        // FIFO-only agent; bit5 direct CMS-memory access cleared.
+        // Summation of set bits = 0x169B:
+        //   bit0  IDENTIFICATION         0x0001
+        //   bit1  FORCED_RECOVERY        0x0002
+        //   bit3  DEVICE_RESET           0x0008
+        //   bit4  DEVICE_STATUS          0x0010
+        //   bit7  PUSH_C_IMAGE           0x0080
+        //   bit9  HARDWARE_STATUS        0x0200
+        //   bit10 VENDOR_COMMAND         0x0400
+        //   bit12 FIFO_CMS_SUPPORT       0x1000
+        //   ----------------------------- -------
+        //   total                        0x169B
+        // Each sub-field is a static read-only constant (sw=r; hw=na); the
+        // ----------------------------------------------------------------
         field {
-            name = "Recovery protocol capabilities";
-            desc = "Bytes 10-11 advertise supported capabilities. This reset value matches the USB wrapper REC_PROT_CAP_DEFAULT bitmap in ip_xxx_3516_hs_mem_wrapper.sv and OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
+            name = "Identification";
+            desc = "AGENT_CAPS bit 0: Identification (DEVICE_ID structure). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
             sw = r;
-            hw = w;
-            we = false;
-            reset = 16'h16BB;
-        } AGENT_CAPS[31:16];
+            hw = na;
+            reset = 1'b1;
+        } AGENT_CAPS_IDENTIFICATION[16:16];
+        field {
+            name = "Forced Recovery";
+            desc = "AGENT_CAPS bit 1: Forced Recovery (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            sw = r;
+            hw = na;
+            reset = 1'b1;
+        } AGENT_CAPS_FORCED_RECOVERY[17:17];
+        field {
+            name = "Management Reset";
+            desc = "AGENT_CAPS bit 2: Mgmt reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Not supported; reset 0.";
+            sw = r;
+            hw = na;
+            reset = 1'b0;
+        } AGENT_CAPS_MGMT_RESET[18:18];
+        field {
+            name = "Device Reset";
+            desc = "AGENT_CAPS bit 3: Device Reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            sw = r;
+            hw = na;
+            reset = 1'b1;
+        } AGENT_CAPS_DEVICE_RESET[19:19];
+        field {
+            name = "Device Status";
+            desc = "AGENT_CAPS bit 4: Device status (DEVICE_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            sw = r;
+            hw = na;
+            reset = 1'b1;
+        } AGENT_CAPS_DEVICE_STATUS[20:20];
+        field {
+            name = "Recovery Memory Access";
+            desc = "AGENT_CAPS bit 5: Recovery memory access (direct CMS-memory window via INDIRECT_CTRL/STATUS/DATA, OCP commands 0x29/0x2A/0x2B). This agent is FIFO-only; the direct memory window is NOT implemented (R3 removes those register defs). Reset 0. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
+            sw = r;
+            hw = na;
+            reset = 1'b0;
+        } AGENT_CAPS_RECOVERY_MEM_ACCESS[21:21];
+        field {
+            name = "Local C-image Support";
+            desc = "AGENT_CAPS bit 6: Local C-image support. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Not supported; reset 0.";
+            sw = r;
+            hw = na;
+            reset = 1'b0;
+        } AGENT_CAPS_LOCAL_C_IMAGE[22:22];
+        field {
+            name = "Push C-image Support";
+            desc = "AGENT_CAPS bit 7: Push C-image support (FIFO streaming boot). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            sw = r;
+            hw = na;
+            reset = 1'b1;
+        } AGENT_CAPS_PUSH_C_IMAGE[23:23];
+        field {
+            name = "Interface Isolation";
+            desc = "AGENT_CAPS bit 8: Interface isolation. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Not supported; reset 0.";
+            sw = r;
+            hw = na;
+            reset = 1'b0;
+        } AGENT_CAPS_INTERFACE_ISOLATION[24:24];
+        field {
+            name = "Hardware Status";
+            desc = "AGENT_CAPS bit 9: Hardware status (HW_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            sw = r;
+            hw = na;
+            reset = 1'b1;
+        } AGENT_CAPS_HARDWARE_STATUS[25:25];
+        field {
+            name = "Vendor Command";
+            desc = "AGENT_CAPS bit 10: Vendor command (VENDOR). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            sw = r;
+            hw = na;
+            reset = 1'b1;
+        } AGENT_CAPS_VENDOR_COMMAND[26:26];
+        field {
+            name = "Flashless Boot";
+            desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Advertised 0 to keep the committed 0x169B bitmap. FLAG: this design performs FIFO push-image streaming boot, so a strict reading could set bit11; left 0 per committed value.";
+            sw = r;
+            hw = na;
+            reset = 1'b0;
+        } AGENT_CAPS_FLASHLESS_BOOT[27:27];
+        field {
+            name = "FIFO CMS Support";
+            desc = "AGENT_CAPS bit 12: FIFO CMS support (INDIRECT_FIFO_CTRL). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            sw = r;
+            hw = na;
+            reset = 1'b1;
+        } AGENT_CAPS_FIFO_CMS_SUPPORT[28:28];
+        field {
+            name = "Reserved";
+            desc = "AGENT_CAPS bits 13-15: reserved. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 0.";
+            sw = r;
+            hw = na;
+            reset = 3'b000;
+        } AGENT_CAPS_RESERVED[31:29];
     } PROT_CAP_2 @ 0x008;
 
     reg {
@@ -79,34 +185,30 @@ addrmap usb_ocp_recovery_reg {
         desc = "PROT_CAP bytes 12-15. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
         field {
             name = "Total number of CMS regions";
-            desc = "Byte 12 reports the number of component memory spaces. The USB wrapper currently advertises two CMS regions. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
+            desc = "Byte 12 reports the number of component memory spaces. Advertises two CMS regions (kept at the committed value). FLAG: after R3 removes the direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA), only the FIFO CMS region remains, so a strict reading could reduce this to 1; left 0x02 per the committed value pending orchestrator decision. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant (sw=r; hw=na).";
             sw = r;
-            hw = w;
-            we = false;
+            hw = na;
             reset = 8'h02;
         } NUM_OF_CMS_REGIONS[7:0];
         field {
             name = "Maximum response time";
-            desc = "Byte 13 reports maximum response time in 2^x microseconds. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
+            desc = "Byte 13 reports maximum response time in 2^x microseconds. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant (sw=r; hw=na).";
             sw = r;
-            hw = w;
-            we = false;
+            hw = na;
             reset = 8'h00;
         } MAX_RESP_TIME[15:8];
         field {
             name = "Heartbeat period";
-            desc = "Byte 14 reports heartbeat period in 2^x microseconds, with 0 meaning not supported. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
+            desc = "Byte 14 reports heartbeat period in 2^x microseconds, with 0 meaning not supported. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant (sw=r; hw=na).";
             sw = r;
-            hw = w;
-            we = false;
+            hw = na;
             reset = 8'h00;
         } HEARTBEAT_PERIOD[23:16];
         field {
             name = "Reserved";
-            desc = "Byte 15 is reserved. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
+            desc = "Byte 15 is reserved. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant (sw=r; hw=na).";
             sw = r;
-            hw = w;
-            we = false;
+            hw = na;
             reset = 8'h00;
         } RESERVED_31_24[31:24];
     } PROT_CAP_3 @ 0x00C;
@@ -619,933 +721,10 @@ addrmap usb_ocp_recovery_reg {
         } VENDOR_HW_STATUS_LEN[31:24];
     } HW_STATUS @ 0x074;
 
-    // INDIRECT_CTRL, INDIRECT_STATUS, and INDIRECT_DATA commands.
-    reg {
-        name = "Indirect memory access control 0";
-        desc = "INDIRECT_CTRL bytes 0-3. OCP Recovery v1.1 Sec 9.2 INDIRECT_CTRL/Table 9-12.";
-        field {
-            name = "Component Memory Space";
-            desc = "Byte 0 selects the target component memory space. OCP Recovery v1.1 Sec 9.2 INDIRECT_CTRL/Table 9-12.";
-            sw = rw;
-            hw = r;
-            reset = 8'h00;
-        } CMS[7:0];
-        field {
-            name = "Reserved";
-            desc = "Byte 1 is reserved but retained as a software-visible byte to preserve the OCP command layout. OCP Recovery v1.1 Sec 9.2 INDIRECT_CTRL/Table 9-12.";
-            sw = rw;
-            hw = r;
-            reset = 8'h00;
-        } RESERVED_15_8[15:8];
-        field {
-            name = "Indirect offset low";
-            desc = "Bytes 2-3 hold the low 16 bits of the indirect memory offset in 4-byte units. OCP Recovery v1.1 Sec 9.2 INDIRECT_CTRL/Table 9-12.";
-            sw = rw;
-            hw = r;
-            reset = 16'h0000;
-        } INDIRECT_OFFSET_LOW[31:16];
-    } INDIRECT_CTRL_0 @ 0x078;
-
-    reg {
-        name = "Indirect memory access control 1";
-        desc = "INDIRECT_CTRL bytes 4-5 plus pad bytes. OCP Recovery v1.1 Sec 9.2 INDIRECT_CTRL/Table 9-12.";
-        field {
-            name = "Indirect offset high";
-            desc = "Bytes 4-5 hold the high 16 bits of the indirect memory offset in 4-byte units. OCP Recovery v1.1 Sec 9.2 INDIRECT_CTRL/Table 9-12.";
-            sw = rw;
-            hw = r;
-            reset = 16'h0000;
-        } INDIRECT_OFFSET_HIGH[15:0];
-        field {
-            name = "Reserved";
-            desc = "Bytes 6-7 are padding introduced by the DWORD-aligned RDL view and are not part of the OCP command payload.";
-            sw = r;
-            hw = na;
-            reset = 16'h0000;
-        } RESERVED_31_16[31:16];
-    } INDIRECT_CTRL_1 @ 0x07C;
-
-    reg {
-        name = "Indirect memory access status 0";
-        desc = "INDIRECT_STATUS bytes 0-3. OCP Recovery v1.1 Sec 9.2 INDIRECT_STATUS/Table 9-13, with live byte behavior matching usb_ocp_recovery_cms_fifo.sv.";
-        field {
-            name = "Empty";
-            desc = "Byte 0 bit 0 reflects the USB cms_fifo direct-window empty state. This live status matches usb_ocp_recovery_cms_fifo.sv for the current USB transport implementation.";
-            sw = r;
-            hw = w;
-            we = false;
-            reset = 1'b1;
-        } EMPTY[0:0];
-        field {
-            name = "Full";
-            desc = "Byte 0 bit 1 reflects the USB cms_fifo direct-window full state. This live status matches usb_ocp_recovery_cms_fifo.sv for the current USB transport implementation.";
-            sw = r;
-            hw = w;
-            we = false;
-            reset = 1'b0;
-        } FULL[1:1];
-        field {
-            name = "Reserved status bits";
-            desc = "Byte 0 bits 7:2 are reserved in this USB transport view. The live cms_fifo currently drives only EMPTY and FULL in this byte.";
-            sw = r;
-            hw = w;
-            we = false;
-            reset = 6'h00;
-        } RESERVED_7_2[7:2];
-        field {
-            name = "Region type";
-            desc = "Byte 1 reports the selected region type. The current USB implementation returns 0x00 for code space. OCP Recovery v1.1 Sec 9.2 INDIRECT_STATUS/Table 9-13 and usb_ocp_recovery_cms_fifo.sv.";
-            sw = r;
-            hw = w;
-            we = false;
-            reset = 8'h00;
-        } REGION_TYPE[15:8];
-        field {
-            name = "Region size low";
-            desc = "Bytes 2-3 hold the low 16 bits of REGION_SIZE in 4-byte units. OCP Recovery v1.1 Sec 9.2 INDIRECT_STATUS/Table 9-13.";
-            sw = r;
-            hw = w;
-            we = false;
-            reset = 16'h0000;
-        } REGION_SIZE_LOW[31:16];
-    } INDIRECT_STATUS_0 @ 0x080;
-
-    reg {
-        name = "Indirect memory access status 1";
-        desc = "INDIRECT_STATUS bytes 4-7. OCP Recovery v1.1 Sec 9.2 INDIRECT_STATUS/Table 9-13.";
-        field {
-            name = "Region size high";
-            desc = "Bytes 4-7 hold the high 32 bits of REGION_SIZE in 4-byte units. OCP Recovery v1.1 Sec 9.2 INDIRECT_STATUS/Table 9-13.";
-            sw = r;
-            hw = w;
-            we = false;
-            reset = 32'h00000000;
-        } REGION_SIZE_HIGH[31:0];
-    } INDIRECT_STATUS_1 @ 0x084;
-
-    reg {
-        name = "Indirect memory data 0";
-        desc = "INDIRECT_DATA bytes 0-3. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 0-3";
-            desc = "Bytes 0-3 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_3_0[31:0];
-    } INDIRECT_DATA_0 @ 0x088;
-
-    reg {
-        name = "Indirect memory data 1";
-        desc = "INDIRECT_DATA bytes 4-7. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 4-7";
-            desc = "Bytes 4-7 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_7_4[31:0];
-    } INDIRECT_DATA_1 @ 0x08C;
-
-    reg {
-        name = "Indirect memory data 2";
-        desc = "INDIRECT_DATA bytes 8-11. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 8-11";
-            desc = "Bytes 8-11 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_11_8[31:0];
-    } INDIRECT_DATA_2 @ 0x090;
-
-    reg {
-        name = "Indirect memory data 3";
-        desc = "INDIRECT_DATA bytes 12-15. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 12-15";
-            desc = "Bytes 12-15 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_15_12[31:0];
-    } INDIRECT_DATA_3 @ 0x094;
-
-    reg {
-        name = "Indirect memory data 4";
-        desc = "INDIRECT_DATA bytes 16-19. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 16-19";
-            desc = "Bytes 16-19 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_19_16[31:0];
-    } INDIRECT_DATA_4 @ 0x098;
-
-    reg {
-        name = "Indirect memory data 5";
-        desc = "INDIRECT_DATA bytes 20-23. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 20-23";
-            desc = "Bytes 20-23 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_23_20[31:0];
-    } INDIRECT_DATA_5 @ 0x09C;
-
-    reg {
-        name = "Indirect memory data 6";
-        desc = "INDIRECT_DATA bytes 24-27. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 24-27";
-            desc = "Bytes 24-27 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_27_24[31:0];
-    } INDIRECT_DATA_6 @ 0x0A0;
-
-    reg {
-        name = "Indirect memory data 7";
-        desc = "INDIRECT_DATA bytes 28-31. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 28-31";
-            desc = "Bytes 28-31 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_31_28[31:0];
-    } INDIRECT_DATA_7 @ 0x0A4;
-
-    reg {
-        name = "Indirect memory data 8";
-        desc = "INDIRECT_DATA bytes 32-35. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 32-35";
-            desc = "Bytes 32-35 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_35_32[31:0];
-    } INDIRECT_DATA_8 @ 0x0A8;
-
-    reg {
-        name = "Indirect memory data 9";
-        desc = "INDIRECT_DATA bytes 36-39. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 36-39";
-            desc = "Bytes 36-39 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_39_36[31:0];
-    } INDIRECT_DATA_9 @ 0x0AC;
-
-    reg {
-        name = "Indirect memory data 10";
-        desc = "INDIRECT_DATA bytes 40-43. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 40-43";
-            desc = "Bytes 40-43 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_43_40[31:0];
-    } INDIRECT_DATA_10 @ 0x0B0;
-
-    reg {
-        name = "Indirect memory data 11";
-        desc = "INDIRECT_DATA bytes 44-47. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 44-47";
-            desc = "Bytes 44-47 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_47_44[31:0];
-    } INDIRECT_DATA_11 @ 0x0B4;
-
-    reg {
-        name = "Indirect memory data 12";
-        desc = "INDIRECT_DATA bytes 48-51. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 48-51";
-            desc = "Bytes 48-51 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_51_48[31:0];
-    } INDIRECT_DATA_12 @ 0x0B8;
-
-    reg {
-        name = "Indirect memory data 13";
-        desc = "INDIRECT_DATA bytes 52-55. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 52-55";
-            desc = "Bytes 52-55 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_55_52[31:0];
-    } INDIRECT_DATA_13 @ 0x0BC;
-
-    reg {
-        name = "Indirect memory data 14";
-        desc = "INDIRECT_DATA bytes 56-59. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 56-59";
-            desc = "Bytes 56-59 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_59_56[31:0];
-    } INDIRECT_DATA_14 @ 0x0C0;
-
-    reg {
-        name = "Indirect memory data 15";
-        desc = "INDIRECT_DATA bytes 60-63. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 60-63";
-            desc = "Bytes 60-63 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_63_60[31:0];
-    } INDIRECT_DATA_15 @ 0x0C4;
-
-    reg {
-        name = "Indirect memory data 16";
-        desc = "INDIRECT_DATA bytes 64-67. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 64-67";
-            desc = "Bytes 64-67 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_67_64[31:0];
-    } INDIRECT_DATA_16 @ 0x0C8;
-
-    reg {
-        name = "Indirect memory data 17";
-        desc = "INDIRECT_DATA bytes 68-71. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 68-71";
-            desc = "Bytes 68-71 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_71_68[31:0];
-    } INDIRECT_DATA_17 @ 0x0CC;
-
-    reg {
-        name = "Indirect memory data 18";
-        desc = "INDIRECT_DATA bytes 72-75. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 72-75";
-            desc = "Bytes 72-75 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_75_72[31:0];
-    } INDIRECT_DATA_18 @ 0x0D0;
-
-    reg {
-        name = "Indirect memory data 19";
-        desc = "INDIRECT_DATA bytes 76-79. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 76-79";
-            desc = "Bytes 76-79 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_79_76[31:0];
-    } INDIRECT_DATA_19 @ 0x0D4;
-
-    reg {
-        name = "Indirect memory data 20";
-        desc = "INDIRECT_DATA bytes 80-83. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 80-83";
-            desc = "Bytes 80-83 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_83_80[31:0];
-    } INDIRECT_DATA_20 @ 0x0D8;
-
-    reg {
-        name = "Indirect memory data 21";
-        desc = "INDIRECT_DATA bytes 84-87. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 84-87";
-            desc = "Bytes 84-87 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_87_84[31:0];
-    } INDIRECT_DATA_21 @ 0x0DC;
-
-    reg {
-        name = "Indirect memory data 22";
-        desc = "INDIRECT_DATA bytes 88-91. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 88-91";
-            desc = "Bytes 88-91 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_91_88[31:0];
-    } INDIRECT_DATA_22 @ 0x0E0;
-
-    reg {
-        name = "Indirect memory data 23";
-        desc = "INDIRECT_DATA bytes 92-95. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 92-95";
-            desc = "Bytes 92-95 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_95_92[31:0];
-    } INDIRECT_DATA_23 @ 0x0E4;
-
-    reg {
-        name = "Indirect memory data 24";
-        desc = "INDIRECT_DATA bytes 96-99. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 96-99";
-            desc = "Bytes 96-99 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_99_96[31:0];
-    } INDIRECT_DATA_24 @ 0x0E8;
-
-    reg {
-        name = "Indirect memory data 25";
-        desc = "INDIRECT_DATA bytes 100-103. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 100-103";
-            desc = "Bytes 100-103 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_103_100[31:0];
-    } INDIRECT_DATA_25 @ 0x0EC;
-
-    reg {
-        name = "Indirect memory data 26";
-        desc = "INDIRECT_DATA bytes 104-107. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 104-107";
-            desc = "Bytes 104-107 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_107_104[31:0];
-    } INDIRECT_DATA_26 @ 0x0F0;
-
-    reg {
-        name = "Indirect memory data 27";
-        desc = "INDIRECT_DATA bytes 108-111. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 108-111";
-            desc = "Bytes 108-111 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_111_108[31:0];
-    } INDIRECT_DATA_27 @ 0x0F4;
-
-    reg {
-        name = "Indirect memory data 28";
-        desc = "INDIRECT_DATA bytes 112-115. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 112-115";
-            desc = "Bytes 112-115 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_115_112[31:0];
-    } INDIRECT_DATA_28 @ 0x0F8;
-
-    reg {
-        name = "Indirect memory data 29";
-        desc = "INDIRECT_DATA bytes 116-119. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 116-119";
-            desc = "Bytes 116-119 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_119_116[31:0];
-    } INDIRECT_DATA_29 @ 0x0FC;
-
-    reg {
-        name = "Indirect memory data 30";
-        desc = "INDIRECT_DATA bytes 120-123. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 120-123";
-            desc = "Bytes 120-123 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_123_120[31:0];
-    } INDIRECT_DATA_30 @ 0x100;
-
-    reg {
-        name = "Indirect memory data 31";
-        desc = "INDIRECT_DATA bytes 124-127. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 124-127";
-            desc = "Bytes 124-127 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_127_124[31:0];
-    } INDIRECT_DATA_31 @ 0x104;
-
-    reg {
-        name = "Indirect memory data 32";
-        desc = "INDIRECT_DATA bytes 128-131. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 128-131";
-            desc = "Bytes 128-131 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_131_128[31:0];
-    } INDIRECT_DATA_32 @ 0x108;
-
-    reg {
-        name = "Indirect memory data 33";
-        desc = "INDIRECT_DATA bytes 132-135. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 132-135";
-            desc = "Bytes 132-135 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_135_132[31:0];
-    } INDIRECT_DATA_33 @ 0x10C;
-
-    reg {
-        name = "Indirect memory data 34";
-        desc = "INDIRECT_DATA bytes 136-139. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 136-139";
-            desc = "Bytes 136-139 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_139_136[31:0];
-    } INDIRECT_DATA_34 @ 0x110;
-
-    reg {
-        name = "Indirect memory data 35";
-        desc = "INDIRECT_DATA bytes 140-143. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 140-143";
-            desc = "Bytes 140-143 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_143_140[31:0];
-    } INDIRECT_DATA_35 @ 0x114;
-
-    reg {
-        name = "Indirect memory data 36";
-        desc = "INDIRECT_DATA bytes 144-147. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 144-147";
-            desc = "Bytes 144-147 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_147_144[31:0];
-    } INDIRECT_DATA_36 @ 0x118;
-
-    reg {
-        name = "Indirect memory data 37";
-        desc = "INDIRECT_DATA bytes 148-151. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 148-151";
-            desc = "Bytes 148-151 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_151_148[31:0];
-    } INDIRECT_DATA_37 @ 0x11C;
-
-    reg {
-        name = "Indirect memory data 38";
-        desc = "INDIRECT_DATA bytes 152-155. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 152-155";
-            desc = "Bytes 152-155 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_155_152[31:0];
-    } INDIRECT_DATA_38 @ 0x120;
-
-    reg {
-        name = "Indirect memory data 39";
-        desc = "INDIRECT_DATA bytes 156-159. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 156-159";
-            desc = "Bytes 156-159 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_159_156[31:0];
-    } INDIRECT_DATA_39 @ 0x124;
-
-    reg {
-        name = "Indirect memory data 40";
-        desc = "INDIRECT_DATA bytes 160-163. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 160-163";
-            desc = "Bytes 160-163 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_163_160[31:0];
-    } INDIRECT_DATA_40 @ 0x128;
-
-    reg {
-        name = "Indirect memory data 41";
-        desc = "INDIRECT_DATA bytes 164-167. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 164-167";
-            desc = "Bytes 164-167 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_167_164[31:0];
-    } INDIRECT_DATA_41 @ 0x12C;
-
-    reg {
-        name = "Indirect memory data 42";
-        desc = "INDIRECT_DATA bytes 168-171. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 168-171";
-            desc = "Bytes 168-171 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_171_168[31:0];
-    } INDIRECT_DATA_42 @ 0x130;
-
-    reg {
-        name = "Indirect memory data 43";
-        desc = "INDIRECT_DATA bytes 172-175. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 172-175";
-            desc = "Bytes 172-175 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_175_172[31:0];
-    } INDIRECT_DATA_43 @ 0x134;
-
-    reg {
-        name = "Indirect memory data 44";
-        desc = "INDIRECT_DATA bytes 176-179. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 176-179";
-            desc = "Bytes 176-179 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_179_176[31:0];
-    } INDIRECT_DATA_44 @ 0x138;
-
-    reg {
-        name = "Indirect memory data 45";
-        desc = "INDIRECT_DATA bytes 180-183. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 180-183";
-            desc = "Bytes 180-183 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_183_180[31:0];
-    } INDIRECT_DATA_45 @ 0x13C;
-
-    reg {
-        name = "Indirect memory data 46";
-        desc = "INDIRECT_DATA bytes 184-187. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 184-187";
-            desc = "Bytes 184-187 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_187_184[31:0];
-    } INDIRECT_DATA_46 @ 0x140;
-
-    reg {
-        name = "Indirect memory data 47";
-        desc = "INDIRECT_DATA bytes 188-191. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 188-191";
-            desc = "Bytes 188-191 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_191_188[31:0];
-    } INDIRECT_DATA_47 @ 0x144;
-
-    reg {
-        name = "Indirect memory data 48";
-        desc = "INDIRECT_DATA bytes 192-195. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 192-195";
-            desc = "Bytes 192-195 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_195_192[31:0];
-    } INDIRECT_DATA_48 @ 0x148;
-
-    reg {
-        name = "Indirect memory data 49";
-        desc = "INDIRECT_DATA bytes 196-199. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 196-199";
-            desc = "Bytes 196-199 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_199_196[31:0];
-    } INDIRECT_DATA_49 @ 0x14C;
-
-    reg {
-        name = "Indirect memory data 50";
-        desc = "INDIRECT_DATA bytes 200-203. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 200-203";
-            desc = "Bytes 200-203 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_203_200[31:0];
-    } INDIRECT_DATA_50 @ 0x150;
-
-    reg {
-        name = "Indirect memory data 51";
-        desc = "INDIRECT_DATA bytes 204-207. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 204-207";
-            desc = "Bytes 204-207 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_207_204[31:0];
-    } INDIRECT_DATA_51 @ 0x154;
-
-    reg {
-        name = "Indirect memory data 52";
-        desc = "INDIRECT_DATA bytes 208-211. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 208-211";
-            desc = "Bytes 208-211 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_211_208[31:0];
-    } INDIRECT_DATA_52 @ 0x158;
-
-    reg {
-        name = "Indirect memory data 53";
-        desc = "INDIRECT_DATA bytes 212-215. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 212-215";
-            desc = "Bytes 212-215 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_215_212[31:0];
-    } INDIRECT_DATA_53 @ 0x15C;
-
-    reg {
-        name = "Indirect memory data 54";
-        desc = "INDIRECT_DATA bytes 216-219. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 216-219";
-            desc = "Bytes 216-219 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_219_216[31:0];
-    } INDIRECT_DATA_54 @ 0x160;
-
-    reg {
-        name = "Indirect memory data 55";
-        desc = "INDIRECT_DATA bytes 220-223. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 220-223";
-            desc = "Bytes 220-223 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_223_220[31:0];
-    } INDIRECT_DATA_55 @ 0x164;
-
-    reg {
-        name = "Indirect memory data 56";
-        desc = "INDIRECT_DATA bytes 224-227. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 224-227";
-            desc = "Bytes 224-227 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_227_224[31:0];
-    } INDIRECT_DATA_56 @ 0x168;
-
-    reg {
-        name = "Indirect memory data 57";
-        desc = "INDIRECT_DATA bytes 228-231. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 228-231";
-            desc = "Bytes 228-231 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_231_228[31:0];
-    } INDIRECT_DATA_57 @ 0x16C;
-
-    reg {
-        name = "Indirect memory data 58";
-        desc = "INDIRECT_DATA bytes 232-235. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 232-235";
-            desc = "Bytes 232-235 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_235_232[31:0];
-    } INDIRECT_DATA_58 @ 0x170;
-
-    reg {
-        name = "Indirect memory data 59";
-        desc = "INDIRECT_DATA bytes 236-239. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 236-239";
-            desc = "Bytes 236-239 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_239_236[31:0];
-    } INDIRECT_DATA_59 @ 0x174;
-
-    reg {
-        name = "Indirect memory data 60";
-        desc = "INDIRECT_DATA bytes 240-243. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 240-243";
-            desc = "Bytes 240-243 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_243_240[31:0];
-    } INDIRECT_DATA_60 @ 0x178;
-
-    reg {
-        name = "Indirect memory data 61";
-        desc = "INDIRECT_DATA bytes 244-247. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 244-247";
-            desc = "Bytes 244-247 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_247_244[31:0];
-    } INDIRECT_DATA_61 @ 0x17C;
-
-    reg {
-        name = "Indirect memory data 62";
-        desc = "INDIRECT_DATA bytes 248-251. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14. Live data semantics are provided by usb_ocp_recovery_cms_fifo.sv through a future byte adapter.";
-        field {
-            name = "Indirect data bytes 248-251";
-            desc = "Bytes 248-251 of the INDIRECT_DATA transfer window. OCP Recovery v1.1 Sec 9.2 INDIRECT_DATA/Table 9-14.";
-            sw = rw;
-            hw = rw;
-            we = true;
-            reset = 32'h00000000;
-        } DATA_251_248[31:0];
-    } INDIRECT_DATA_62 @ 0x180;
-
     // INDIRECT_FIFO_CTRL, INDIRECT_FIFO_STATUS, INDIRECT_FIFO_DATA, and VENDOR commands.
     reg {
         name = "Indirect FIFO Control 0";
-        desc = "INDIRECT_FIFO_CTRL bytes 0-3: CMS (byte 0), RESET (byte 1), and IMAGE_SIZE[15:0] (bytes 2-3). OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary: IMAGE_SIZE occupies command bytes 2-5 and therefore straddles the two DWORD-aligned control registers. Field placement matches usb_ocp_recovery_cms_fifo.sv.";
+        desc = "INDIRECT_FIFO_CTRL_0: CMS (byte 0), RESET (byte 1), reserved (bytes 2-3). Layout matches the I3C reference register map (secure_firmware_recovery_interface.rdl INDIRECT_FIFO_CTRL_0) for firmware/I3C register parity. NOTE: this register-map layout intentionally differs from the OCP command byte-map -- the live cms_fifo still parses IMAGE_SIZE from OCP command bytes 2-5 (usb_ocp_recovery_cms_fifo.sv); the read-back layout here targets firmware/I3C register parity, not command-byte parity. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
         field {
             name = "Component Memory Space";
             desc = "Byte 0 selects the FIFO-backed component memory space. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
@@ -1555,38 +734,31 @@ addrmap usb_ocp_recovery_reg {
         } CMS[7:0];
         field {
             name = "Reset";
-            desc = "Byte 1 bit 0 requests FIFO reset and the device clears it after use. The USB transport live behavior is implemented in usb_ocp_recovery_cms_fifo.sv. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
+            desc = "Byte 1 bit 0 requests FIFO reset and the device clears it after use. The USB transport live behavior is implemented in usb_ocp_recovery_cms_fifo.sv (onwrite=woclr live-behavior preserved). OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
             sw = rw;
             hw = r;
             onwrite = woclr;
             reset = 8'h00;
         } RESET[15:8];
         field {
-            name = "Image Size Low";
-            desc = "Bytes 2-3: low 16 bits of IMAGE_SIZE (image size to load, in 4-byte units). OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary places IMAGE_SIZE at command bytes 2-5; this register holds bytes 2-3. Matches usb_ocp_recovery_cms_fifo.sv.";
-            sw = rw;
-            hw = r;
-            reset = 16'h0000;
-        } IMAGE_SIZE_LO[31:16];
-    } INDIRECT_FIFO_CTRL_0 @ 0x184;
-
-    reg {
-        name = "Indirect FIFO Control 1";
-        desc = "INDIRECT_FIFO_CTRL bytes 4-7: IMAGE_SIZE[31:16] (bytes 4-5) plus pad bytes 6-7. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary: IMAGE_SIZE occupies command bytes 2-5 and straddles the two DWORD-aligned control registers. Field placement matches usb_ocp_recovery_cms_fifo.sv.";
-        field {
-            name = "Image Size High";
-            desc = "Bytes 4-5: high 16 bits of IMAGE_SIZE (image size to load, in 4-byte units). OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary places IMAGE_SIZE at command bytes 2-5; this register holds bytes 4-5. Matches usb_ocp_recovery_cms_fifo.sv.";
-            sw = rw;
-            hw = r;
-            reset = 16'h0000;
-        } IMAGE_SIZE_HI[15:0];
-        field {
             name = "Reserved";
-            desc = "Bytes 6-7 are padding introduced by the DWORD-aligned RDL view and are not part of the OCP command payload.";
+            desc = "Bytes 2-3 are reserved.";
             sw = r;
             hw = na;
             reset = 16'h0000;
         } RESERVED_31_16[31:16];
+    } INDIRECT_FIFO_CTRL_0 @ 0x184;
+
+    reg {
+        name = "Indirect FIFO Control 1";
+        desc = "INDIRECT_FIFO_CTRL_1: full 32-bit IMAGE_SIZE (image size to load, in 4-byte units). NOTE: the live cms_fifo captures IMAGE_SIZE from OCP command bytes 2-5 (usb_ocp_recovery_cms_fifo.sv); this register read-back exposes the assembled 32-bit value. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
+        field {
+            name = "Image Size";
+            desc = "Image size to load, in 4-byte (DWORD) units. Full 32-bit IMAGE_SIZE.";
+            sw = rw;
+            hw = r;
+            reset = 32'h00000000;
+        } IMAGE_SIZE[31:0];
     } INDIRECT_FIFO_CTRL_1 @ 0x188;
 
     reg {
