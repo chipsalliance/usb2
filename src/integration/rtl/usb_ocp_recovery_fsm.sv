@@ -89,6 +89,14 @@ module usb_ocp_recovery_fsm (
   // proto-err latch driving device_status_protocol_err_out.
   input  logic        proto_err_rd_pulse,
 
+  // Unsupported-command detect pulse from the reg-bus adapter (OCP Recovery
+  // v1.1 Sec 9.1: "An unsupported command to a Device MUST set an unsupported
+  // error condition in the DEVICE_STATUS").  High for one cycle when the host
+  // accesses an unsupported OCP command code (e.g. the direct CMS-memory window
+  // 0x29/0x2A/0x2B, which this FIFO-only transport does not implement).  Sets
+  // the sticky PROTOCOL_ERROR latch to 0x01 (Unsupported/Write Command).
+  input  logic        unsupported_cmd_set,
+
   // From A4 (FIFO/image push observation)
   input  logic        image_push_active,
   input  logic        image_push_done,
@@ -357,6 +365,20 @@ module usb_ocp_recovery_fsm (
       end else begin
         proto_err_d = 8'h03;  // generic recovery failed
       end
+    end
+    // Unsupported/Write Command error (OCP Recovery v1.1 Sec 9.1 / Sec 9.2
+    // Tbl 9-5 byte 1 = 0x01).  Set when the host accesses an unsupported OCP
+    // command code.  Guarded by proto_err_d == 0 so it does NOT overwrite an
+    // existing sticky error (e.g. a recovery auth/size/generic failure or a
+    // same-cycle S_ERROR set): the first error stays latched until the host
+    // clears it by reading DEVICE_STATUS.  Placed before the rclr clear so a
+    // host read of DEVICE_STATUS in the same cycle still wins (clear-on-read).
+    // NOTE: the reg-bus adapter is shared by the USB-host and EXT/AHB masters,
+    // so an EXT/AHB access to an unsupported command also sets this; precise
+    // USB-host source qualification is deferred to the register use-model
+    // audit task R7.
+    if (unsupported_cmd_set && (proto_err_d == 8'h00)) begin
+      proto_err_d = 8'h01;
     end
     if (proto_err_rd_pulse) begin
       proto_err_d = 8'h00;

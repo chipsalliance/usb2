@@ -582,10 +582,10 @@ module usb_ocp_recovery_reg (
     assign readback_array[2][24:24] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h0 : '0;
     assign readback_array[2][25:25] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
     assign readback_array[2][26:26] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
-    assign readback_array[2][27:27] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h0 : '0;
+    assign readback_array[2][27:27] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
     assign readback_array[2][28:28] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
     assign readback_array[2][31:29] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 3'h0 : '0;
-    assign readback_array[3][7:0] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? 8'h2 : '0;
+    assign readback_array[3][7:0] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? 8'h1 : '0;
     assign readback_array[3][15:8] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? 8'h0 : '0;
     assign readback_array[3][23:16] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? 8'h0 : '0;
     assign readback_array[3][31:24] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? 8'h0 : '0;
@@ -617,7 +617,9 @@ module usb_ocp_recovery_reg (
     assign readback_array[23][31:0] = (decoded_reg_strb.DEVICE_STATUS_13 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_13.VENDOR_STATUS_48_45.next : '0;
     assign readback_array[24][31:0] = (decoded_reg_strb.DEVICE_STATUS_14 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_14.VENDOR_STATUS_52_49.next : '0;
     assign readback_array[25][31:0] = (decoded_reg_strb.DEVICE_STATUS_15 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_15.VENDOR_STATUS_56_53.next : '0;
-    assign readback_array[26][23:0] = '0;
+    assign readback_array[26][7:0] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? field_storage.DEVICE_RESET.RESET_CTRL.value : '0;
+    assign readback_array[26][15:8] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? field_storage.DEVICE_RESET.FORCED_RECOVERY.value : '0;
+    assign readback_array[26][23:16] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? field_storage.DEVICE_RESET.IF_CTRL.value : '0;
     assign readback_array[26][31:24] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? 8'h0 : '0;
     assign readback_array[27][7:0] = (decoded_reg_strb.RECOVERY_CTRL && !decoded_req_is_wr) ? field_storage.RECOVERY_CTRL.CMS.value : '0;
     assign readback_array[27][15:8] = (decoded_reg_strb.RECOVERY_CTRL && !decoded_req_is_wr) ? field_storage.RECOVERY_CTRL.REC_IMG_SEL.value : '0;

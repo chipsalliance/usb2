@@ -101,7 +101,15 @@ module usb_ocp_recovery_rb_adapter (
   // --------------------------------------------------------------------------
   output logic        hw_status_wr,
   output logic [7:0]  hw_status_wdata,
-  output logic        proto_err_rd_pulse
+  output logic        proto_err_rd_pulse,
+
+  // Unsupported-command detect pulse to A5 FSM (OCP Recovery v1.1 Sec 9.1:
+  // unsupported command MUST set DEVICE_STATUS.PROTOCOL_ERROR).  High for one
+  // cycle in the (registered) ack window of an access to an unsupported OCP
+  // command code (any code not in the local or FIFO command set, e.g. the
+  // direct CMS-memory window 0x29/0x2A/0x2B that this FIFO-only transport does
+  // not implement).
+  output logic        unsupported_cmd_pulse
 );
 
   // --------------------------------------------------------------------------
@@ -117,7 +125,9 @@ module usb_ocp_recovery_rb_adapter (
   //   INDIRECT_FIFO_*  @ 0x100+ (cmds 0x2C..0x2E, FIFO-routed)
   //   VENDOR           @ 0x1A4  (cmd 0x2F,  1 B stub)
   //   Direct CMS-memory window 0x29/0x2A/0x2B (INDIRECT_CTRL/STATUS/DATA) is
-  //   not implemented; unrecognized -> invalid-command drop/ack path.
+  //   not implemented (removed in R3): an access to any unsupported command
+  //   code raises unsupported_cmd_pulse -> PROTOCOL_ERROR=0x01 in the FSM and
+  //   acks (OCP Recovery v1.1 Sec 9.1).
   // --------------------------------------------------------------------------
   localparam logic [7:0] CMD_PROT_CAP             = 8'h22;
   localparam logic [7:0] CMD_DEVICE_ID            = 8'h23;
@@ -250,8 +260,18 @@ module usb_ocp_recovery_rb_adapter (
     local_noncpuif_err = 1'b0;
     if (access & ~is_fifo_cmd & ~regblock_busy_q) begin
       if (~is_local_cmd) begin
+        // Unsupported OCP command code (e.g. the removed direct CMS-memory
+        // window 0x29/0x2A/0x2B).  Complete the access cleanly (ack, NO err)
+        // rather than signalling a reg-bus error: a reg-bus error makes
+        // ctrl_decode STALL the USB control transfer, and a STALLed claimed
+        // transfer is not cleanly retired by the recovery arbiter (it would
+        // wedge the recovery endpoint -- see r4_protoerr_recovery_rca.md /
+        // task D3).  The unsupported condition is instead reported per OCP
+        // Recovery v1.1 Sec 9.1 by raising unsupported_cmd_pulse ->
+        // DEVICE_STATUS.PROTOCOL_ERROR = 0x01 (see unsupported_access below);
+        // the read returns 0 data / the write is dropped.
         local_noncpuif_acc = 1'b1;
-        local_noncpuif_err = 1'b1;     // invalid OCP command code
+        local_noncpuif_err = 1'b0;
       end else if (~off_ok) begin
         local_noncpuif_acc = 1'b1;
         local_noncpuif_err = 1'b1;     // offset past command window
@@ -267,6 +287,15 @@ module usb_ocp_recovery_rb_adapter (
   assign wr_hw_status = local_access & rb_wr & off_ok &
                         (rb_cmd == CMD_HW_STATUS) & rb_wstrb[0];
 
+  // Unsupported-command detect: an access (read or write) to a command code
+  // that is neither a local nor a FIFO command (e.g. the removed direct
+  // CMS-memory window 0x29/0x2A/0x2B, or any unknown code).  Gated by
+  // ~regblock_busy_q so it qualifies exactly one request cycle, aligning the
+  // registered pulse below with the rb_ack window.  OCP Recovery v1.1 Sec 9.1.
+  logic unsupported_access;
+  assign unsupported_access = access & ~is_fifo_cmd & ~is_local_cmd
+                            & ~regblock_busy_q;
+
   // --------------------------------------------------------------------------
   // Sequential: regblock handshake registers.
   // --------------------------------------------------------------------------
@@ -276,6 +305,7 @@ module usb_ocp_recovery_rb_adapter (
   logic        hw_status_wr_q;
   logic [7:0]  hw_status_wdata_q;
   logic        proto_err_rd_pulse_q;
+  logic        unsupported_cmd_pulse_q;
 
   always_ff @(posedge clk) begin
     if (rst) begin
@@ -286,6 +316,7 @@ module usb_ocp_recovery_rb_adapter (
       hw_status_wr_q       <= 1'b0;
       hw_status_wdata_q    <= 8'h00;
       proto_err_rd_pulse_q <= 1'b0;
+      unsupported_cmd_pulse_q <= 1'b0;
     end else begin
       // Defaults: handshake / pulses low.
       rb_ack_q             <= 1'b0;
@@ -293,6 +324,7 @@ module usb_ocp_recovery_rb_adapter (
       rb_rdata_q           <= '0;
       hw_status_wr_q       <= 1'b0;
       proto_err_rd_pulse_q <= 1'b0;
+      unsupported_cmd_pulse_q <= unsupported_access;
 
       // ----- Regblock CPUIF path (single-cycle req, registered ack) -----
       if (cpuif_fire) begin
@@ -342,6 +374,7 @@ module usb_ocp_recovery_rb_adapter (
   assign hw_status_wr       = hw_status_wr_q;
   assign hw_status_wdata    = hw_status_wdata_q;
   assign proto_err_rd_pulse = proto_err_rd_pulse_q;
+  assign unsupported_cmd_pulse = unsupported_cmd_pulse_q;
 
   // --------------------------------------------------------------------------
   // Assertions

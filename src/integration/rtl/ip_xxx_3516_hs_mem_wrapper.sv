@@ -1046,9 +1046,11 @@ module ip_xxx_3516_hs_mem_wrapper
        // per-register addresses) into the byte-wide rb_* (cmd, offset)
        // pair the adapter expects. PROT_CAP@0x000, DEVICE_ID@0x010,
        // DEVICE_STATUS@0x028, DEVICE_RESET@0x068, RECOVERY_CTRL@0x06C,
-       // RECOVERY_STATUS@0x070, HW_STATUS@0x074, INDIRECT_CTRL@0x078,
-       // INDIRECT_STATUS@0x080, INDIRECT_DATA@0x088, INDIRECT_FIFO_CTRL@0x184,
+       // RECOVERY_STATUS@0x070, HW_STATUS@0x074, INDIRECT_FIFO_CTRL@0x184,
        // INDIRECT_FIFO_STATUS@0x18C, INDIRECT_FIFO_DATA@0x1A0, VENDOR@0x1A4.
+       // The 0x078-0x183 window (direct CMS-memory INDIRECT_CTRL/STATUS/DATA,
+       // cmds 0x29/0x2A/0x2B) was removed in R3 and is unmapped: accesses there
+       // forward invalid cmd 0x00 -> PROTOCOL_ERROR + ack (OCP v1.1 Sec 9.1).
        // P9-0.1-C: a native INDIRECT_FIFO_DATA read (is_fifo_data_read) is
        // serviced via the FIFO read port and must NEVER enter the utmi
        // bridge -- guarded with !is_fifo_data_read so ahb_cmd_q is NOT
@@ -1075,7 +1077,11 @@ module ip_xxx_3516_hs_mem_wrapper
                ahb_cmd_q <= 8'h26;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h6C;
              end
-           12'h07?: // RECOVERY_STATUS 0x070-0x071, HW_STATUS 0x074-0x077, INDIRECT_CTRL 0x078-0x07D
+           12'h07?: // RECOVERY_STATUS 0x070-0x073 (cmd 0x27), HW_STATUS 0x074-0x077
+                    // (cmd 0x28).  0x078-0x07F is unmapped: the direct CMS-memory
+                    // window (INDIRECT_CTRL, cmd 0x29) was removed in R3, so forward
+                    // invalid cmd 0x00.  The adapter flags PROTOCOL_ERROR and acks
+                    // (OCP Recovery v1.1 Sec 9.1 unsupported command).
              if (dev_ahb_haddr[3:0] < 4'h4) begin
                ahb_cmd_q <= 8'h27;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h70;
@@ -1083,26 +1089,22 @@ module ip_xxx_3516_hs_mem_wrapper
                ahb_cmd_q <= 8'h28;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h74;
              end else begin
-               ahb_cmd_q <= 8'h29;
-               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h78;
+               ahb_cmd_q <= 8'h00;
+               ahb_off_q <= 8'h00;
              end
-           12'h08?: // INDIRECT_STATUS 0x080-0x087 (cmd 0x2A) or INDIRECT_DATA 0x088+ (cmd 0x2B)
-             if (dev_ahb_haddr[3:0] < 4'h8) begin
-               ahb_cmd_q <= 8'h2A;
-               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h80;
-             end else begin
-               ahb_cmd_q <= 8'h2B;
-               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h88;
-             end
-           12'h09?, 12'h0A?, 12'h0B?, 12'h0C?, 12'h0D?, 12'h0E?, 12'h0F?: // INDIRECT_DATA continuation
+           12'h08?, 12'h09?, 12'h0A?, 12'h0B?, 12'h0C?, 12'h0D?, 12'h0E?, 12'h0F?:
+             // 0x080-0x0FF: the direct CMS-memory window (INDIRECT_STATUS cmd 0x2A /
+             // INDIRECT_DATA cmd 0x2B) was removed in R3 -> unmapped.  Forward invalid
+             // cmd 0x00 (unsupported -> PROTOCOL_ERROR + ack).
              begin
-               ahb_cmd_q <= 8'h2B;
-               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h88;
+               ahb_cmd_q <= 8'h00;
+               ahb_off_q <= 8'h00;
              end
-           12'h1??: // 0x100-0x183 INDIRECT_DATA cont. (cmd 0x2B), 0x184-0x18B INDIRECT_FIFO_CTRL (cmd 0x2C), 0x18C-0x19F INDIRECT_FIFO_STATUS (cmd 0x2D), 0x1A0-0x1A3 INDIRECT_FIFO_DATA (cmd 0x2E), 0x1A4-0x1A7 VENDOR (cmd 0x2F)
+           12'h1??: // 0x100-0x183 unmapped (removed INDIRECT_DATA window) -> invalid cmd 0x00;
+                    // 0x184-0x18B INDIRECT_FIFO_CTRL (cmd 0x2C), 0x18C-0x19F INDIRECT_FIFO_STATUS (cmd 0x2D), 0x1A0-0x1A3 INDIRECT_FIFO_DATA (cmd 0x2E), 0x1A4-0x1A7 VENDOR (cmd 0x2F)
              if (dev_ahb_haddr[11:0] < 12'h184) begin
-               ahb_cmd_q <= 8'h2B;
-               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h88;
+               ahb_cmd_q <= 8'h00;
+               ahb_off_q <= 8'h00;
              end else if (dev_ahb_haddr[11:0] < 12'h18C) begin
                ahb_cmd_q <= 8'h2C;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h84;

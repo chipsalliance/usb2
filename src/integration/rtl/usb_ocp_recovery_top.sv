@@ -150,6 +150,9 @@ module usb_ocp_recovery_top #(
   // PROTOCOL_ERROR has onread = rclr.  regs pulses this when host reads
   // DEVICE_STATUS byte 1; FSM clears its sticky proto-err latch on the pulse.
   logic                       proto_err_rd_pulse;
+  // OCP Recovery v1.1 Sec 9.1: an access to an unsupported OCP command code
+  // pulses this so the FSM sets DEVICE_STATUS.PROTOCOL_ERROR = 0x01.
+  logic                       unsupported_cmd_pulse;
 
   logic [7:0]                 device_status_out;
   logic [7:0]                 device_status_protocol_err_out;
@@ -402,7 +405,8 @@ module usb_ocp_recovery_top #(
 
     .hw_status_wr                     (hw_status_wr),
     .hw_status_wdata                  (hw_status_wdata),
-    .proto_err_rd_pulse               (proto_err_rd_pulse)
+    .proto_err_rd_pulse               (proto_err_rd_pulse),
+    .unsupported_cmd_pulse            (unsupported_cmd_pulse)
   );
 
   // --------------------------------------------------------------------------
@@ -624,6 +628,7 @@ module usb_ocp_recovery_top #(
     .recovery_ctrl_activate           (recovery_ctrl_activate),
     .recovery_ctrl_activate_consume   (recovery_ctrl_activate_consume),
     .proto_err_rd_pulse               (proto_err_rd_pulse),
+    .unsupported_cmd_set              (unsupported_cmd_pulse),
 
     .image_push_active (image_push_active),
     .image_push_done   (image_push_done),

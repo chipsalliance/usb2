@@ -159,10 +159,10 @@ addrmap usb_ocp_recovery_reg {
         } AGENT_CAPS_VENDOR_COMMAND[26:26];
         field {
             name = "Flashless Boot";
-            desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Advertised 0 to keep the committed 0x169B bitmap. FLAG: this design performs FIFO push-image streaming boot, so a strict reading could set bit11; left 0 per committed value.";
+            desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Advertised 1: this design supports flashless boot (host writes DEVICE_RESET.FORCED_RECOVERY=0xE to enter flashless boot on the next platform reset). Kept as a static read-only constant here; the firmware-configurable capability use-model (sw=rw with reset default) is deferred to the register use-model audit task R7. Sets AGENT_CAPS = 0x1E9B.";
             sw = r;
             hw = na;
-            reset = 1'b0;
+            reset = 1'b1;
         } AGENT_CAPS_FLASHLESS_BOOT[27:27];
         field {
             name = "FIFO CMS Support";
@@ -185,10 +185,10 @@ addrmap usb_ocp_recovery_reg {
         desc = "PROT_CAP bytes 12-15. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
         field {
             name = "Total number of CMS regions";
-            desc = "Byte 12 reports the number of component memory spaces. Advertises two CMS regions (kept at the committed value). FLAG: after R3 removes the direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA), only the FIFO CMS region remains, so a strict reading could reduce this to 1; left 0x02 per the committed value pending orchestrator decision. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant (sw=r; hw=na).";
+            desc = "Byte 12 reports the number of component memory spaces. Advertises one CMS region: after R3 removed the direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA), only the FIFO-backed CMS region remains (OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3; this count includes logging, code and vendor regions). Kept as a static read-only constant here; the firmware-configurable use-model (sw=rw) is deferred to the register use-model audit task R7.";
             sw = r;
             hw = na;
-            reset = 8'h02;
+            reset = 8'h01;
         } NUM_OF_CMS_REGIONS[7:0];
         field {
             name = "Maximum response time";
@@ -553,19 +553,19 @@ addrmap usb_ocp_recovery_reg {
     // DEVICE_RESET, RECOVERY_CTRL, RECOVERY_STATUS, and HW_STATUS commands.
     reg {
         name = "Reset control";
-        desc = "DEVICE_RESET bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7. Each writable byte carries swmod so the SV recovery FSM sees a one-cycle write strobe directly from the CPUIF path.";
+        desc = "DEVICE_RESET bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7. The OCP r/w column is rw, so the fields are sw=rw: firmware can read back the last host-written value (e.g. to act on FORCED_RECOVERY=0xE flashless-boot / 0xF recovery requests). Each writable byte carries swmod so the SV recovery FSM sees a one-cycle write strobe directly from the CPUIF path.";
         field {
             name = "Device Reset Control";
             desc = "Byte 0 requests device reset or management reset. swmod gives the FSM a one-cycle write strobe, matching OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7.";
-            sw = w;
+            sw = rw;
             hw = r;
             swmod = true;
             reset = 8'h00;
         } RESET_CTRL[7:0];
         field {
             name = "Forced Recovery";
-            desc = "Byte 1 controls forced recovery or flashless boot on the next platform reset. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7.";
-            sw = w;
+            desc = "Byte 1 controls forced recovery or flashless boot on the next platform reset (0xE = enter flashless boot mode, 0xF = enter recovery mode). OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7.";
+            sw = rw;
             hw = r;
             swmod = true;
             reset = 8'h00;
@@ -573,7 +573,7 @@ addrmap usb_ocp_recovery_reg {
         field {
             name = "Interface Control";
             desc = "Byte 2 controls interface mastering enable. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7.";
-            sw = w;
+            sw = rw;
             hw = r;
             swmod = true;
             reset = 8'h00;
