@@ -1,32 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // ============================================================================
-// usb_ocp_recovery_pkg.svh
+// usb_ocp_recovery_pkg.sv
 //
-// Shared constants for the OCP Recovery v1.1 USB-transported register file.
-//
-// HAND-AUTHORED (this revision).  Intended source: regeneration from
-//   third_party/usb2/systemrdl/usb_ocp_recovery.regs
-// via the existing peakrdl-style generator path (see tools/scripts/
-// gen_soc_regs.sh).  Bringing that generator up for usb_ocp_recovery.regs
-// is tracked separately; in the meantime this header is the single source of
-// truth for command codes, payload lengths, and within-record byte offsets
-// shared between usb_ocp_recovery_regs.sv, usb_ocp_recovery_cms_fifo.sv, and
-// usb_ocp_recovery_ctrl_decode.sv.
-//
-// Every literal here is justified by an explicit OCP Recovery v1.1 Sec 9.2
-// table reference.  Do NOT introduce a value here without a citation.
+// Shared constants for the OCP Recovery v1.1 USB-transported register file:
+// OCP command codes, per-command payload lengths, within-record byte offsets,
+// and the USB class-request encoding.  This package is the SINGLE SOURCE OF
+// TRUTH for these values; consumers `import usb_ocp_recovery_pkg::*` rather
+// than redefining or hard-coding them.  Every literal is justified by an
+// explicit OCP Recovery v1.1 Sec 9.2 reference; do NOT introduce a value here
+// without a citation.
 // ============================================================================
 
-// ============================================================================
-// Note on include style: this header is deliberately NOT guarded.  It is
-// included *inside* the module body of each consumer so its localparams land
-// in module-scope.  A `ifndef ... `define ... `endif guard would cause the
-// second module's include to no-op (the guard set by the first include
-// persists across files in one compilation unit), leaving the second module
-// without the localparams.  If you ever need a guarded header, refactor this
-// into a SystemVerilog `package usb_ocp_recovery_pkg; ... endpackage` and
-// `import usb_ocp_recovery_pkg::*;` in each consumer.
-// ============================================================================
+package usb_ocp_recovery_pkg;
 
 // ----------------------------------------------------------------------------
 // OCP command codes (OCP Recovery v1.1 Sec 9.2 Tbl 9-1)
@@ -41,10 +26,10 @@ localparam logic [7:0] OCP_CMD_HW_STATUS            = 8'h28;
 localparam logic [7:0] OCP_CMD_INDIRECT_CTRL        = 8'h29;
 localparam logic [7:0] OCP_CMD_INDIRECT_STATUS      = 8'h2A;
 localparam logic [7:0] OCP_CMD_INDIRECT_DATA        = 8'h2B;
-localparam logic [7:0] OCP_CMD_INDIRECT_FIFO_CTRL   = 8'h2C;
-localparam logic [7:0] OCP_CMD_INDIRECT_FIFO_STATUS = 8'h2D;
-localparam logic [7:0] OCP_CMD_INDIRECT_FIFO_DATA   = 8'h2E;
-localparam logic [7:0] OCP_CMD_VENDOR               = 8'h2F;
+localparam logic [7:0] OCP_CMD_VENDOR               = 8'h2C;
+localparam logic [7:0] OCP_CMD_INDIRECT_FIFO_CTRL   = 8'h2D;
+localparam logic [7:0] OCP_CMD_INDIRECT_FIFO_STATUS = 8'h2E;
+localparam logic [7:0] OCP_CMD_INDIRECT_FIFO_DATA   = 8'h2F;
 
 localparam logic [7:0] OCP_CMD_MIN                  = 8'h22;
 localparam logic [7:0] OCP_CMD_MAX                  = 8'h2F;
@@ -97,9 +82,9 @@ localparam int OCP_OFF_DS_VENDOR_START   = 7;  // bytes 7..N
 
 // HW_STATUS (Sec 9.2 Tbl 9-11)
 localparam int OCP_OFF_HW_DEV_STATUS     = 0;
-localparam int OCP_OFF_HW_VENDOR_STATUS  = 1;  // 8b bitmap (was byte 3 in b6f3c08; corrected)
+localparam int OCP_OFF_HW_VENDOR_STATUS  = 1;  // 8b vendor bitmap
 localparam int OCP_OFF_HW_CTEMP          = 2;
-localparam int OCP_OFF_HW_VENDOR_LEN     = 3;  // (was byte 1 in b6f3c08; corrected)
+localparam int OCP_OFF_HW_VENDOR_LEN     = 3;
 
 // RECOVERY_CTRL (Sec 9.2 Tbl 9-9)
 localparam int OCP_OFF_RC_CMS            = 0;
@@ -118,16 +103,17 @@ localparam int OCP_OFF_IC_RSVD           = 1;
 localparam int OCP_OFF_IC_IMG_OFFSET_B0  = 2;  // bytes 2..5
 localparam int OCP_OFF_IC_IMG_OFFSET_B3  = 5;
 
-// INDIRECT_FIFO_CTRL (Sec 9.2 Tbl 9-14).  IMAGE_SIZE is in 4-byte units and
-// lives at bytes 2..5 (b6f3c08 had it at 4..7 - corrected).
+// INDIRECT_FIFO_CTRL (OCP Recovery v1.1 Sec 9.2).  IMAGE_SIZE is in 4-byte
+// units and occupies command bytes 2..5.
 localparam int OCP_OFF_IFC_CMS           = 0;
 localparam int OCP_OFF_IFC_RESET         = 1;
 localparam int OCP_OFF_IFC_IMG_SIZE_B0   = 2;
 localparam int OCP_OFF_IFC_IMG_SIZE_B3   = 5;
 
-// Both image_offset (0x29) and image_size (0x2C) are spec-encoded in 4-byte
-// units.  Internal SRAM addressing in cms_fifo is byte-granular, so the
-// register values are left-shifted by IMG_UNIT_LOG2 when consumed.
+// Both image_offset (INDIRECT_CTRL) and image_size (INDIRECT_FIFO_CTRL) are
+// spec-encoded in 4-byte units.  Internal SRAM addressing in cms_fifo is
+// byte-granular, so the register values are left-shifted by IMG_UNIT_LOG2
+// when consumed.
 localparam int OCP_IMG_UNIT_LOG2         = 2;  // 4-byte units
 
 // ----------------------------------------------------------------------------
@@ -143,3 +129,5 @@ localparam int OCP_IMG_UNIT_LOG2         = 2;  // 4-byte units
 localparam logic [1:0] BMRT_TYPE_CLASS        = 2'b01;
 localparam logic [4:0] BMRT_RECIPIENT_IFACE   = 5'b00001;
 localparam logic [7:0] OCP_BREQUEST_XFER      = 8'h00;
+
+endpackage

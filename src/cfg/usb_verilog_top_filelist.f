@@ -22,6 +22,8 @@ ${USB_COMPILE_DIR}/../../src/integration/rtl/ip_xxx_3516_hs_mem_wrapper.sv
 // ../../systemrdl/usb_ocp_recovery_reg.rdl by peakrdl)
 ${USB_COMPILE_DIR}/../../src/integration/rtl/generated/usb_ocp_recovery_reg_pkg.sv
 ${USB_COMPILE_DIR}/../../src/integration/rtl/generated/usb_ocp_recovery_reg.sv
+// Shared OCP command-code / length / offset constants (single source of truth).
+${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_pkg.sv
 ${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_ctrl_decode.sv
 ${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_rb_adapter.sv
 ${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_cms_fifo.sv

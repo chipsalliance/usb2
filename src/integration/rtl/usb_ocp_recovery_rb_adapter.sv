@@ -25,11 +25,11 @@
 // command-window byte of that word.  This matches OCP Recovery v1.1 Sec 9.2
 // (little-endian) and the PeakRDL little-endian field placement.
 //
-// FIFO branch: commands 0x2C/0x2D/0x2E (INDIRECT_FIFO_*) are routed to A4
+// FIFO branch: commands INDIRECT_FIFO_CTRL/STATUS/DATA are routed to A4
 // (usb_ocp_recovery_cms_fifo).  This adapter forwards the word + strobe + word
 // offset straight through and returns cms_fifo's word-level ack/err/rdata
 // combinationally; cms_fifo owns the byte-wise sequencing against external CMS
-// SRAM.  The direct CMS-memory window (0x29/0x2A/0x2B) is not implemented: it is
+// SRAM.  The direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA) is not implemented: it is
 // advertised unsupported in PROT_CAP and dropped/ACKed as an invalid command.
 //
 // Latency:
@@ -107,7 +107,7 @@ module usb_ocp_recovery_rb_adapter (
   // unsupported command MUST set DEVICE_STATUS.PROTOCOL_ERROR).  High for one
   // cycle in the (registered) ack window of an access to an unsupported OCP
   // command code (any code not in the local or FIFO command set, e.g. the
-  // direct CMS-memory window 0x29/0x2A/0x2B that this FIFO-only transport does
+  // direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA) that this FIFO-only transport does
   // not implement).
   output logic        unsupported_cmd_pulse
 );
@@ -115,35 +115,24 @@ module usb_ocp_recovery_rb_adapter (
   // --------------------------------------------------------------------------
   // OCP command code -> byte-offset base in the regblock window.
   // Source of truth: third_party/usb2/systemrdl/usb_ocp_recovery_reg.rdl
-  //   PROT_CAP_0       @ 0x000  (cmd 0x22, 16 B)
-  //   DEVICE_ID_0      @ 0x010  (cmd 0x23, 24 B)
-  //   DEVICE_STATUS_0  @ 0x028  (cmd 0x24, 64 B)
-  //   DEVICE_RESET     @ 0x068  (cmd 0x25,  3 B, CPUIF/swmod)
-  //   RECOVERY_CTRL    @ 0x06C  (cmd 0x26,  3 B, CPUIF/swmod)
-  //   RECOVERY_STATUS  @ 0x070  (cmd 0x27,  2 B)
-  //   HW_STATUS        @ 0x074  (cmd 0x28,  4 B, write is sideband-only)
-  //   INDIRECT_FIFO_*  @ 0x100+ (cmds 0x2C..0x2E, FIFO-routed)
-  //   VENDOR           @ 0x1A4  (cmd 0x2F,  1 B stub)
-  //   Direct CMS-memory window 0x29/0x2A/0x2B (INDIRECT_CTRL/STATUS/DATA) is
-  //   not implemented (removed in R3): an access to any unsupported command
-  //   code raises unsupported_cmd_pulse -> PROTOCOL_ERROR=0x01 in the FSM and
-  //   acks (OCP Recovery v1.1 Sec 9.1).
+  //   PROT_CAP_0       @ 0x000  (16 B)
+  //   DEVICE_ID_0      @ 0x010  (24 B)
+  //   DEVICE_STATUS_0  @ 0x028  (64 B)
+  //   DEVICE_RESET     @ 0x068  ( 3 B, CPUIF/swmod)
+  //   RECOVERY_CTRL    @ 0x06C  ( 3 B, CPUIF/swmod)
+  //   RECOVERY_STATUS  @ 0x070  ( 2 B)
+  //   HW_STATUS        @ 0x074  ( 4 B, write is sideband-only)
+  //   VENDOR           @ 0x1A4  ( 1 B stub)
+  //   INDIRECT_FIFO_*  @ 0x184+ (FIFO-routed)
+  //   Direct CMS-memory window INDIRECT_CTRL/STATUS/DATA is
+  //   not implemented: an access to any unsupported command code raises
+  //   unsupported_cmd_pulse -> PROTOCOL_ERROR=0x01 in the FSM and acks
+  //   (OCP Recovery v1.1 Sec 9.1).
+  //
+  // Command-code constants are sourced from the shared package so the wire
+  // wValue decode has a single definition (OCP Recovery v1.1 Sec 9.2).
   // --------------------------------------------------------------------------
-  localparam logic [7:0] CMD_PROT_CAP             = 8'h22;
-  localparam logic [7:0] CMD_DEVICE_ID            = 8'h23;
-  localparam logic [7:0] CMD_DEVICE_STATUS        = 8'h24;
-  localparam logic [7:0] CMD_DEVICE_RESET         = 8'h25;
-  localparam logic [7:0] CMD_RECOVERY_CTRL        = 8'h26;
-  localparam logic [7:0] CMD_RECOVERY_STATUS      = 8'h27;
-  localparam logic [7:0] CMD_HW_STATUS            = 8'h28;
-  // Direct CMS-memory window commands 0x29/0x2A/0x2B (INDIRECT_CTRL /
-  // INDIRECT_STATUS / INDIRECT_DATA) are NOT implemented by this transport:
-  // they are advertised as unsupported in PROT_CAP (FIFO-only) and fall through
-  // to the invalid-command drop/ack path below (rdata=0, ack with err, no hang).
-  localparam logic [7:0] CMD_INDIRECT_FIFO_CTRL   = 8'h2C;
-  localparam logic [7:0] CMD_INDIRECT_FIFO_STATUS = 8'h2D;
-  localparam logic [7:0] CMD_INDIRECT_FIFO_DATA   = 8'h2E;
-  localparam logic [7:0] CMD_VENDOR               = 8'h2F;
+  import usb_ocp_recovery_pkg::*;
 
   // DEVICE_STATUS word 0 holds DEV_STATUS (byte 0) + PROT_ERROR (byte 1)
   // + REC_REASON_CODE (bytes 2..3); reading word 0 read-clears PROTOCOL_ERROR.
@@ -155,9 +144,9 @@ module usb_ocp_recovery_rb_adapter (
   logic is_fifo_cmd;
   always_comb begin
     unique case (rb_cmd)
-      CMD_INDIRECT_FIFO_CTRL,
-      CMD_INDIRECT_FIFO_STATUS,
-      CMD_INDIRECT_FIFO_DATA: is_fifo_cmd = 1'b1;
+      OCP_CMD_INDIRECT_FIFO_CTRL,
+      OCP_CMD_INDIRECT_FIFO_STATUS,
+      OCP_CMD_INDIRECT_FIFO_DATA: is_fifo_cmd = 1'b1;
       default:                is_fifo_cmd = 1'b0;
     endcase
   end
@@ -173,14 +162,14 @@ module usb_ocp_recovery_rb_adapter (
     cmd_base     = 12'h000;
     cmd_len      = 16'd0;
     unique case (rb_cmd)
-      CMD_PROT_CAP:        begin cmd_base = 12'h000; cmd_len = 16'd16; end
-      CMD_DEVICE_ID:       begin cmd_base = 12'h010; cmd_len = 16'd24; end
-      CMD_DEVICE_STATUS:   begin cmd_base = 12'h028; cmd_len = 16'd64; end
-      CMD_DEVICE_RESET:    begin cmd_base = 12'h068; cmd_len = 16'd3;  end
-      CMD_RECOVERY_CTRL:   begin cmd_base = 12'h06C; cmd_len = 16'd3;  end
-      CMD_RECOVERY_STATUS: begin cmd_base = 12'h070; cmd_len = 16'd2;  end
-      CMD_HW_STATUS:       begin cmd_base = 12'h074; cmd_len = 16'd4;  end
-      CMD_VENDOR:          begin cmd_base = 12'h1A4; cmd_len = 16'd1;  end
+      OCP_CMD_PROT_CAP:        begin cmd_base = 12'h000; cmd_len = 16'd16; end
+      OCP_CMD_DEVICE_ID:       begin cmd_base = 12'h010; cmd_len = 16'd24; end
+      OCP_CMD_DEVICE_STATUS:   begin cmd_base = 12'h028; cmd_len = 16'd64; end
+      OCP_CMD_DEVICE_RESET:    begin cmd_base = 12'h068; cmd_len = 16'd3;  end
+      OCP_CMD_RECOVERY_CTRL:   begin cmd_base = 12'h06C; cmd_len = 16'd3;  end
+      OCP_CMD_RECOVERY_STATUS: begin cmd_base = 12'h070; cmd_len = 16'd2;  end
+      OCP_CMD_HW_STATUS:       begin cmd_base = 12'h074; cmd_len = 16'd4;  end
+      OCP_CMD_VENDOR:          begin cmd_base = 12'h1A4; cmd_len = 16'd1;  end
       default:             is_local_cmd = 1'b0;
     endcase
   end
@@ -233,8 +222,8 @@ module usb_ocp_recovery_rb_adapter (
   logic do_cpuif_rd;
   always_comb begin
     do_cpuif_wr = local_access & rb_wr & off_ok
-                & (rb_cmd != CMD_HW_STATUS)
-                & (rb_cmd != CMD_VENDOR);
+                & (rb_cmd != OCP_CMD_HW_STATUS)
+                & (rb_cmd != OCP_CMD_VENDOR);
     do_cpuif_rd = local_access & rb_rd & off_ok;
   end
 
@@ -261,7 +250,7 @@ module usb_ocp_recovery_rb_adapter (
     if (access & ~is_fifo_cmd & ~regblock_busy_q) begin
       if (~is_local_cmd) begin
         // Unsupported OCP command code (e.g. the removed direct CMS-memory
-        // window 0x29/0x2A/0x2B).  Complete the access cleanly (ack, NO err)
+        // window INDIRECT_CTRL/STATUS/DATA).  Complete the access cleanly (ack, NO err)
         // rather than signalling a reg-bus error: a reg-bus error makes
         // ctrl_decode STALL the USB control transfer, and a STALLed claimed
         // transfer is not cleanly retired by the recovery arbiter (it would
@@ -275,8 +264,8 @@ module usb_ocp_recovery_rb_adapter (
       end else if (~off_ok) begin
         local_noncpuif_acc = 1'b1;
         local_noncpuif_err = 1'b1;     // offset past command window
-      end else if (rb_wr & ((rb_cmd == CMD_HW_STATUS) ||
-                            (rb_cmd == CMD_VENDOR))) begin
+      end else if (rb_wr & ((rb_cmd == OCP_CMD_HW_STATUS) ||
+                            (rb_cmd == OCP_CMD_VENDOR))) begin
         local_noncpuif_acc = 1'b1;     // dropped write (sideband / stub)
       end
     end
@@ -285,11 +274,11 @@ module usb_ocp_recovery_rb_adapter (
   // HW_STATUS sideband write pulse (low byte of the word).
   logic wr_hw_status;
   assign wr_hw_status = local_access & rb_wr & off_ok &
-                        (rb_cmd == CMD_HW_STATUS) & rb_wstrb[0];
+                        (rb_cmd == OCP_CMD_HW_STATUS) & rb_wstrb[0];
 
   // Unsupported-command detect: an access (read or write) to a command code
   // that is neither a local nor a FIFO command (e.g. the removed direct
-  // CMS-memory window 0x29/0x2A/0x2B, or any unknown code).  Gated by
+  // CMS-memory window INDIRECT_CTRL/STATUS/DATA, or any unknown code).  Gated by
   // ~regblock_busy_q so it qualifies exactly one request cycle, aligning the
   // registered pulse below with the rb_ack window.  OCP Recovery v1.1 Sec 9.1.
   logic unsupported_access;
@@ -335,7 +324,7 @@ module usb_ocp_recovery_rb_adapter (
           // PROTOCOL_ERROR onread=rclr (OCP Recovery v1.1 Sec 9.2 Tbl 9-5):
           // pulse on a successful read of the DEVICE_STATUS word holding
           // PROT_ERROR (byte 1 -> word 0).
-          if ((rb_cmd == CMD_DEVICE_STATUS) && (rb_offset == WOFF_DS_WORD0)) begin
+          if ((rb_cmd == OCP_CMD_DEVICE_STATUS) && (rb_offset == WOFF_DS_WORD0)) begin
             proto_err_rd_pulse_q <= 1'b1;
           end
         end else begin

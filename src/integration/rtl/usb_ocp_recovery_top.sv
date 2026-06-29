@@ -29,7 +29,7 @@ module usb_ocp_recovery_top #(
   //----------------------------------------------------------------------------
   // Async FIFO READ port (P9-0.1-C).  Plumbed straight through to the A4
   // cms_fifo so the dev_axi_aclk-domain wrapper can pop INDIRECT_FIFO_DATA
-  // (0x2E) reads natively, bypassing the utmi-clk CDC bridge.  clk_rd is
+  // reads natively, bypassing the utmi-clk CDC bridge.  clk_rd is
   // dev_axi_aclk; rst_rd_n is dev_axi_aresetn (active-low).
   //----------------------------------------------------------------------------
   input  logic                    clk_rd,

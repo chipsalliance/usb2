@@ -35,6 +35,7 @@
 
 module ip_xxx_3516_hs_mem_wrapper
   import axi_pkg::*;
+  import usb_ocp_recovery_pkg::*;
 #(
   parameter        RAM_ADDRWIDTH = 9,
   parameter        C_NBPHYSEP = 14,
@@ -881,8 +882,8 @@ module ip_xxx_3516_hs_mem_wrapper
    // ------------------
    //   haddr[11:8] = OCP command nibble; the full command byte presented
    //                 to the reg-bus is { 4'h2, haddr[11:8] }.  This
-   //                 covers commands 0x20..0x2F (only 0x22..0x2F are
-   //                 valid per OCP Recovery v1.1 Section 9.2 Table 9-2;
+   //                 covers commands 0x20..0x2F (only OCP_CMD_MIN..OCP_CMD_MAX
+   //                 are valid per OCP Recovery v1.1 Section 9.2;
    //                 invalid codes are returned as rb_err).
    //   haddr[7:0]  = byte offset within the command payload.  Max OCP
    //                 record is INDIRECT_FIFO_DATA at 252 B (Tbl 9-12),
@@ -950,7 +951,7 @@ module ip_xxx_3516_hs_mem_wrapper
                              & dev_ahb_hreadymux
                              & rec_addr_in_window;
 
-   // -- Native INDIRECT_FIFO_DATA (0x2E) read predecode (P9-0.1-C) --
+   // -- Native INDIRECT_FIFO_DATA read predecode (P9-0.1-C) --
    // INDIRECT_FIFO_DATA occupies byte aperture 0x1A0-0x1A3.  A read of this
    // window is serviced NATIVELY in the dev_axi_aclk domain by popping the
    // exposed async FIFO read port, bypassing the utmi-clk CDC bridge.
@@ -981,7 +982,7 @@ module ip_xxx_3516_hs_mem_wrapper
      A_AWAIT_ACK = 3'd2,  // wait for ack to come back through sync
      A_COMPLETE  = 3'd3,  // drive hreadyout=1 for one cycle
      A_COOLDOWN  = 3'd4,  // hold req=0 until ack_sync drops
-     A_NREAD     = 3'd5   // native 0x2E FIFO read: 1-cycle pop in dev_axi_aclk
+     A_NREAD     = 3'd5   // native INDIRECT_FIFO_DATA read: 1-cycle pop in dev_axi_aclk
    } a_state_e;
    a_state_e a_state_q, a_state_d;
 
@@ -1014,7 +1015,7 @@ module ip_xxx_3516_hs_mem_wrapper
      endcase
    end
 
-   // Native 0x2E read single-pop strobe: asserted for exactly the one
+   // Native INDIRECT_FIFO_DATA read single-pop strobe: asserted for exactly the one
    // dev_axi_aclk cycle the FSM spends in A_NREAD.  The async FIFO rdata_o is
    // combinational on its read pointer, so it is captured into rdata_axi_q in
    // this same cycle BEFORE the pop advances the pointer next cycle.
@@ -1048,74 +1049,74 @@ module ip_xxx_3516_hs_mem_wrapper
        // DEVICE_STATUS@0x028, DEVICE_RESET@0x068, RECOVERY_CTRL@0x06C,
        // RECOVERY_STATUS@0x070, HW_STATUS@0x074, INDIRECT_FIFO_CTRL@0x184,
        // INDIRECT_FIFO_STATUS@0x18C, INDIRECT_FIFO_DATA@0x1A0, VENDOR@0x1A4.
-       // The 0x078-0x183 window (direct CMS-memory INDIRECT_CTRL/STATUS/DATA,
-       // cmds 0x29/0x2A/0x2B) was removed in R3 and is unmapped: accesses there
+       // The 0x078-0x183 window (direct CMS-memory INDIRECT_CTRL/STATUS/DATA)
+       // was removed in R3 and is unmapped: accesses there
        // forward invalid cmd 0x00 -> PROTOCOL_ERROR + ack (OCP v1.1 Sec 9.1).
        // P9-0.1-C: a native INDIRECT_FIFO_DATA read (is_fifo_data_read) is
        // serviced via the FIFO read port and must NEVER enter the utmi
        // bridge -- guarded with !is_fifo_data_read so ahb_cmd_q is NOT
-       // captured (no stray 0x2E) and req_axi_q is NOT raised for it.
+       // captured (no stray INDIRECT_FIFO_DATA command) and req_axi_q is NOT raised for it.
        if (a_state_q == A_IDLE && rec_ahb_addr_phase && !is_fifo_data_read) begin
          casez (dev_ahb_haddr[11:0])
-           12'h00?:                  begin ahb_cmd_q <= 8'h22; ahb_off_q <= dev_ahb_haddr[3:0]; end // PROT_CAP 0x000-0x00F
+           12'h00?:                  begin ahb_cmd_q <= OCP_CMD_PROT_CAP; ahb_off_q <= dev_ahb_haddr[3:0]; end // PROT_CAP 0x000-0x00F
            12'h01?, 12'h02?:         // DEVICE_ID 0x010-0x027 (24 B)
              if (dev_ahb_haddr[11:0] < 12'h028) begin
-               ahb_cmd_q <= 8'h23;
+               ahb_cmd_q <= OCP_CMD_DEVICE_ID;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h10;
              end else begin
-               ahb_cmd_q <= 8'h24;
+               ahb_cmd_q <= OCP_CMD_DEVICE_STATUS;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h28;
              end
            12'h03?, 12'h04?, 12'h05?, 12'h06?: // DEVICE_STATUS 0x028-0x067 plus DEVICE_RESET 0x068-0x06A and RECOVERY_CTRL 0x06C-0x06E
              if (dev_ahb_haddr[11:0] < 12'h068) begin
-               ahb_cmd_q <= 8'h24;
+               ahb_cmd_q <= OCP_CMD_DEVICE_STATUS;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h28;
              end else if (dev_ahb_haddr[11:0] < 12'h06C) begin
-               ahb_cmd_q <= 8'h25;
+               ahb_cmd_q <= OCP_CMD_DEVICE_RESET;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h68;
              end else begin
-               ahb_cmd_q <= 8'h26;
+               ahb_cmd_q <= OCP_CMD_RECOVERY_CTRL;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h6C;
              end
-           12'h07?: // RECOVERY_STATUS 0x070-0x073 (cmd 0x27), HW_STATUS 0x074-0x077
-                    // (cmd 0x28).  0x078-0x07F is unmapped: the direct CMS-memory
-                    // window (INDIRECT_CTRL, cmd 0x29) was removed in R3, so forward
+           12'h07?: // RECOVERY_STATUS 0x070-0x073, HW_STATUS 0x074-0x077
+                    // 0x078-0x07F is unmapped: the direct CMS-memory
+                    // window (INDIRECT_CTRL) was removed in R3, so forward
                     // invalid cmd 0x00.  The adapter flags PROTOCOL_ERROR and acks
                     // (OCP Recovery v1.1 Sec 9.1 unsupported command).
              if (dev_ahb_haddr[3:0] < 4'h4) begin
-               ahb_cmd_q <= 8'h27;
+               ahb_cmd_q <= OCP_CMD_RECOVERY_STATUS;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h70;
              end else if (dev_ahb_haddr[3:0] < 4'h8) begin
-               ahb_cmd_q <= 8'h28;
+               ahb_cmd_q <= OCP_CMD_HW_STATUS;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h74;
              end else begin
                ahb_cmd_q <= 8'h00;
                ahb_off_q <= 8'h00;
              end
            12'h08?, 12'h09?, 12'h0A?, 12'h0B?, 12'h0C?, 12'h0D?, 12'h0E?, 12'h0F?:
-             // 0x080-0x0FF: the direct CMS-memory window (INDIRECT_STATUS cmd 0x2A /
-             // INDIRECT_DATA cmd 0x2B) was removed in R3 -> unmapped.  Forward invalid
+             // 0x080-0x0FF: the direct CMS-memory window (INDIRECT_STATUS /
+             // INDIRECT_DATA) was removed in R3 -> unmapped.  Forward invalid
              // cmd 0x00 (unsupported -> PROTOCOL_ERROR + ack).
              begin
                ahb_cmd_q <= 8'h00;
                ahb_off_q <= 8'h00;
              end
-           12'h1??: // 0x100-0x183 unmapped (removed INDIRECT_DATA window) -> invalid cmd 0x00;
-                    // 0x184-0x18B INDIRECT_FIFO_CTRL (cmd 0x2C), 0x18C-0x19F INDIRECT_FIFO_STATUS (cmd 0x2D), 0x1A0-0x1A3 INDIRECT_FIFO_DATA (cmd 0x2E), 0x1A4-0x1A7 VENDOR (cmd 0x2F)
+           12'h1??: // 0x100-0x183 unmapped (removed INDIRECT_DATA window) -> invalid command sentinel;
+                    // 0x184-0x18B INDIRECT_FIFO_CTRL, 0x18C-0x19F INDIRECT_FIFO_STATUS, 0x1A0-0x1A3 INDIRECT_FIFO_DATA, 0x1A4-0x1A7 VENDOR (command codes per usb_ocp_recovery_pkg / OCP Recovery v1.1 Sec 9.2).
              if (dev_ahb_haddr[11:0] < 12'h184) begin
                ahb_cmd_q <= 8'h00;
                ahb_off_q <= 8'h00;
              end else if (dev_ahb_haddr[11:0] < 12'h18C) begin
-               ahb_cmd_q <= 8'h2C;
+               ahb_cmd_q <= OCP_CMD_INDIRECT_FIFO_CTRL;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h84;
              end else if (dev_ahb_haddr[11:0] < 12'h1A0) begin
-               ahb_cmd_q <= 8'h2D;
+               ahb_cmd_q <= OCP_CMD_INDIRECT_FIFO_STATUS;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h8C;
              end else if (dev_ahb_haddr[11:0] < 12'h1A4) begin
-               ahb_cmd_q <= 8'h2E;
+               ahb_cmd_q <= OCP_CMD_INDIRECT_FIFO_DATA;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'hA0;
              end else if (dev_ahb_haddr[11:0] < 12'h1A8) begin
-               ahb_cmd_q <= 8'h2F;
+               ahb_cmd_q <= OCP_CMD_VENDOR;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'hA4;
              end else begin
                // Out-of-range above VENDOR: forward an invalid cmd so the
@@ -1148,7 +1149,7 @@ module ip_xxx_3516_hs_mem_wrapper
          err_axi_q   <= err_pie_q;
        end
 
-       // P9-0.1-C native 0x2E FIFO read: capture the popped DWORD in A_NREAD
+       // P9-0.1-C native INDIRECT_FIFO_DATA read: capture the popped DWORD in A_NREAD
        // (combinational fifo_rd_data on the current read pointer) BEFORE the
        // single fifo_rd_ready pulse advances the pointer.  Reuses rdata_axi_q
        // + the A_COMPLETE response mux, identical to the bridge path from the
@@ -1262,7 +1263,7 @@ module ip_xxx_3516_hs_mem_wrapper
        .rst  (rec_rst),
 
        // P9-0.1-C: async FIFO read port lives in the dev_axi_aclk domain so
-       // INDIRECT_FIFO_DATA (0x2E) reads pop natively here, bypassing the CDC
+       // INDIRECT_FIFO_DATA reads pop natively here, bypassing the CDC
        // bridge.  fifo_rd_ready is driven by the A_NREAD branch of the
        // a_state FSM above (single-pop), fifo_rd_data captured into
        // rdata_axi_q and replayed through the existing A_COMPLETE mux.

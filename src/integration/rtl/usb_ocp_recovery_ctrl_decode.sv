@@ -8,7 +8,7 @@
 //   - OCP Recovery v1.1 Sec 8.5 (USB transport mapping to class-specific
 //     control requests on EP0)
 //   - OCP Recovery v1.1 Sec 9.1 (command framing), Sec 9.2 (register/command
-//     list: PROT_CAP 0x22 .. VENDOR 0x2F)
+//     list: PROT_CAP .. INDIRECT_FIFO_DATA, codes OCP_CMD_MIN..OCP_CMD_MAX)
 //   - USB 2.0 Sec 9.3/9.4 (SETUP packet format and standard requests)
 //
 // Role:
@@ -79,6 +79,9 @@ module usb_ocp_recovery_ctrl_decode (
   input  logic        rb_err
 );
 
+  // OCP Recovery v1.1 Sec 9.2 command-code bounds from the shared package.
+  import usb_ocp_recovery_pkg::*;
+
   //---------------------------------------------------------------------------
   // Decoded SETUP fields (combinational view of setup_pkt)
   //---------------------------------------------------------------------------
@@ -101,7 +104,7 @@ module usb_ocp_recovery_ctrl_decode (
     is_class_s       = (bmrt_s[6:5] == 2'b01);
     is_in_s          = bmrt_s[7];
     cmd_code_s       = wvalue_s[7:0];
-    cmd_code_valid_s = (cmd_code_s >= 8'h22) && (cmd_code_s <= 8'h2F);
+    cmd_code_valid_s = (cmd_code_s >= OCP_CMD_MIN) && (cmd_code_s <= OCP_CMD_MAX);
     ocp_req_valid_s  = (brq_s == 8'h00) && (wvalue_s[15:8] == 8'h00)
                        && cmd_code_valid_s;
   end
