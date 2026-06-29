@@ -886,7 +886,7 @@ module ip_xxx_3516_hs_mem_wrapper
    //                 are valid per OCP Recovery v1.1 Section 9.2;
    //                 invalid codes are returned as rb_err).
    //   haddr[7:0]  = byte offset within the command payload.  Max OCP
-   //                 record is INDIRECT_FIFO_DATA at 252 B (Tbl 9-12),
+   //                 record is INDIRECT_FIFO_DATA at 252 B (Sec 9.2),
    //                 so 256 B/cmd is sufficient.
    //   hwdata[7:0] = reg-bus write byte (upper bytes ignored).
    //   hrdata      = { 24'h0, rb_rdata } (lower byte only).

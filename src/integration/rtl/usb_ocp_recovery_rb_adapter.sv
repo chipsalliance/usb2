@@ -96,7 +96,7 @@ module usb_ocp_recovery_rb_adapter (
   // hw=w / we=false (host writes ignored at the regblock), so the host write
   // is converted to a sideband pulse + low byte rather than a cpuif write.
   // proto_err_rd_pulse implements PROTOCOL_ERROR onread=rclr (OCP Recovery
-  // v1.1 Sec 9.2 Tbl 9-5): pulse on a successful read of the DEVICE_STATUS
+  // v1.1 Sec 9.2): pulse on a successful read of the DEVICE_STATUS
   // word that contains PROT_ERROR (byte 1 -> word 0).
   // --------------------------------------------------------------------------
   output logic        hw_status_wr,
@@ -162,14 +162,14 @@ module usb_ocp_recovery_rb_adapter (
     cmd_base     = 12'h000;
     cmd_len      = 16'd0;
     unique case (rb_cmd)
-      OCP_CMD_PROT_CAP:        begin cmd_base = 12'h000; cmd_len = 16'd16; end
-      OCP_CMD_DEVICE_ID:       begin cmd_base = 12'h010; cmd_len = 16'd24; end
-      OCP_CMD_DEVICE_STATUS:   begin cmd_base = 12'h028; cmd_len = 16'd64; end
-      OCP_CMD_DEVICE_RESET:    begin cmd_base = 12'h068; cmd_len = 16'd3;  end
-      OCP_CMD_RECOVERY_CTRL:   begin cmd_base = 12'h06C; cmd_len = 16'd3;  end
-      OCP_CMD_RECOVERY_STATUS: begin cmd_base = 12'h070; cmd_len = 16'd2;  end
-      OCP_CMD_HW_STATUS:       begin cmd_base = 12'h074; cmd_len = 16'd4;  end
-      OCP_CMD_VENDOR:          begin cmd_base = 12'h1A4; cmd_len = 16'd1;  end
+      OCP_CMD_PROT_CAP:        begin cmd_base = 12'h000; cmd_len = 16'(OCP_LEN_PROT_CAP);        end
+      OCP_CMD_DEVICE_ID:       begin cmd_base = 12'h010; cmd_len = 16'(OCP_LEN_DEVICE_ID);       end
+      OCP_CMD_DEVICE_STATUS:   begin cmd_base = 12'h028; cmd_len = 16'(OCP_LEN_DEVICE_STATUS);   end
+      OCP_CMD_DEVICE_RESET:    begin cmd_base = 12'h068; cmd_len = 16'(OCP_LEN_DEVICE_RESET);    end
+      OCP_CMD_RECOVERY_CTRL:   begin cmd_base = 12'h06C; cmd_len = 16'(OCP_LEN_RECOVERY_CTRL);   end
+      OCP_CMD_RECOVERY_STATUS: begin cmd_base = 12'h070; cmd_len = 16'(OCP_LEN_RECOVERY_STATUS); end
+      OCP_CMD_HW_STATUS:       begin cmd_base = 12'h074; cmd_len = 16'(OCP_LEN_HW_STATUS);       end
+      OCP_CMD_VENDOR:          begin cmd_base = 12'h1A4; cmd_len = 16'(OCP_LEN_VENDOR);          end
       default:             is_local_cmd = 1'b0;
     endcase
   end
@@ -321,7 +321,7 @@ module usb_ocp_recovery_rb_adapter (
         if (do_cpuif_rd) begin
           rb_rdata_q <= cpuif_rd_data;
           rb_err_q   <= cpuif_rd_err;
-          // PROTOCOL_ERROR onread=rclr (OCP Recovery v1.1 Sec 9.2 Tbl 9-5):
+          // PROTOCOL_ERROR onread=rclr (OCP Recovery v1.1 Sec 9.2):
           // pulse on a successful read of the DEVICE_STATUS word holding
           // PROT_ERROR (byte 1 -> word 0).
           if ((rb_cmd == OCP_CMD_DEVICE_STATUS) && (rb_offset == WOFF_DS_WORD0)) begin

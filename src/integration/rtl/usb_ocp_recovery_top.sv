@@ -146,7 +146,7 @@ module usb_ocp_recovery_top #(
   logic                       recovery_ctrl_activate_consume;
   logic                       hw_status_wr;
   logic [7:0]                 hw_status_wdata;
-  // OCP Recovery v1.1 Section 9.2 Tbl 9-5 / i3c-rdl line 274:
+  // OCP Recovery v1.1 Section 9.2 / i3c-rdl line 274:
   // PROTOCOL_ERROR has onread = rclr.  regs pulses this when host reads
   // DEVICE_STATUS byte 1; FSM clears its sticky proto-err latch on the pulse.
   logic                       proto_err_rd_pulse;
@@ -474,17 +474,17 @@ module usb_ocp_recovery_top #(
   // extra storage cycle.
   //
   // DEVICE_STATUS_0 fields (DEV_STATUS / PROT_ERROR / REC_REASON_CODE)
-  // come from the FSM (Sec 9.2 Tbl 9-5).  DEVICE_STATUS_1..15 carry the
-  // optional heartbeat / vendor-status bytes (Sec 9.2 Tbl 9-5 bytes 4..63);
+  // come from the FSM (Sec 9.2).  DEVICE_STATUS_1..15 carry the
+  // optional heartbeat / vendor-status bytes (Sec 9.2 bytes 4..63);
   // those are vendor-specific and remain tied to 0 until a vendor extension
   // populates them.
   //
-  // RECOVERY_STATUS (Sec 9.2 Tbl 9-11) byte 0 splits low nibble =
+  // RECOVERY_STATUS (Sec 9.2) byte 0 splits low nibble =
   // DEV_REC_STATUS, high nibble = REC_IMG_INDEX; byte 1 = vendor.
-  // HW_STATUS byte 0 (Sec 9.2 Tbl 9-12) splits bit 0 = TEMP_CRITICAL,
+  // HW_STATUS byte 0 (Sec 9.2) splits bit 0 = TEMP_CRITICAL,
   // bit 1 = SOFT_ERR, bit 2 = FATAL_ERR, bits 7:3 = reserved.
   //
-  // INDIRECT_STATUS / INDIRECT_DATA / INDIRECT_FIFO_* (Sec 9.2 Tbl 9-13..9-15)
+  // INDIRECT_STATUS / INDIRECT_DATA / INDIRECT_FIFO_* (Sec 9.2)
   // are routed by usb_ocp_recovery_rb_adapter.sv (is_fifo_cmd, line 159)
   // to the cms_fifo A4 block.  The regblock copies of those registers are
   // never read out on the host control bus, so their .next ports are
@@ -540,7 +540,7 @@ module usb_ocp_recovery_top #(
     rb_hwif_in.HW_STATUS.VENDOR_HW_STATUS_LEN.next = hw_status_vendor_len_out;
 
     // RECOVERY_CTRL.ACTIVATE_REC_IMG hardware-clear (OCP Recovery v1.1
-    // Sec 9.2 Tbl 9-9): the recovery FSM pulses recovery_ctrl_activate_consume
+    // Sec 9.2): the recovery FSM pulses recovery_ctrl_activate_consume
     // when it consumes the activation request; hwclr zeroes the byte so a
     // subsequent host read returns 0.
     rb_hwif_in.RECOVERY_CTRL.ACTIVATE_REC_IMG.hwclr = recovery_ctrl_activate_consume;

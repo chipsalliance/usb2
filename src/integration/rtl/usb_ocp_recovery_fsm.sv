@@ -78,12 +78,12 @@ module usb_ocp_recovery_fsm (
   input  logic [7:0]  recovery_ctrl_img_sel,
   input  logic [7:0]  recovery_ctrl_activate,
 
-  // ACTIVATE woclr feedback to regs (OCP v1.1 Section 9.2 Tbl 9-9 / i3c-rdl
+  // ACTIVATE woclr feedback to regs (OCP v1.1 Section 9.2 / i3c-rdl
   // line 434).  Pulsed for one cycle when the FSM enters S_ACTIVATE so the
   // regs block can hw-clear recovery_ctrl_activate_q.
   output logic        recovery_ctrl_activate_consume,
 
-  // PROTOCOL_ERROR rclr pulse from regs (OCP v1.1 Section 9.2 Tbl 9-5 /
+  // PROTOCOL_ERROR rclr pulse from regs (OCP v1.1 Section 9.2 /
   // i3c-rdl line 274: onread = rclr).  High for one cycle in the ack window
   // of a successful host read of DEVICE_STATUS byte 1.  Clears the sticky
   // proto-err latch driving device_status_protocol_err_out.
@@ -107,14 +107,14 @@ module usb_ocp_recovery_fsm (
   // To A3 (status write-back)
   output logic [7:0]  device_status_out,
   output logic [7:0]  device_status_protocol_err_out,
-  // OCP v1.1 Section9.2 Tbl 9-5: REC_REASON_CODE is 16 bits at bytes 2..3.
+  // OCP v1.1 Section 9.2: REC_REASON_CODE is 16 bits at bytes 2..3.
   // The FSM uses only the low byte today but the wire is spec-width so the
   // regs block still sees a clean 2-byte field.
   output logic [15:0] device_status_reason_out,
   output logic [7:0]  recovery_status_out,
   output logic [7:0]  recovery_vendor_status_out,
   output logic [7:0]  hw_status_out,
-  // OCP v1.1 Section9.2 Tbl 9-11: HW_STATUS layout requires distinct bytes
+  // OCP v1.1 Section 9.2: HW_STATUS layout requires distinct bytes
   // 1 (VENDOR_HW_STATUS), 2 (CTEMP), 3 (VENDOR_HW_STATUS_LENGTH).  These are
   // tied to 0 today; the ports exist so the byte layout stays spec-correct and
   // the FSM can extend without re-routing.
@@ -187,7 +187,7 @@ module usb_ocp_recovery_fsm (
   logic       size_err_q, size_err_d;
   logic       auth_err_q, auth_err_d;   // placeholder; latched by rec_trigger-time semantics
   logic       reset_pulse_q, reset_pulse_d; // 1-cycle device_reset_req pulse
-  // Sticky PROTOCOL_ERROR latch (OCP Recovery v1.1 Section 9.2 Tbl 9-5).
+  // Sticky PROTOCOL_ERROR latch (OCP Recovery v1.1 Section 9.2).
   // Set when the FSM enters S_ERROR (rising edge of size_err/auth_err);
   // cleared on proto_err_rd_pulse (read-clear by host).  Drives
   // device_status_protocol_err_out so the regs block presents the spec
@@ -238,7 +238,7 @@ module usb_ocp_recovery_fsm (
         end else if (recovery_ctrl_wr_cms) begin
           // Host-initiated recovery: any byte-0 write to RECOVERY_CTRL
           // signals that the host has selected a CMS for recovery and
-          // intends to push an image (OCP Recovery v1.1 Sec 9.2 Tbl 9-9).
+          // intends to push an image (OCP Recovery v1.1 Sec 9.2).
           // img_idx_d is latched here as a convenience; a subsequent IMG_SEL
           // byte-1 write is still captured by S_DETECTED/S_AWAIT_IMAGE via the
           // recovery_ctrl_wr_img_sel strobe.
@@ -297,7 +297,7 @@ module usb_ocp_recovery_fsm (
         end else if (activate_cmd) begin
           state_d = S_ACTIVATE;
           // Pulse activate-consume back to regs so the woclr byte clears
-          // (OCP v1.1 Section9.2 Tbl 9-9, i3c-rdl line 434).
+          // (OCP v1.1 Section 9.2, i3c-rdl line 434).
           recovery_ctrl_activate_consume = 1'b1;
         end else if (image_push_active) begin
           state_d = S_PUSH_ACTIVE;
@@ -367,7 +367,7 @@ module usb_ocp_recovery_fsm (
       end
     end
     // Unsupported/Write Command error (OCP Recovery v1.1 Sec 9.1 / Sec 9.2
-    // Tbl 9-5 byte 1 = 0x01).  Set when the host accesses an unsupported OCP
+    // DEVICE_STATUS byte 1 = 0x01).  Set when the host accesses an unsupported OCP
     // command code.  Guarded by proto_err_d == 0 so it does NOT overwrite an
     // existing sticky error (e.g. a recovery auth/size/generic failure or a
     // same-cycle S_ERROR set): the first error stays latched until the host
@@ -399,7 +399,7 @@ module usb_ocp_recovery_fsm (
     rec_status_code                = RS_NOT_IN_RECOVERY;
     recovery_vendor_status_out     = 8'h00;
     hw_status_out                  = 8'h00;
-    // OCP v1.1 Section9.2 Tbl 9-11 - bytes 1..3 of HW_STATUS.  Tied to 0 today;
+    // OCP v1.1 Section 9.2 - bytes 1..3 of HW_STATUS.  Tied to 0 today;
     // future hooks can replace these defaults without re-routing.
     hw_status_vendor_out           = 8'h00;
     hw_status_ctemp_out            = 8'h00;

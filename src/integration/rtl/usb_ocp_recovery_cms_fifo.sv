@@ -114,7 +114,7 @@ module usb_ocp_recovery_cms_fifo #(
   // implemented by this transport (FIFO-only per PROT_CAP); only the
   // INDIRECT_FIFO_* commands are serviced here.
 
-  // OCP Recovery v1.1 Sec 9.2 Tbl 9-11: FIFO_SIZE / MAX_TRANSFER_SIZE in
+  // OCP Recovery v1.1 Sec 9.2: FIFO_SIZE / MAX_TRANSFER_SIZE in
   // 4-byte (DWORD) units.  With one internal FIFO both are simply the depth.
   localparam logic [31:0] FIFO_SIZE_DWORDS     = 32'(FIFO_DEPTH);
   localparam logic [31:0] MAX_XFER_SIZE_DWORDS = 32'(FIFO_DEPTH);
@@ -172,7 +172,7 @@ module usb_ocp_recovery_cms_fifo #(
   logic [2:0] word_idx;
   always_comb word_idx = fifo_rb_offset[2:0];
 
-  // OCP v1.1 Sec 9.2 Tbl 9-15: IMAGE_SIZE is on the wire in 4-byte (DWORD)
+  // OCP v1.1 Sec 9.2: IMAGE_SIZE is on the wire in 4-byte (DWORD)
   // units; convert to bytes for the sideband image_size output.
   logic [31:0] image_size_bytes;
   always_comb image_size_bytes = {image_size_q[29:0], 2'b00};
@@ -264,7 +264,7 @@ module usb_ocp_recovery_cms_fifo #(
       endcase
     end
     else if (is_fifo_status) begin
-      // INDIRECT_FIFO_STATUS (OCP v1.1 Sec 9.2 Tbl 9-11, 20 B / 5 words):
+      // INDIRECT_FIFO_STATUS (OCP v1.1 Sec 9.2, 20 B / 5 words):
       //   word0 byte0 STATUS_FLAGS, byte1 REGION_TYPE (0), bytes2..3 reserved
       //   word1 WRITE_INDEX (DWORD units) = write_index_q
       //   word2 READ_INDEX  (DWORD units) = write_index_q - occupancy (derived)

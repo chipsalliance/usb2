@@ -14,7 +14,7 @@
 package usb_ocp_recovery_pkg;
 
 // ----------------------------------------------------------------------------
-// OCP command codes (OCP Recovery v1.1 Sec 9.2 Tbl 9-1)
+// OCP command codes (OCP Recovery v1.1 Sec 9.2)
 // ----------------------------------------------------------------------------
 localparam logic [7:0] OCP_CMD_PROT_CAP             = 8'h22;
 localparam logic [7:0] OCP_CMD_DEVICE_ID            = 8'h23;
@@ -35,18 +35,34 @@ localparam logic [7:0] OCP_CMD_MIN                  = 8'h22;
 localparam logic [7:0] OCP_CMD_MAX                  = 8'h2F;
 
 // ----------------------------------------------------------------------------
-// Per-command payload lengths (bytes).
-// PROT_CAP, DEVICE_ID, DEVICE_RESET, RECOVERY_CTRL, RECOVERY_STATUS, HW_STATUS,
-// INDIRECT_CTRL, INDIRECT_FIFO_CTRL: OCP Recovery v1.1 Sec 9.2 Tbls 9-3, 9-4,
-// 9-7, 9-9, 9-10, 9-11, 9-12, 9-14.  Status records (DEVICE_STATUS,
-// INDIRECT_STATUS, INDIRECT_FIFO_STATUS, INDIRECT_DATA window, VENDOR stub)
-// have implementation-defined caps:
-//   - DEVICE_STATUS  : implementation cap = 64 B (spec max 256 B per Sec 9.2);
-//                      vendor payload room = 64 - 7 = 57 B.  Documented here.
-//   - INDIRECT_DATA  : 252 B sliding window per OCP record-mode usage.
-//   - INDIRECT_FIFO_STATUS : 20 B per Sec 9.2 Tbl 9-15 (5x32b dword status).
-//   - VENDOR (stub)  : 1 B accepted/returned-as-zero; spec allows up to
-//                      vendor-defined length, intentionally minimised here.
+// Per-command payload lengths (bytes), per OCP Recovery v1.1 Sec 9.2 Command
+// Summary.  These bound the regblock command window in the rb_adapter (the
+// single source of truth for command lengths on the local register path).
+//
+// Fixed-length commands match the spec byte count exactly: DEVICE_RESET=3,
+// RECOVERY_CTRL=3, RECOVERY_STATUS=2, INDIRECT_CTRL=6, INDIRECT_STATUS=6,
+// INDIRECT_FIFO_CTRL=6, INDIRECT_FIFO_STATUS=20.
+//
+// PROT_CAP carries 15 meaningful bytes (Sec 9.2: byte 0-14).  The register
+// window here is 16 B: the regblock is DWORD-granular (4x32b), so byte 15 is a
+// reserved-zero pad (Sec 9.2 reserves the upper capability bits).  A compliant
+// Recovery Agent reads <=15 bytes, so the reserved pad is never consumed.
+//
+// Minimum-length commands advertise their spec minimum (the device MAY return
+// more): DEVICE_ID min 24 (spec 24-255), HW_STATUS min 4 (spec 4-255),
+// DEVICE_STATUS min 7 (spec 7-255) - implemented as a fixed 64 B window
+// (vendor-status room 64-7 = 57 B).
+//
+// Variable-length ("1-N") commands carry a representative/stub window length:
+//   - INDIRECT_DATA : 252 B record-mode window (direct CMS path; unimplemented).
+//   - INDIRECT_FIFO_DATA : 4 B = one DWORD streaming unit (the FIFO datapath
+//                          streams N DWORDs; this is the unit, not a cap).
+//   - VENDOR (stub) : 1 B accepted/returned-as-zero; spec allows a
+//                     vendor-defined length, intentionally minimised here.
+//
+// INDIRECT_CTRL/STATUS/DATA describe the direct CMS-memory window, which this
+// FIFO-only transport does NOT implement (PROT_CAP advertises FIFO CMS only);
+// their constants are retained for spec reference and command-range bounds.
 // ----------------------------------------------------------------------------
 localparam int OCP_LEN_PROT_CAP            = 16;
 localparam int OCP_LEN_DEVICE_ID           = 24;
@@ -56,7 +72,7 @@ localparam int OCP_LEN_RECOVERY_CTRL       = 3;
 localparam int OCP_LEN_RECOVERY_STATUS     = 2;
 localparam int OCP_LEN_HW_STATUS           = 4;
 localparam int OCP_LEN_INDIRECT_CTRL       = 6;
-localparam int OCP_LEN_INDIRECT_STATUS     = 8;
+localparam int OCP_LEN_INDIRECT_STATUS     = 6;
 localparam int OCP_LEN_INDIRECT_DATA       = 252;
 localparam int OCP_LEN_INDIRECT_FIFO_CTRL  = 6;
 localparam int OCP_LEN_INDIRECT_FIFO_STATUS= 20;
@@ -70,7 +86,7 @@ localparam int OCP_LEN_VENDOR              = 1;  // stub - reduced from spec max
 //   third_party/i3c-core/src/rdl/secure_firmware_recovery_interface.rdl
 // disagrees with our local RDL, the i3c-rdl wins (per plan SecD0.C).
 // ----------------------------------------------------------------------------
-// DEVICE_STATUS (Sec 9.2 Tbl 9-5)
+// DEVICE_STATUS (Sec 9.2)
 localparam int OCP_OFF_DS_STATUS         = 0;  // byte 0  : DEVICE_STATUS
 localparam int OCP_OFF_DS_PROT_ERROR     = 1;  // byte 1  : PROTOCOL_ERROR
 localparam int OCP_OFF_DS_REC_REASON_LO  = 2;  // bytes 2..3 : 16b REC_REASON
@@ -80,24 +96,24 @@ localparam int OCP_OFF_DS_HEARTBEAT_HI   = 5;
 localparam int OCP_OFF_DS_VENDOR_LEN     = 6;  // byte 6  : VENDOR_STATUS_LENGTH
 localparam int OCP_OFF_DS_VENDOR_START   = 7;  // bytes 7..N
 
-// HW_STATUS (Sec 9.2 Tbl 9-11)
+// HW_STATUS (Sec 9.2)
 localparam int OCP_OFF_HW_DEV_STATUS     = 0;
 localparam int OCP_OFF_HW_VENDOR_STATUS  = 1;  // 8b vendor bitmap
 localparam int OCP_OFF_HW_CTEMP          = 2;
 localparam int OCP_OFF_HW_VENDOR_LEN     = 3;
 
-// RECOVERY_CTRL (Sec 9.2 Tbl 9-9)
+// RECOVERY_CTRL (Sec 9.2)
 localparam int OCP_OFF_RC_CMS            = 0;
 localparam int OCP_OFF_RC_IMG_SEL        = 1;
 localparam int OCP_OFF_RC_ACTIVATE       = 2;
 localparam logic [7:0] OCP_RC_ACTIVATE_CODE = 8'h0F;
 
-// DEVICE_RESET (Sec 9.2 Tbl 9-7)
+// DEVICE_RESET (Sec 9.2)
 localparam int OCP_OFF_DR_RESET_CONTROL  = 0;
 localparam int OCP_OFF_DR_FORCED_RECOV   = 1;
 localparam int OCP_OFF_DR_IFACE_CONTROL  = 2;
 
-// INDIRECT_CTRL (Sec 9.2 Tbl 9-12).  IMAGE_OFFSET is in 4-byte units.
+// INDIRECT_CTRL (Sec 9.2).  IMAGE_OFFSET is in 4-byte units.
 localparam int OCP_OFF_IC_CMS            = 0;
 localparam int OCP_OFF_IC_RSVD           = 1;
 localparam int OCP_OFF_IC_IMG_OFFSET_B0  = 2;  // bytes 2..5
