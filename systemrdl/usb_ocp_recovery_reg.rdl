@@ -29,10 +29,10 @@ addrmap usb_ocp_recovery_reg {
     // PROT_CAP command (cmd 0x22, bytes 0-15).
     reg {
         name = "Recovery Protocol Capabilities 0";
-        desc = "PROT_CAP bytes 0-3. OCP Recovery v1.1 Sec 9.2 PROT_CAP command/Table 9-3.";
+        desc = "PROT_CAP bytes 0-3. OCP Recovery v1.1 Sec 9.2 PROT_CAP command.";
         field {
             name = "Recovery protocol magic string 0";
-            desc = "ASCII bytes 0-3 of the OCP RECV magic string. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
+            desc = "ASCII bytes 0-3 of the OCP RECV magic string. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
             sw = r;
             hw = na;
             reset = 32'h2050434F;
@@ -41,10 +41,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Recovery Protocol Capabilities 1";
-        desc = "PROT_CAP bytes 4-7. OCP Recovery v1.1 Sec 9.2 PROT_CAP command/Table 9-3.";
+        desc = "PROT_CAP bytes 4-7. OCP Recovery v1.1 Sec 9.2 PROT_CAP command.";
         field {
             name = "Recovery protocol magic string 1";
-            desc = "ASCII bytes 4-7 of the OCP RECV magic string. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
+            desc = "ASCII bytes 4-7 of the OCP RECV magic string. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
             sw = r;
             hw = na;
             reset = 32'h56434552;
@@ -53,17 +53,17 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Recovery Protocol Capabilities 2";
-        desc = "PROT_CAP bytes 8-11. OCP Recovery v1.1 Sec 9.2 PROT_CAP command/Table 9-3.";
+        desc = "PROT_CAP bytes 8-11. OCP Recovery v1.1 Sec 9.2 PROT_CAP command.";
         field {
             name = "Recovery protocol version";
-            desc = "Bytes 8-9 encode major=1 and minor=1 for OCP Recovery v1.1. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
+            desc = "Bytes 8-9 encode major=1 and minor=1 for OCP Recovery v1.1. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
             sw = r;
             hw = na;
             reset = 16'h0101;
         } REC_PROT_VERSION[15:0];
         // ----------------------------------------------------------------
         // AGENT_CAPS (PROT_CAP bytes 10-11) -- OCP Recovery v1.1 Sec 9.2
-        // PROT_CAP / Table 9-3 "Recovery Protocol Capabilities" bitmap.
+        // PROT_CAP "Recovery Protocol Capabilities" bitmap.
         // Bit names taken from the spec capability list (mirrored in the
         // I3C reference RDL secure_firmware_recovery_interface.rdl).
         // FIFO-only agent; bit5 direct CMS-memory access cleared.
@@ -82,98 +82,98 @@ addrmap usb_ocp_recovery_reg {
         // ----------------------------------------------------------------
         field {
             name = "Identification";
-            desc = "AGENT_CAPS bit 0: Identification (DEVICE_ID structure). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            desc = "AGENT_CAPS bit 0: Identification (DEVICE_ID structure). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
             sw = r;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_IDENTIFICATION[16:16];
         field {
             name = "Forced Recovery";
-            desc = "AGENT_CAPS bit 1: Forced Recovery (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            desc = "AGENT_CAPS bit 1: Forced Recovery (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
             sw = r;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_FORCED_RECOVERY[17:17];
         field {
             name = "Management Reset";
-            desc = "AGENT_CAPS bit 2: Mgmt reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Not supported; reset 0.";
+            desc = "AGENT_CAPS bit 2: Mgmt reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0.";
             sw = r;
             hw = na;
             reset = 1'b0;
         } AGENT_CAPS_MGMT_RESET[18:18];
         field {
             name = "Device Reset";
-            desc = "AGENT_CAPS bit 3: Device Reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            desc = "AGENT_CAPS bit 3: Device Reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
             sw = r;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_DEVICE_RESET[19:19];
         field {
             name = "Device Status";
-            desc = "AGENT_CAPS bit 4: Device status (DEVICE_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            desc = "AGENT_CAPS bit 4: Device status (DEVICE_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
             sw = r;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_DEVICE_STATUS[20:20];
         field {
             name = "Recovery Memory Access";
-            desc = "AGENT_CAPS bit 5: Recovery memory access (direct CMS-memory window via INDIRECT_CTRL/STATUS/DATA, OCP commands 0x29/0x2A/0x2B). This agent is FIFO-only; the direct memory window is NOT implemented (R3 removes those register defs). Reset 0. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
+            desc = "AGENT_CAPS bit 5: Recovery memory access (direct CMS-memory window via INDIRECT_CTRL/STATUS/DATA, OCP commands 0x29/0x2A/0x2B). This agent is FIFO-only; the direct memory window is NOT implemented (R3 removes those register defs). Reset 0. OCP Recovery v1.1 Sec 9.2 PROT_CAP.";
             sw = r;
             hw = na;
             reset = 1'b0;
         } AGENT_CAPS_RECOVERY_MEM_ACCESS[21:21];
         field {
             name = "Local C-image Support";
-            desc = "AGENT_CAPS bit 6: Local C-image support. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Not supported; reset 0.";
+            desc = "AGENT_CAPS bit 6: Local C-image support. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0.";
             sw = r;
             hw = na;
             reset = 1'b0;
         } AGENT_CAPS_LOCAL_C_IMAGE[22:22];
         field {
             name = "Push C-image Support";
-            desc = "AGENT_CAPS bit 7: Push C-image support (FIFO streaming boot). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            desc = "AGENT_CAPS bit 7: Push C-image support (FIFO streaming boot). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
             sw = r;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_PUSH_C_IMAGE[23:23];
         field {
             name = "Interface Isolation";
-            desc = "AGENT_CAPS bit 8: Interface isolation. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Not supported; reset 0.";
+            desc = "AGENT_CAPS bit 8: Interface isolation. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0.";
             sw = r;
             hw = na;
             reset = 1'b0;
         } AGENT_CAPS_INTERFACE_ISOLATION[24:24];
         field {
             name = "Hardware Status";
-            desc = "AGENT_CAPS bit 9: Hardware status (HW_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            desc = "AGENT_CAPS bit 9: Hardware status (HW_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
             sw = r;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_HARDWARE_STATUS[25:25];
         field {
             name = "Vendor Command";
-            desc = "AGENT_CAPS bit 10: Vendor command (VENDOR). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            desc = "AGENT_CAPS bit 10: Vendor command (VENDOR). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
             sw = r;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_VENDOR_COMMAND[26:26];
         field {
             name = "Flashless Boot";
-            desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Advertised 1: this design supports flashless boot (host writes DEVICE_RESET.FORCED_RECOVERY=0xE to enter flashless boot on the next platform reset). Kept as a static read-only constant here; the firmware-configurable capability use-model (sw=rw with reset default) is deferred to the register use-model audit task R7. Sets AGENT_CAPS = 0x1E9B.";
+            desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Advertised 1: this design supports flashless boot (host writes DEVICE_RESET.FORCED_RECOVERY=0xE to enter flashless boot on the next platform reset). Kept as a static read-only constant here; the firmware-configurable capability use-model (sw=rw with reset default) is deferred to the register use-model audit task R7. Sets AGENT_CAPS = 0x1E9B.";
             sw = r;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_FLASHLESS_BOOT[27:27];
         field {
             name = "FIFO CMS Support";
-            desc = "AGENT_CAPS bit 12: FIFO CMS support (INDIRECT_FIFO_CTRL). OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 1.";
+            desc = "AGENT_CAPS bit 12: FIFO CMS support (INDIRECT_FIFO_CTRL). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
             sw = r;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_FIFO_CMS_SUPPORT[28:28];
         field {
             name = "Reserved";
-            desc = "AGENT_CAPS bits 13-15: reserved. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Reset 0.";
+            desc = "AGENT_CAPS bits 13-15: reserved. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 0.";
             sw = r;
             hw = na;
             reset = 3'b000;
@@ -182,31 +182,31 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Recovery Protocol Capabilities 3";
-        desc = "PROT_CAP bytes 12-15. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3.";
+        desc = "PROT_CAP bytes 12-15. OCP Recovery v1.1 Sec 9.2 PROT_CAP.";
         field {
             name = "Total number of CMS regions";
-            desc = "Byte 12 reports the number of component memory spaces. Advertises one CMS region: after R3 removed the direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA), only the FIFO-backed CMS region remains (OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3; this count includes logging, code and vendor regions). Kept as a static read-only constant here; the firmware-configurable use-model (sw=rw) is deferred to the register use-model audit task R7.";
+            desc = "Byte 12 reports the number of component memory spaces. Advertises one CMS region: after R3 removed the direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA), only the FIFO-backed CMS region remains (OCP Recovery v1.1 Sec 9.2 PROT_CAP; this count includes logging, code and vendor regions). Kept as a static read-only constant here; the firmware-configurable use-model (sw=rw) is deferred to the register use-model audit task R7.";
             sw = r;
             hw = na;
             reset = 8'h01;
         } NUM_OF_CMS_REGIONS[7:0];
         field {
             name = "Maximum response time";
-            desc = "Byte 13 reports maximum response time in 2^x microseconds. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant (sw=r; hw=na).";
+            desc = "Byte 13 reports maximum response time in 2^x microseconds. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant (sw=r; hw=na).";
             sw = r;
             hw = na;
             reset = 8'h00;
         } MAX_RESP_TIME[15:8];
         field {
             name = "Heartbeat period";
-            desc = "Byte 14 reports heartbeat period in 2^x microseconds, with 0 meaning not supported. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant (sw=r; hw=na).";
+            desc = "Byte 14 reports heartbeat period in 2^x microseconds, with 0 meaning not supported. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant (sw=r; hw=na).";
             sw = r;
             hw = na;
             reset = 8'h00;
         } HEARTBEAT_PERIOD[23:16];
         field {
             name = "Reserved";
-            desc = "Byte 15 is reserved. OCP Recovery v1.1 Sec 9.2 PROT_CAP/Table 9-3. Static read-only constant (sw=r; hw=na).";
+            desc = "Byte 15 is reserved. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant (sw=r; hw=na).";
             sw = r;
             hw = na;
             reset = 8'h00;
@@ -216,10 +216,10 @@ addrmap usb_ocp_recovery_reg {
     // DEVICE_ID command (cmd 0x23, bytes 0-23).
     reg {
         name = "Device Identification 0";
-        desc = "DEVICE_ID bytes 0-3. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+        desc = "DEVICE_ID bytes 0-3. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
         field {
             name = "Initial descriptor type";
-            desc = "Byte 0 selects the DEVICE_ID encoding such as PCI, IANA, UUID, PnP, ACPI, or NVMe-MI. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+            desc = "Byte 0 selects the DEVICE_ID encoding such as PCI, IANA, UUID, PnP, ACPI, or NVMe-MI. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
             sw = r;
             hw = w;
             we = false;
@@ -227,7 +227,7 @@ addrmap usb_ocp_recovery_reg {
         } DESC_TYPE[7:0];
         field {
             name = "Vendor specific string length";
-            desc = "Byte 1 reports the optional vendor string length. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+            desc = "Byte 1 reports the optional vendor string length. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
             sw = r;
             hw = w;
             we = false;
@@ -235,7 +235,7 @@ addrmap usb_ocp_recovery_reg {
         } VENDOR_SPECIFIC_STR_LENGTH[15:8];
         field {
             name = "Descriptor payload bytes 2-3";
-            desc = "Bytes 2-3 hold the first descriptor-specific payload bytes for the selected DEVICE_ID type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+            desc = "Bytes 2-3 hold the first descriptor-specific payload bytes for the selected DEVICE_ID type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
             sw = r;
             hw = w;
             we = false;
@@ -245,10 +245,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Identification 1";
-        desc = "DEVICE_ID bytes 4-7. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+        desc = "DEVICE_ID bytes 4-7. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
         field {
             name = "Device ID payload bytes 4-7";
-            desc = "Bytes 4-7 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+            desc = "Bytes 4-7 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
             sw = r;
             hw = w;
             we = false;
@@ -258,10 +258,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Identification 2";
-        desc = "DEVICE_ID bytes 8-11. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+        desc = "DEVICE_ID bytes 8-11. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
         field {
             name = "Device ID payload bytes 8-11";
-            desc = "Bytes 8-11 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+            desc = "Bytes 8-11 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
             sw = r;
             hw = w;
             we = false;
@@ -271,10 +271,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Identification 3";
-        desc = "DEVICE_ID bytes 12-15. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+        desc = "DEVICE_ID bytes 12-15. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
         field {
             name = "Device ID payload bytes 12-15";
-            desc = "Bytes 12-15 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+            desc = "Bytes 12-15 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
             sw = r;
             hw = w;
             we = false;
@@ -284,10 +284,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Identification 4";
-        desc = "DEVICE_ID bytes 16-19. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+        desc = "DEVICE_ID bytes 16-19. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
         field {
             name = "Device ID payload bytes 16-19";
-            desc = "Bytes 16-19 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+            desc = "Bytes 16-19 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
             sw = r;
             hw = w;
             we = false;
@@ -297,10 +297,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Identification 5";
-        desc = "DEVICE_ID bytes 20-23. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+        desc = "DEVICE_ID bytes 20-23. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
         field {
             name = "Device ID payload bytes 20-23";
-            desc = "Bytes 20-23 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID/Table 9-4.";
+            desc = "Bytes 20-23 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
             sw = r;
             hw = w;
             we = false;
@@ -311,10 +311,10 @@ addrmap usb_ocp_recovery_reg {
     // DEVICE_STATUS command (cmd 0x24, bytes 0-63 in this USB implementation).
     reg {
         name = "Device Status 0";
-        desc = "DEVICE_STATUS bytes 0-3. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5; PROTOCOL_ERROR clear-on-read behavior follows usb_ocp_recovery_regs.sv.";
+        desc = "DEVICE_STATUS bytes 0-3. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS; PROTOCOL_ERROR clear-on-read behavior follows usb_ocp_recovery_regs.sv.";
         field {
             name = "Device status";
-            desc = "Byte 0 reports device health and recovery state. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Byte 0 reports device health and recovery state. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -322,7 +322,7 @@ addrmap usb_ocp_recovery_reg {
         } DEV_STATUS[7:0];
         field {
             name = "Protocol error";
-            desc = "Byte 1 reports protocol error and clears on successful read, matching OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 and usb_ocp_recovery_regs.sv proto_err_rd_pulse handling.";
+            desc = "Byte 1 reports protocol error and clears on successful read, matching OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS and usb_ocp_recovery_regs.sv proto_err_rd_pulse handling.";
             sw = r;
             hw = w;
             we = false;
@@ -331,7 +331,7 @@ addrmap usb_ocp_recovery_reg {
         } PROT_ERROR[15:8];
         field {
             name = "Recovery reason code";
-            desc = "Bytes 2-3 report the 16-bit recovery reason code. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 and Table 3.";
+            desc = "Bytes 2-3 report the 16-bit recovery reason code. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS and Table 3.";
             sw = r;
             hw = w;
             we = false;
@@ -341,10 +341,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 1";
-        desc = "DEVICE_STATUS bytes 4-7. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+        desc = "DEVICE_STATUS bytes 4-7. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
         field {
             name = "Heartbeat";
-            desc = "Bytes 4-5 hold the heartbeat counter. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Bytes 4-5 hold the heartbeat counter. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -352,7 +352,7 @@ addrmap usb_ocp_recovery_reg {
         } HEARTBEAT[15:0];
         field {
             name = "Vendor status length";
-            desc = "Byte 6 reports the vendor status payload length. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Byte 6 reports the vendor status payload length. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -360,7 +360,7 @@ addrmap usb_ocp_recovery_reg {
         } VENDOR_STATUS_LENGTH[23:16];
         field {
             name = "Vendor status byte 0";
-            desc = "Byte 7 is the first byte of VENDOR_STATUS. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Byte 7 is the first byte of VENDOR_STATUS. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -370,10 +370,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 2";
-        desc = "DEVICE_STATUS bytes 8-11. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 8-11. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 1-4";
-            desc = "Vendor status payload bytes 1-4, corresponding to overall DEVICE_STATUS bytes 8-11. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 1-4, corresponding to overall DEVICE_STATUS bytes 8-11. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -383,10 +383,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 3";
-        desc = "DEVICE_STATUS bytes 12-15. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 12-15. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 5-8";
-            desc = "Vendor status payload bytes 5-8, corresponding to overall DEVICE_STATUS bytes 12-15. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 5-8, corresponding to overall DEVICE_STATUS bytes 12-15. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -396,10 +396,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 4";
-        desc = "DEVICE_STATUS bytes 16-19. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 16-19. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 9-12";
-            desc = "Vendor status payload bytes 9-12, corresponding to overall DEVICE_STATUS bytes 16-19. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 9-12, corresponding to overall DEVICE_STATUS bytes 16-19. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -409,10 +409,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 5";
-        desc = "DEVICE_STATUS bytes 20-23. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 20-23. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 13-16";
-            desc = "Vendor status payload bytes 13-16, corresponding to overall DEVICE_STATUS bytes 20-23. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 13-16, corresponding to overall DEVICE_STATUS bytes 20-23. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -422,10 +422,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 6";
-        desc = "DEVICE_STATUS bytes 24-27. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 24-27. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 17-20";
-            desc = "Vendor status payload bytes 17-20, corresponding to overall DEVICE_STATUS bytes 24-27. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 17-20, corresponding to overall DEVICE_STATUS bytes 24-27. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -435,10 +435,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 7";
-        desc = "DEVICE_STATUS bytes 28-31. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 28-31. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 21-24";
-            desc = "Vendor status payload bytes 21-24, corresponding to overall DEVICE_STATUS bytes 28-31. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 21-24, corresponding to overall DEVICE_STATUS bytes 28-31. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -448,10 +448,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 8";
-        desc = "DEVICE_STATUS bytes 32-35. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 32-35. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 25-28";
-            desc = "Vendor status payload bytes 25-28, corresponding to overall DEVICE_STATUS bytes 32-35. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 25-28, corresponding to overall DEVICE_STATUS bytes 32-35. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -461,10 +461,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 9";
-        desc = "DEVICE_STATUS bytes 36-39. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 36-39. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 29-32";
-            desc = "Vendor status payload bytes 29-32, corresponding to overall DEVICE_STATUS bytes 36-39. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 29-32, corresponding to overall DEVICE_STATUS bytes 36-39. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -474,10 +474,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 10";
-        desc = "DEVICE_STATUS bytes 40-43. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 40-43. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 33-36";
-            desc = "Vendor status payload bytes 33-36, corresponding to overall DEVICE_STATUS bytes 40-43. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 33-36, corresponding to overall DEVICE_STATUS bytes 40-43. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -487,10 +487,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 11";
-        desc = "DEVICE_STATUS bytes 44-47. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 44-47. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 37-40";
-            desc = "Vendor status payload bytes 37-40, corresponding to overall DEVICE_STATUS bytes 44-47. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 37-40, corresponding to overall DEVICE_STATUS bytes 44-47. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -500,10 +500,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 12";
-        desc = "DEVICE_STATUS bytes 48-51. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 48-51. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 41-44";
-            desc = "Vendor status payload bytes 41-44, corresponding to overall DEVICE_STATUS bytes 48-51. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 41-44, corresponding to overall DEVICE_STATUS bytes 48-51. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -513,10 +513,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 13";
-        desc = "DEVICE_STATUS bytes 52-55. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 52-55. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 45-48";
-            desc = "Vendor status payload bytes 45-48, corresponding to overall DEVICE_STATUS bytes 52-55. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 45-48, corresponding to overall DEVICE_STATUS bytes 52-55. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -526,10 +526,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 14";
-        desc = "DEVICE_STATUS bytes 56-59. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 56-59. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 49-52";
-            desc = "Vendor status payload bytes 49-52, corresponding to overall DEVICE_STATUS bytes 56-59. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 49-52, corresponding to overall DEVICE_STATUS bytes 56-59. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -539,10 +539,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Device Status 15";
-        desc = "DEVICE_STATUS bytes 60-63. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5 vendor payload continuation.";
+        desc = "DEVICE_STATUS bytes 60-63. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS vendor payload continuation.";
         field {
             name = "Vendor status bytes 53-56";
-            desc = "Vendor status payload bytes 53-56, corresponding to overall DEVICE_STATUS bytes 60-63. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS/Table 9-5.";
+            desc = "Vendor status payload bytes 53-56, corresponding to overall DEVICE_STATUS bytes 60-63. OCP Recovery v1.1 Sec 9.2 DEVICE_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -553,10 +553,10 @@ addrmap usb_ocp_recovery_reg {
     // DEVICE_RESET, RECOVERY_CTRL, RECOVERY_STATUS, and HW_STATUS commands.
     reg {
         name = "Reset control";
-        desc = "DEVICE_RESET bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7. The OCP r/w column is rw, so the fields are sw=rw: firmware can read back the last host-written value (e.g. to act on FORCED_RECOVERY=0xE flashless-boot / 0xF recovery requests). Each writable byte carries swmod so the SV recovery FSM sees a one-cycle write strobe directly from the CPUIF path.";
+        desc = "DEVICE_RESET bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET. The OCP r/w column is rw, so the fields are sw=rw: firmware can read back the last host-written value (e.g. to act on FORCED_RECOVERY=0xE flashless-boot / 0xF recovery requests). Each writable byte carries swmod so the SV recovery FSM sees a one-cycle write strobe directly from the CPUIF path.";
         field {
             name = "Device Reset Control";
-            desc = "Byte 0 requests device reset or management reset. swmod gives the FSM a one-cycle write strobe, matching OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7.";
+            desc = "Byte 0 requests device reset or management reset. swmod gives the FSM a one-cycle write strobe, matching OCP Recovery v1.1 Sec 9.2 DEVICE_RESET.";
             sw = rw;
             hw = r;
             swmod = true;
@@ -564,7 +564,7 @@ addrmap usb_ocp_recovery_reg {
         } RESET_CTRL[7:0];
         field {
             name = "Forced Recovery";
-            desc = "Byte 1 controls forced recovery or flashless boot on the next platform reset (0xE = enter flashless boot mode, 0xF = enter recovery mode). OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7.";
+            desc = "Byte 1 controls forced recovery or flashless boot on the next platform reset (0xE = enter flashless boot mode, 0xF = enter recovery mode). OCP Recovery v1.1 Sec 9.2 DEVICE_RESET.";
             sw = rw;
             hw = r;
             swmod = true;
@@ -572,7 +572,7 @@ addrmap usb_ocp_recovery_reg {
         } FORCED_RECOVERY[15:8];
         field {
             name = "Interface Control";
-            desc = "Byte 2 controls interface mastering enable. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET/Table 9-7.";
+            desc = "Byte 2 controls interface mastering enable. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET.";
             sw = rw;
             hw = r;
             swmod = true;
@@ -589,10 +589,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Recovery configuration/control";
-        desc = "RECOVERY_CTRL bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9; CMS / REC_IMG_SEL carry swmod write strobes and ACTIVATE_REC_IMG is hardware-cleared by the recovery FSM consume pulse.";
+        desc = "RECOVERY_CTRL bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL; CMS / REC_IMG_SEL carry swmod write strobes and ACTIVATE_REC_IMG is hardware-cleared by the recovery FSM consume pulse.";
         field {
             name = "Component Memory Space";
-            desc = "Byte 0 selects the component memory space containing the recovery image. swmod gives the FSM a one-cycle write strobe. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9.";
+            desc = "Byte 0 selects the component memory space containing the recovery image. swmod gives the FSM a one-cycle write strobe. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL.";
             sw = rw;
             hw = r;
             swmod = true;
@@ -600,7 +600,7 @@ addrmap usb_ocp_recovery_reg {
         } CMS[7:0];
         field {
             name = "Recovery Image Selection";
-            desc = "Byte 1 selects memory-window or device-stored recovery image source. swmod gives the FSM a one-cycle write strobe. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9.";
+            desc = "Byte 1 selects memory-window or device-stored recovery image source. swmod gives the FSM a one-cycle write strobe. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL.";
             sw = rw;
             hw = r;
             swmod = true;
@@ -608,7 +608,7 @@ addrmap usb_ocp_recovery_reg {
         } REC_IMG_SEL[15:8];
         field {
             name = "Activate Recovery Image";
-            desc = "Byte 2 requests activation of the selected recovery image. The host writes 0x0F to request activation (OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL/Table 9-9); the recovery FSM consumes the request and hardware-clears the byte via hwclr. swmod gives the FSM a one-cycle write strobe.";
+            desc = "Byte 2 requests activation of the selected recovery image. The host writes 0x0F to request activation (OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL); the recovery FSM consumes the request and hardware-clears the byte via hwclr. swmod gives the FSM a one-cycle write strobe.";
             sw = rw;
             hw = r;
             hwclr;
@@ -626,10 +626,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Recovery status";
-        desc = "RECOVERY_STATUS bytes 0-1 plus pad bytes. OCP Recovery v1.1 Sec 9.2 RECOVERY_STATUS/Table 9-10.";
+        desc = "RECOVERY_STATUS bytes 0-1 plus pad bytes. OCP Recovery v1.1 Sec 9.2 RECOVERY_STATUS.";
         field {
             name = "Device recovery status";
-            desc = "Byte 0 bits 3:0 report recovery status. OCP Recovery v1.1 Sec 9.2 RECOVERY_STATUS/Table 9-10.";
+            desc = "Byte 0 bits 3:0 report recovery status. OCP Recovery v1.1 Sec 9.2 RECOVERY_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -637,7 +637,7 @@ addrmap usb_ocp_recovery_reg {
         } DEV_REC_STATUS[3:0];
         field {
             name = "Recovery image index";
-            desc = "Byte 0 bits 7:4 report the recovery image index. OCP Recovery v1.1 Sec 9.2 RECOVERY_STATUS/Table 9-10.";
+            desc = "Byte 0 bits 7:4 report the recovery image index. OCP Recovery v1.1 Sec 9.2 RECOVERY_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -645,7 +645,7 @@ addrmap usb_ocp_recovery_reg {
         } REC_IMG_INDEX[7:4];
         field {
             name = "Vendor specific status";
-            desc = "Byte 1 reports vendor-specific recovery status. OCP Recovery v1.1 Sec 9.2 RECOVERY_STATUS/Table 9-10.";
+            desc = "Byte 1 reports vendor-specific recovery status. OCP Recovery v1.1 Sec 9.2 RECOVERY_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -662,10 +662,10 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Hardware status";
-        desc = "HW_STATUS bytes 0-3. OCP Recovery v1.1 Sec 9.2 HW_STATUS/Table 9-11; byte layout follows the corrected usb_ocp_recovery_regs.sv implementation.";
+        desc = "HW_STATUS bytes 0-3. OCP Recovery v1.1 Sec 9.2 HW_STATUS; byte layout follows the corrected usb_ocp_recovery_regs.sv implementation.";
         field {
             name = "Device temperature critical";
-            desc = "Byte 0 bit 0 reports temperature-critical status. OCP Recovery v1.1 Sec 9.2 HW_STATUS/Table 9-11.";
+            desc = "Byte 0 bit 0 reports temperature-critical status. OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -673,7 +673,7 @@ addrmap usb_ocp_recovery_reg {
         } TEMP_CRITICAL[0:0];
         field {
             name = "Hardware soft error";
-            desc = "Byte 0 bit 1 reports a hardware soft error. OCP Recovery v1.1 Sec 9.2 HW_STATUS/Table 9-11.";
+            desc = "Byte 0 bit 1 reports a hardware soft error. OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -681,7 +681,7 @@ addrmap usb_ocp_recovery_reg {
         } SOFT_ERR[1:1];
         field {
             name = "Hardware fatal error";
-            desc = "Byte 0 bit 2 reports a hardware fatal error. OCP Recovery v1.1 Sec 9.2 HW_STATUS/Table 9-11.";
+            desc = "Byte 0 bit 2 reports a hardware fatal error. OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -689,7 +689,7 @@ addrmap usb_ocp_recovery_reg {
         } FATAL_ERR[2:2];
         field {
             name = "Reserved";
-            desc = "Byte 0 bits 7:3 are reserved. OCP Recovery v1.1 Sec 9.2 HW_STATUS/Table 9-11.";
+            desc = "Byte 0 bits 7:3 are reserved. OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -697,7 +697,7 @@ addrmap usb_ocp_recovery_reg {
         } RESERVED_7_3[7:3];
         field {
             name = "Vendor HW status";
-            desc = "Byte 1 holds the vendor HW status bitmap. This byte location matches the corrected usb_ocp_recovery_regs.sv layout and OCP Recovery v1.1 Sec 9.2 HW_STATUS/Table 9-11.";
+            desc = "Byte 1 holds the vendor HW status bitmap. This byte location matches the corrected usb_ocp_recovery_regs.sv layout and OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -705,7 +705,7 @@ addrmap usb_ocp_recovery_reg {
         } VENDOR_HW_STATUS[15:8];
         field {
             name = "Composite temperature";
-            desc = "Byte 2 reports composite temperature. OCP Recovery v1.1 Sec 9.2 HW_STATUS/Table 9-11.";
+            desc = "Byte 2 reports composite temperature. OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
             sw = r;
             hw = w;
             we = false;
@@ -713,7 +713,7 @@ addrmap usb_ocp_recovery_reg {
         } CTEMP[23:16];
         field {
             name = "Vendor HW status length";
-            desc = "Byte 3 reports the vendor HW status payload length. This byte location matches the corrected usb_ocp_recovery_regs.sv layout and OCP Recovery v1.1 Sec 9.2 HW_STATUS/Table 9-11.";
+            desc = "Byte 3 reports the vendor HW status payload length. This byte location matches the corrected usb_ocp_recovery_regs.sv layout and OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
             sw = r;
             hw = w;
             we = false;
