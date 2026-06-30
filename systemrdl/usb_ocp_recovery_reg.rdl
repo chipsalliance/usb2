@@ -724,20 +724,21 @@ addrmap usb_ocp_recovery_reg {
     // INDIRECT_FIFO_CTRL, INDIRECT_FIFO_STATUS, INDIRECT_FIFO_DATA, and VENDOR commands.
     reg {
         name = "Indirect FIFO Control 0";
-        desc = "INDIRECT_FIFO_CTRL_0: CMS (byte 0), RESET (byte 1), reserved (bytes 2-3). Layout matches the I3C reference register map (secure_firmware_recovery_interface.rdl INDIRECT_FIFO_CTRL_0) for firmware/I3C register parity. NOTE: this register-map layout intentionally differs from the OCP command byte-map -- the live cms_fifo still parses IMAGE_SIZE from OCP command bytes 2-5 (usb_ocp_recovery_cms_fifo.sv); the read-back layout here targets firmware/I3C register parity, not command-byte parity. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
+        desc = "INDIRECT_FIFO_CTRL_0: CMS (byte 0), RESET (byte 1), reserved (bytes 2-3). The live owner of these fields is usb_ocp_recovery_cms_fifo.sv: it captures the host write on the FIFO command path and continuously drives this regblock copy (hw=w), so the regblock is the single read-back source (sw=r). This removes the prior duplication where the regblock held an independent sw=rw copy that the FIFO transport bypassed. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
         field {
             name = "Component Memory Space";
-            desc = "Byte 0 selects the FIFO-backed component memory space. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
-            sw = rw;
-            hw = r;
+            desc = "Byte 0 selects the FIFO-backed component memory space. Captured and driven by usb_ocp_recovery_cms_fifo.sv (hw=w); regblock is read-back only (sw=r). OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
+            sw = r;
+            hw = w;
+            we = false;
             reset = 8'h00;
         } CMS[7:0];
         field {
             name = "Reset";
-            desc = "Byte 1 bit 0 requests FIFO reset and the device clears it after use. The USB transport live behavior is implemented in usb_ocp_recovery_cms_fifo.sv (onwrite=woclr live-behavior preserved). OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
-            sw = rw;
-            hw = r;
-            onwrite = woclr;
+            desc = "Byte 1 bit 0 requests FIFO reset and the device clears it after use (write 1 to reset the indices). The host write is consumed by usb_ocp_recovery_cms_fifo.sv (sets the sticky region-reset state and flushes the FIFO); that block drives this read-back copy (hw=w), and the field is cleared by a write-1-to-clear of the region-reset flag in INDIRECT_FIFO_STATUS. Read-back only here (sw=r) to avoid a second, independent SW-owned copy. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
+            sw = r;
+            hw = w;
+            we = false;
             reset = 8'h00;
         } RESET[15:8];
         field {
@@ -751,12 +752,13 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Indirect FIFO Control 1";
-        desc = "INDIRECT_FIFO_CTRL_1: full 32-bit IMAGE_SIZE (image size to load, in 4-byte units). NOTE: the live cms_fifo captures IMAGE_SIZE from OCP command bytes 2-5 (usb_ocp_recovery_cms_fifo.sv); this register read-back exposes the assembled 32-bit value. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
+        desc = "INDIRECT_FIFO_CTRL_1: full 32-bit IMAGE_SIZE (image size to load, in 4-byte/DWORD units). The live owner is usb_ocp_recovery_cms_fifo.sv, which captures IMAGE_SIZE from the host FIFO command write and continuously drives this regblock copy (hw=w); the regblock is the single read-back source (sw=r). OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_CTRL command summary.";
         field {
             name = "Image Size";
-            desc = "Image size to load, in 4-byte (DWORD) units. Full 32-bit IMAGE_SIZE.";
-            sw = rw;
-            hw = r;
+            desc = "Image size to load, in 4-byte (DWORD) units. Full 32-bit IMAGE_SIZE. Captured and driven by usb_ocp_recovery_cms_fifo.sv (hw=w); regblock is read-back only (sw=r).";
+            sw = r;
+            hw = w;
+            we = false;
             reset = 32'h00000000;
         } IMAGE_SIZE[31:0];
     } INDIRECT_FIFO_CTRL_1 @ 0x188;

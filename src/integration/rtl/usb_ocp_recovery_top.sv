@@ -171,6 +171,13 @@ module usb_ocp_recovery_top #(
   logic [31:0]                image_size;
   logic [31:0]                bytes_pushed;
 
+  // --- INDIRECT_FIFO_CTRL read-back drive from A4 (cms_fifo) into the A3
+  //     regblock (hw=w).  cms_fifo is the single live owner; the regblock holds
+  //     the read-back copy (sw=r) read through the INDIRECT_FIFO_CTRL window. ---
+  logic [7:0]                 fifo_ctrl_cms;
+  logic                       fifo_ctrl_reset;
+  logic [31:0]                fifo_ctrl_image_size;
+
   //////////////////////////////////////////////////////////////////////////////
   // Reg-bus arbiter: USB priority, external (AHB) preempts when USB idle.
   // 1-cycle ack window owner tracking captured in owner_q.
@@ -484,18 +491,19 @@ module usb_ocp_recovery_top #(
   // HW_STATUS byte 0 (Sec 9.2) splits bit 0 = TEMP_CRITICAL,
   // bit 1 = SOFT_ERR, bit 2 = FATAL_ERR, bits 7:3 = reserved.
   //
-  // INDIRECT_STATUS / INDIRECT_DATA / INDIRECT_FIFO_* (Sec 9.2)
-  // are routed by usb_ocp_recovery_rb_adapter.sv (is_fifo_cmd, line 159)
-  // to the cms_fifo A4 block.  The regblock copies of those registers are
-  // never read out on the host control bus, so their .next ports are
-  // intentionally left at 0; A4 owns the live values.  Driving them here
-  // would be dead silicon and risk diverging from the FIFO-owned state.
+  // INDIRECT_STATUS / INDIRECT_DATA / INDIRECT_FIFO_STATUS / INDIRECT_FIFO_DATA
+  // (Sec 9.2) are routed by usb_ocp_recovery_rb_adapter.sv (is_fifo_cmd) to the
+  // cms_fifo A4 block for both read and write; their regblock copies are not
+  // read out on the host control bus and remain at 0 (A4 owns the live values).
+  // INDIRECT_FIFO_CTRL is the exception: cms_fifo captures the WRITE but DRIVES
+  // the regblock CTRL_0/_1 fields (hw=w) below, and the host READS them through
+  // the regblock command window, so the regblock is the single read-back source
+  // (no duplicated self-synthesized read-back in cms_fifo).
   //
-  // The adapter also intercepts cpuif_rd_err (rb_adapter.sv:466 only ORs
-  // fifo_rb_err into rb_err), so a regblock-side decode miss cannot
-  // surface as an rb_err / AXI error response.  Every regblock byte in
-  // the address window is backed by a declared field per the generated
-  // package (usb_ocp_recovery_reg_pkg.sv).
+  // The adapter also intercepts cpuif_rd_err (rb_adapter only ORs fifo_rb_err
+  // into rb_err), so a regblock-side decode miss cannot surface as an rb_err /
+  // AXI error response.  Every regblock byte in the address window is backed by
+  // a declared field per the generated package (usb_ocp_recovery_reg_pkg.sv).
   // --------------------------------------------------------------------------
   always_comb begin
     rb_hwif_in = '{default: '0};
@@ -544,6 +552,14 @@ module usb_ocp_recovery_top #(
     // when it consumes the activation request; hwclr zeroes the byte so a
     // subsequent host read returns 0.
     rb_hwif_in.RECOVERY_CTRL.ACTIVATE_REC_IMG.hwclr = recovery_ctrl_activate_consume;
+
+    // INDIRECT_FIFO_CTRL read-back (sw=r/hw=w): cms_fifo is the live owner and
+    // drives the regblock copy.  CTRL_0 byte0 = CMS, byte1 bit0 = region-reset
+    // (sticky until INDIRECT_FIFO_STATUS write-1-to-clear); CTRL_1 = IMAGE_SIZE
+    // in DWORD units.  RESET is zero-extended into byte 1 to match the field.
+    rb_hwif_in.INDIRECT_FIFO_CTRL_0.CMS.next        = fifo_ctrl_cms;
+    rb_hwif_in.INDIRECT_FIFO_CTRL_0.RESET.next      = {7'b0, fifo_ctrl_reset};
+    rb_hwif_in.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next = fifo_ctrl_image_size;
   end
 
   usb_ocp_recovery_reg u_a3_regblock (
@@ -602,7 +618,10 @@ module usb_ocp_recovery_top #(
     .image_push_done   (image_push_done),
     .fifo_overflow     (fifo_overflow),
     .image_size        (image_size),
-    .bytes_pushed      (bytes_pushed)
+    .bytes_pushed      (bytes_pushed),
+    .fifo_ctrl_cms        (fifo_ctrl_cms),
+    .fifo_ctrl_reset      (fifo_ctrl_reset),
+    .fifo_ctrl_image_size (fifo_ctrl_image_size)
   );
 
   //////////////////////////////////////////////////////////////////////////////

@@ -25,11 +25,14 @@
 // command-window byte of that word.  This matches OCP Recovery v1.1 Sec 9.2
 // (little-endian) and the PeakRDL little-endian field placement.
 //
-// FIFO branch: commands INDIRECT_FIFO_CTRL/STATUS/DATA are routed to A4
-// (usb_ocp_recovery_cms_fifo).  This adapter forwards the word + strobe + word
-// offset straight through and returns cms_fifo's word-level ack/err/rdata
-// combinationally; cms_fifo owns the byte-wise sequencing against external CMS
-// SRAM.  The direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA) is not implemented: it is
+// FIFO branch: INDIRECT_FIFO_STATUS and INDIRECT_FIFO_DATA (read and write), plus
+// INDIRECT_FIFO_CTRL WRITES, are routed to A4 (usb_ocp_recovery_cms_fifo).  This
+// adapter forwards the word + strobe + word offset straight through and returns
+// cms_fifo's word-level ack/err/rdata combinationally; cms_fifo owns the
+// byte-wise sequencing against external CMS SRAM.  INDIRECT_FIFO_CTRL READS are
+// serviced by the A3 regblock command window instead (cms_fifo drives the
+// CTRL_0/_1 fields via hw=w), so the regblock is the single read-back source.
+// The direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA) is not implemented: it is
 // advertised unsupported in PROT_CAP and dropped/ACKed as an invalid command.
 //
 // Latency:
@@ -140,11 +143,17 @@ module usb_ocp_recovery_rb_adapter (
 
   // --------------------------------------------------------------------------
   // FIFO-routing decode
+  //
+  // INDIRECT_FIFO_CTRL uses a read/write routing split: WRITES are captured by
+  // the cms_fifo block (the live functional owner), while READS are serviced by
+  // the A3 regblock command window (cms_fifo drives the INDIRECT_FIFO_CTRL_0/_1
+  // fields via hw=w, so the regblock is the single read-back source).  STATUS
+  // and DATA remain fully FIFO-routed (dynamic FIFO state / streaming payload).
   // --------------------------------------------------------------------------
   logic is_fifo_cmd;
   always_comb begin
     unique case (rb_cmd)
-      OCP_CMD_INDIRECT_FIFO_CTRL,
+      OCP_CMD_INDIRECT_FIFO_CTRL: is_fifo_cmd = rb_wr;  // writes -> cms_fifo; reads -> regblock
       OCP_CMD_INDIRECT_FIFO_STATUS,
       OCP_CMD_INDIRECT_FIFO_DATA: is_fifo_cmd = 1'b1;
       default:                is_fifo_cmd = 1'b0;
@@ -170,6 +179,10 @@ module usb_ocp_recovery_rb_adapter (
       OCP_CMD_RECOVERY_STATUS: begin cmd_base = 12'h070; cmd_len = 16'(OCP_LEN_RECOVERY_STATUS); end
       OCP_CMD_HW_STATUS:       begin cmd_base = 12'h074; cmd_len = 16'(OCP_LEN_HW_STATUS);       end
       OCP_CMD_VENDOR:          begin cmd_base = 12'h1A4; cmd_len = 16'(OCP_LEN_VENDOR);          end
+      // INDIRECT_FIFO_CTRL read path: regblock command window @ 0x184 (CTRL_0)
+      // / 0x188 (CTRL_1).  Writes route to cms_fifo (is_fifo_cmd above); only
+      // reads land on this regblock cpuif path.
+      OCP_CMD_INDIRECT_FIFO_CTRL: begin cmd_base = 12'h184; cmd_len = 16'(OCP_LEN_INDIRECT_FIFO_CTRL); end
       default:             is_local_cmd = 1'b0;
     endcase
   end

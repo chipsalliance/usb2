@@ -202,22 +202,6 @@ module usb_ocp_recovery_reg (
         } RECOVERY_CTRL;
         struct packed{
             struct packed{
-                logic [7:0] next;
-                logic load_next;
-            } CMS;
-            struct packed{
-                logic [7:0] next;
-                logic load_next;
-            } RESET;
-        } INDIRECT_FIFO_CTRL_0;
-        struct packed{
-            struct packed{
-                logic [31:0] next;
-                logic load_next;
-            } IMAGE_SIZE;
-        } INDIRECT_FIFO_CTRL_1;
-        struct packed{
-            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA;
@@ -259,19 +243,6 @@ module usb_ocp_recovery_reg (
                 logic [7:0] value;
             } ACTIVATE_REC_IMG;
         } RECOVERY_CTRL;
-        struct packed{
-            struct packed{
-                logic [7:0] value;
-            } CMS;
-            struct packed{
-                logic [7:0] value;
-            } RESET;
-        } INDIRECT_FIFO_CTRL_0;
-        struct packed{
-            struct packed{
-                logic [31:0] value;
-            } IMAGE_SIZE;
-        } INDIRECT_FIFO_CTRL_1;
         struct packed{
             struct packed{
                 logic [31:0] value;
@@ -443,69 +414,6 @@ module usb_ocp_recovery_reg (
     end
     assign hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.value = field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value;
     assign hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.swmod = decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr;
-    // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_CTRL_0.CMS
-    always_comb begin
-        automatic logic [7:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.INDIRECT_FIFO_CTRL_0.CMS.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.INDIRECT_FIFO_CTRL_0.CMS.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
-            load_next_c = '1;
-        end
-        field_combo.INDIRECT_FIFO_CTRL_0.CMS.next = next_c;
-        field_combo.INDIRECT_FIFO_CTRL_0.CMS.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.INDIRECT_FIFO_CTRL_0.CMS.value <= 8'h0;
-        end else if(field_combo.INDIRECT_FIFO_CTRL_0.CMS.load_next) begin
-            field_storage.INDIRECT_FIFO_CTRL_0.CMS.value <= field_combo.INDIRECT_FIFO_CTRL_0.CMS.next;
-        end
-    end
-    assign hwif_out.INDIRECT_FIFO_CTRL_0.CMS.value = field_storage.INDIRECT_FIFO_CTRL_0.CMS.value;
-    // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_CTRL_0.RESET
-    always_comb begin
-        automatic logic [7:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.INDIRECT_FIFO_CTRL_0.RESET.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && decoded_req_is_wr) begin // SW write 1 clear
-            next_c = field_storage.INDIRECT_FIFO_CTRL_0.RESET.value & ~(decoded_wr_data[15:8] & decoded_wr_biten[15:8]);
-            load_next_c = '1;
-        end
-        field_combo.INDIRECT_FIFO_CTRL_0.RESET.next = next_c;
-        field_combo.INDIRECT_FIFO_CTRL_0.RESET.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.INDIRECT_FIFO_CTRL_0.RESET.value <= 8'h0;
-        end else if(field_combo.INDIRECT_FIFO_CTRL_0.RESET.load_next) begin
-            field_storage.INDIRECT_FIFO_CTRL_0.RESET.value <= field_combo.INDIRECT_FIFO_CTRL_0.RESET.next;
-        end
-    end
-    assign hwif_out.INDIRECT_FIFO_CTRL_0.RESET.value = field_storage.INDIRECT_FIFO_CTRL_0.RESET.value;
-    // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE
-    always_comb begin
-        automatic logic [31:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
-            load_next_c = '1;
-        end
-        field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next = next_c;
-        field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value <= 32'h0;
-        end else if(field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.load_next) begin
-            field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value <= field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next;
-        end
-    end
-    assign hwif_out.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value = field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value;
     // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_DATA.DATA
     always_comb begin
         automatic logic [31:0] next_c;
@@ -636,10 +544,10 @@ module usb_ocp_recovery_reg (
     assign readback_array[29][15:8] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? hwif_in.HW_STATUS.VENDOR_HW_STATUS.next : '0;
     assign readback_array[29][23:16] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? hwif_in.HW_STATUS.CTEMP.next : '0;
     assign readback_array[29][31:24] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? hwif_in.HW_STATUS.VENDOR_HW_STATUS_LEN.next : '0;
-    assign readback_array[30][7:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_CTRL_0.CMS.value : '0;
-    assign readback_array[30][15:8] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_CTRL_0.RESET.value : '0;
+    assign readback_array[30][7:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_CTRL_0.CMS.next : '0;
+    assign readback_array[30][15:8] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_CTRL_0.RESET.next : '0;
     assign readback_array[30][31:16] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? 16'h0 : '0;
-    assign readback_array[31][31:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value : '0;
+    assign readback_array[31][31:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next : '0;
     assign readback_array[32][0:0] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.EMPTY.next : '0;
     assign readback_array[32][1:1] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.FULL.next : '0;
     assign readback_array[32][2:2] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.REGION_RESET.next : '0;

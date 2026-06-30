@@ -97,7 +97,14 @@ module usb_ocp_recovery_cms_fifo #(
   output logic        image_push_done,    // sticky image-complete (DWORD count)
   output logic        fifo_overflow,
   output logic [31:0] image_size,         // from INDIRECT_FIFO_CTRL (bytes)
-  output logic [31:0] bytes_pushed
+  output logic [31:0] bytes_pushed,
+
+  // INDIRECT_FIFO_CTRL read-back drive to the A3 regblock (hw=w).  cms_fifo is
+  // the single live owner of these fields; the regblock holds the read-back
+  // copy (sw=r) and the host reads it through the regblock command window.
+  output logic [7:0]  fifo_ctrl_cms,        // INDIRECT_FIFO_CTRL byte 0 (CMS)
+  output logic        fifo_ctrl_reset,      // INDIRECT_FIFO_CTRL byte 1 bit 0
+  output logic [31:0] fifo_ctrl_image_size  // INDIRECT_FIFO_CTRL IMAGE_SIZE (DWORD units)
 );
 
   // synthesis-time sanity check
@@ -246,24 +253,17 @@ module usb_ocp_recovery_cms_fifo #(
 
   // ------------------------------------------------------------------
   // Register-record read mux (32-bit word assembled per WORD index)
+  //
+  // INDIRECT_FIFO_CTRL reads are NOT serviced here: cms_fifo drives the
+  // INDIRECT_FIFO_CTRL_0/_1 regblock fields (hw=w) and the host reads them
+  // through the A3 regblock command window (rb_adapter routes CTRL reads to the
+  // regblock; CTRL writes still land here).  Only INDIRECT_FIFO_STATUS is
+  // synthesized on this read path (dynamic write/read-index state).
   // ------------------------------------------------------------------
   logic [31:0] reg_rdata;
   always_comb begin
     reg_rdata = 32'h0;
-    if (is_fifo_ctrl) begin
-      // INDIRECT_FIFO_CTRL read-back:
-      //   CTRL_0: byte0 CMS, byte1 RESET, bytes2..3 reserved (0).
-      //   CTRL_1: bits[31:0] = full 32-bit IMAGE_SIZE (DWORD units).
-      // NOTE: capture parses IMAGE_SIZE from OCP command bytes 2..5
-      unique case (word_idx)
-        3'd0:    reg_rdata = {16'h0,
-                              {7'b0, region_reset_q},
-                              fifo_cms_q};
-        3'd1:    reg_rdata = image_size_q[31:0];
-        default: reg_rdata = 32'h0;
-      endcase
-    end
-    else if (is_fifo_status) begin
+    if (is_fifo_status) begin
       // INDIRECT_FIFO_STATUS (OCP v1.1 Sec 9.2, 20 B / 5 words):
       //   word0 byte0 STATUS_FLAGS, byte1 REGION_TYPE (0), bytes2..3 reserved
       //   word1 WRITE_INDEX (DWORD units) = write_index_q
@@ -440,6 +440,14 @@ module usb_ocp_recovery_cms_fifo #(
     fifo_overflow     = overflow_q;
     image_size        = image_size_bytes;        // bytes
     bytes_pushed      = {write_index_q[29:0], 2'b00}; // write_index_q << 2 (bytes)
+
+    // INDIRECT_FIFO_CTRL read-back fields driven into the A3 regblock (hw=w).
+    // These mirror the live cms_fifo state byte-for-byte with the prior
+    // self-synthesized read-back: byte0 = CMS, byte1 bit0 = region-reset
+    // (sticky), IMAGE_SIZE in DWORD units.
+    fifo_ctrl_cms        = fifo_cms_q;
+    fifo_ctrl_reset      = region_reset_q;
+    fifo_ctrl_image_size = image_size_q;
   end
 
   // ------------------------------------------------------------------
