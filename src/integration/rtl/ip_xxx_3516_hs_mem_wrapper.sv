@@ -367,6 +367,10 @@ module ip_xxx_3516_hs_mem_wrapper
    logic                          rec_ctrl_in_rdy_w;
    logic                          rec_ctrl_set_stall_w;
    logic                          rec_ctrl_xfer_done_w;
+   // C1 emergency-fallback chicken bit: usb_ocp_recovery_top drives this
+   // (from DEVICE_RESET.OCP_PATH_DISABLE, EXT/firmware write-only) into the
+   // VHDL arbiter to force legacy pass-through when set.
+   logic                          rec_ocp_path_disable_w;
 
    // -- Host AHB (Lite converter output) --
    logic [AXI_HOST_ADDR_WIDTH-1:0] host_ahb_haddr;
@@ -820,6 +824,7 @@ module ip_xxx_3516_hs_mem_wrapper
                .rec_ctrl_set_stall  (rec_ctrl_set_stall_w),
                .rec_ctrl_xfer_done  (rec_ctrl_xfer_done_w),
                .rec_ctrl_claim      (),
+               .rec_ocp_path_disable (rec_ocp_path_disable_w),
 
                // DFT: must be 0 for functional operation
                .async_disable(1'b0),
@@ -951,7 +956,7 @@ module ip_xxx_3516_hs_mem_wrapper
                              & dev_ahb_hreadymux
                              & rec_addr_in_window;
 
-   // -- Native INDIRECT_FIFO_DATA read predecode (P9-0.1-C) --
+   // -- Native INDIRECT_FIFO_DATA read predecode --
    // INDIRECT_FIFO_DATA occupies byte aperture 0x1A0-0x1A3.  A read of this
    // window is serviced NATIVELY in the dev_axi_aclk domain by popping the
    // exposed async FIFO read port, bypassing the utmi-clk CDC bridge.
@@ -1049,10 +1054,11 @@ module ip_xxx_3516_hs_mem_wrapper
        // DEVICE_STATUS@0x028, DEVICE_RESET@0x068, RECOVERY_CTRL@0x06C,
        // RECOVERY_STATUS@0x070, HW_STATUS@0x074, INDIRECT_FIFO_CTRL@0x184,
        // INDIRECT_FIFO_STATUS@0x18C, INDIRECT_FIFO_DATA@0x1A0, VENDOR@0x1A4.
-       // The 0x078-0x183 window (direct CMS-memory INDIRECT_CTRL/STATUS/DATA)
-       // was removed in R3 and is unmapped: accesses there
-       // forward invalid cmd 0x00 -> PROTOCOL_ERROR + ack (OCP v1.1 Sec 9.1).
-       // P9-0.1-C: a native INDIRECT_FIFO_DATA read (is_fifo_data_read) is
+       // The 0x078-0x183 window (direct CMS-memory INDIRECT_CTRL/STATUS/DATA) is
+       // not implemented (this agent is FIFO-only per PROT_CAP AGENT_CAPS bit 5)
+       // and is unmapped: accesses there forward invalid cmd 0x00 ->
+       // PROTOCOL_ERROR + ack (OCP v1.1 Sec 9.1).
+       // A native INDIRECT_FIFO_DATA read (is_fifo_data_read) is
        // serviced via the FIFO read port and must NEVER enter the utmi
        // bridge -- guarded with !is_fifo_data_read so ahb_cmd_q is NOT
        // captured (no stray INDIRECT_FIFO_DATA command) and req_axi_q is NOT raised for it.
@@ -1080,7 +1086,7 @@ module ip_xxx_3516_hs_mem_wrapper
              end
            12'h07?: // RECOVERY_STATUS 0x070-0x073, HW_STATUS 0x074-0x077
                     // 0x078-0x07F is unmapped: the direct CMS-memory
-                    // window (INDIRECT_CTRL) was removed in R3, so forward
+                    // window (INDIRECT_CTRL) is not implemented, so forward
                     // invalid cmd 0x00.  The adapter flags PROTOCOL_ERROR and acks
                     // (OCP Recovery v1.1 Sec 9.1 unsupported command).
              if (dev_ahb_haddr[3:0] < 4'h4) begin
@@ -1095,13 +1101,13 @@ module ip_xxx_3516_hs_mem_wrapper
              end
            12'h08?, 12'h09?, 12'h0A?, 12'h0B?, 12'h0C?, 12'h0D?, 12'h0E?, 12'h0F?:
              // 0x080-0x0FF: the direct CMS-memory window (INDIRECT_STATUS /
-             // INDIRECT_DATA) was removed in R3 -> unmapped.  Forward invalid
+             // INDIRECT_DATA) is not implemented -> unmapped.  Forward invalid
              // cmd 0x00 (unsupported -> PROTOCOL_ERROR + ack).
              begin
                ahb_cmd_q <= 8'h00;
                ahb_off_q <= 8'h00;
              end
-           12'h1??: // 0x100-0x183 unmapped (removed INDIRECT_DATA window) -> invalid command sentinel;
+           12'h1??: // 0x100-0x183 unmapped (direct CMS-memory INDIRECT_DATA window not implemented) -> invalid command sentinel;
                     // 0x184-0x18B INDIRECT_FIFO_CTRL, 0x18C-0x19F INDIRECT_FIFO_STATUS, 0x1A0-0x1A3 INDIRECT_FIFO_DATA, 0x1A4-0x1A7 VENDOR (command codes per usb_ocp_recovery_pkg / OCP Recovery v1.1 Sec 9.2).
              if (dev_ahb_haddr[11:0] < 12'h184) begin
                ahb_cmd_q <= 8'h00;
@@ -1149,7 +1155,7 @@ module ip_xxx_3516_hs_mem_wrapper
          err_axi_q   <= err_pie_q;
        end
 
-       // P9-0.1-C native INDIRECT_FIFO_DATA read: capture the popped DWORD in A_NREAD
+       // Native INDIRECT_FIFO_DATA read: capture the popped DWORD in A_NREAD
        // (combinational fifo_rd_data on the current read pointer) BEFORE the
        // single fifo_rd_ready pulse advances the pointer.  Reuses rdata_axi_q
        // + the A_COMPLETE response mux, identical to the bridge path from the
@@ -1262,7 +1268,7 @@ module ip_xxx_3516_hs_mem_wrapper
        .clk  (utmi_clk),
        .rst  (rec_rst),
 
-       // P9-0.1-C: async FIFO read port lives in the dev_axi_aclk domain so
+       // Async FIFO read port lives in the dev_axi_aclk domain so
        // INDIRECT_FIFO_DATA reads pop natively here, bypassing the CDC
        // bridge.  fifo_rd_ready is driven by the A_NREAD branch of the
        // a_state FSM above (single-pop), fifo_rd_data captured into
@@ -1289,6 +1295,7 @@ module ip_xxx_3516_hs_mem_wrapper
        .rec_ctrl_in_rdy    (rec_ctrl_in_rdy_w),
        .rec_ctrl_set_stall (rec_ctrl_set_stall_w),
        .rec_ctrl_xfer_done (rec_ctrl_xfer_done_w),
+       .rec_ocp_path_disable (rec_ocp_path_disable_w),
 
        // External reg-bus slave -- driven by the PIE-side bridge above.
        // cmd/offset/wdata are stable across the CDC handshake, so they

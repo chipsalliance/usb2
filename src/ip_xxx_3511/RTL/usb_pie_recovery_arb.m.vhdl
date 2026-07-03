@@ -122,6 +122,17 @@ architecture rtl of usb_pie_recovery_arb is
   signal pie_endtransfer_q       : std_logic;
   signal pie_endtransfer_pulse_c : std_logic;
 
+  -- Rising-edge detect of pie_error (also held as a multi-cycle LEVEL by the
+  -- legacy PIE -- usb_pie.m.vhdl only clears it when the next host token
+  -- arrives). Used solely to log the assertions_proc warning once per event
+  -- instead of once per clock cycle the level is held (D3 root-cause: a
+  -- single benign NAK-backpressure event, e.g. the arbiter driving
+  -- epinfo_to_pie_active='0' while an IN response is still staging, was
+  -- otherwise reported as dozens of duplicate warnings for the level's
+  -- entire multi-cycle duration).
+  signal pie_error_q       : std_logic;
+  signal pie_error_pulse_c : std_logic;
+
   -- SETUP class-match decoded combinationally on the cycle PIE delivers
   -- the SETUP beat.  This keeps the routing decision stable before the
   -- SETUP-received notification fans out to the downstream response paths.
@@ -341,12 +352,17 @@ begin
   -- ======================================================================
   -- Class-match decode (combinational; cycle setup_capture_c='1').
   -- ======================================================================
+  -- C1 emergency-fallback chicken bit: AND NOT ocp_path_disable_i suppresses
+  -- the class match unconditionally so the arbiter never claims (falls
+  -- through to legacy SIE pass-through, bit-identical to the un-arbitered
+  -- IP) regardless of the SETUP's OCP-class encoding.
   setup_is_ocp_match_c <= '1' when (setup_capture_c           = '1')
                                 and (pie_rxdata( 6 downto  5) = "01")
                                 and (pie_rxdata( 4 downto  0) = "00001")
                                 and (pie_rxdata(15 downto  8) = OCP_RECOVERY_TRANSFER)
                                 and (pie_rxdata(39 downto 32) = REC_IFACE_SLV)
                                 and (pie_rxdata(47 downto 40) = x"00")
+                                and (ocp_path_disable_i       = '0')
                             else '0';
   -- Direction bit: USB 2.0 Sec 9.3 Tbl 9-2 -- bmRequestType[7] = 1 means
   -- Device-to-Host (IN data stage); 0 means Host-to-Device (OUT data).
@@ -488,6 +504,21 @@ begin
       pie_endtransfer_q <= pie_endtransfer;
     end if;
   end process pie_endtransfer_edge_proc;
+
+  -- pie_error edge detector (D3): pie_error is a multi-cycle LEVEL (cleared
+  -- only when the legacy PIE's PID-decode FSM sees the next host token), so
+  -- rising_edge-only qualification is required to log the assertions_proc
+  -- warning once per event rather than once per clock while the level holds.
+  pie_error_pulse_c <= pie_error and not pie_error_q;
+
+  pie_error_edge_proc : process (clk, reset_n)
+  begin
+    if reset_n = '0' then
+      pie_error_q <= '0';
+    elsif rising_edge(clk) then
+      pie_error_q <= pie_error;
+    end if;
+  end process pie_error_edge_proc;
 
   claim_fsm_clk_proc : process (clk, reset_n)
   begin
@@ -923,7 +954,11 @@ begin
 
       -- pie_error during a claimed transfer is logged but does not
       -- stop simulation; the FSM still walks to S_IDLE via pie_endtransfer.
-      if (pie_error = '1') and (claim_q = '1') then
+      -- Edge-detected (pie_error_pulse_c) so a single benign NAK-backpressure
+      -- event (pie_error is a multi-cycle LEVEL, held until the next host
+      -- token) is logged once, not once per clock cycle for the level's
+      -- entire duration.
+      if (pie_error_pulse_c = '1') and (claim_q = '1') then
         report "usb_pie_recovery_arb: pie_error during recovery EP0 xfer"
           severity warning;
       end if;

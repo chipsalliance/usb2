@@ -11,14 +11,19 @@
 //   INDIRECT_FIFO_CTRL   - FIFO region select + reset + image-size.
 //   INDIRECT_FIFO_STATUS - FIFO empty/full/region-reset/overflow flags
 //                               and the push-side WRITE_INDEX / pop-side
-//                               READ_INDEX (DWORD units).
+//                               READ_INDEX (DWORD units).  Strictly read-only
+//                               per OCP Recovery v1.1 Sec 9.2 (cmd=46, r/w=ro);
+//                               a host write raises PROTOCOL_ERROR via the A3
+//                               adapter's unsupported-command path (Sec 9.1).
+//                               Sticky flags clear only via INDIRECT_FIFO_CTRL
+//                               region reset (byte1 bit0).
 //   INDIRECT_FIFO_DATA   - streaming push and pop.
 //
 // The direct CMS-memory window (INDIRECT_CTRL / INDIRECT_STATUS /
 // INDIRECT_DATA) is NOT implemented: PROT_CAP advertises FIFO-only and the
 // A3 adapter drops/ACKs those commands as unrecognized.
 //
-// Storage micro-architecture (P9-0.1-C)
+// Storage micro-architecture
 // -------------------------------------
 // The INDIRECT_FIFO_DATA payload is backed by a single internal DWORD FIFO
 // (caliptra_prim_fifo_async) used ASYNCHRONOUSLY: the WRITE/push side is on
@@ -66,10 +71,10 @@ module usb_ocp_recovery_cms_fifo #(
   input  logic rst,
 
   // ----------------------------------------------------------------------
-  // Async FIFO READ port (P9-0.1-C): exposed so the dev_axi_aclk-domain
-  // wrapper can pop INDIRECT_FIFO_DATA reads natively, bypassing the
-  // utmi-clk CDC bridge.  The async FIFO read port is now clocked by clk_rd
-  // (= dev_axi_aclk); the write/push side stays on clk (= utmi_clk).
+  // Async FIFO READ port: exposed so the dev_axi_aclk-domain wrapper can
+  // pop INDIRECT_FIFO_DATA reads natively, bypassing the utmi-clk CDC
+  // bridge. The async FIFO read port is clocked by clk_rd (= dev_axi_aclk);
+  // the write/push side stays on clk (= utmi_clk).
   // ----------------------------------------------------------------------
   input  logic clk_rd,                                  // dev_axi_aclk
   input  logic rst_rd_n,                                // dev_axi_aresetn (active-low)
@@ -135,14 +140,14 @@ module usb_ocp_recovery_cms_fifo #(
 
   // Cumulative DWORD counters (this clk domain; no CDC this stage).
   logic [31:0] write_index_q;       // pushed DWORD count (WRITE_INDEX)
-  // NOTE (P9-0.1-C): the pop-side read_index_q counter has been REMOVED.
-  // Pops now occur natively in the dev_axi_aclk domain via the exposed FIFO
-  // read port, so there is no utmi-domain pop event to count here.  The INDIRECT_FIFO_STATUS
-  // READ_INDEX is instead DERIVED from the write-side occupancy below.
+  // Pops occur natively in the dev_axi_aclk domain via the exposed FIFO
+  // read port, so there is no utmi-domain pop event to count (no pop-side
+  // read_index_q counter). The INDIRECT_FIFO_STATUS READ_INDEX is instead
+  // DERIVED from the write-side occupancy below.
 
   // Status bits (INDIRECT_FIFO_STATUS)
-  logic        overflow_q;          // sticky, cleared on FIFO reset / w1c
-  logic        region_reset_q;      // sticky one-shot, cleared by SW write-1
+  logic        overflow_q;          // sticky, cleared only by INDIRECT_FIFO_CTRL region reset
+  logic        region_reset_q;      // sticky one-shot, cleared only by INDIRECT_FIFO_CTRL region reset
   logic        image_done_q;        // sticky; emitted as image_push_done
   logic        image_push_active_q; // set by first INDIRECT_FIFO_DATA push, cleared on
                                      // region reset / image complete.
@@ -202,7 +207,7 @@ module usb_ocp_recovery_cms_fifo #(
 
   // ------------------------------------------------------------------
   // INDIRECT_FIFO_DATA push datapath (single-cycle).  Pops are handled natively in the
-  // dev_axi_aclk domain through the exposed read port (P9-0.1-C), so there is
+  // dev_axi_aclk domain through the exposed read port, so there is
   // no utmi-domain pop_accept here.
   // ------------------------------------------------------------------
   logic push_accept;      // accepted push (advances FIFO + write_index_q)
@@ -224,7 +229,7 @@ module usb_ocp_recovery_cms_fifo #(
   end
 
   // ------------------------------------------------------------------
-  // READ_INDEX (INDIRECT_FIFO_STATUS word2) derivation (P9-0.1-C).
+  // READ_INDEX (INDIRECT_FIFO_STATUS word2) derivation.
   // READ_INDEX is derived from the write-side occupancy (gray-synced inside
   // the async FIFO), so it needs no separate read-counter CDC; it
   // conservatively lags actual reads.  read_index = write_index - occupancy
@@ -281,7 +286,7 @@ module usb_ocp_recovery_cms_fifo #(
     end
   end
 
-  // Register-bus read data (P9-0.1-C): real INDIRECT_FIFO_DATA reads no longer happen on
+  // Register-bus read data: real INDIRECT_FIFO_DATA reads no longer happen on
   // this utmi-domain rb path (they are serviced natively in dev_axi_aclk via
   // the exposed read port).  A defensive INDIRECT_FIFO_DATA rb READ that should no longer
   // occur returns 0 and is still ACKed (no bus hang).  Register records
@@ -317,19 +322,26 @@ module usb_ocp_recovery_cms_fifo #(
     // Active-low reset to the internal FIFO WRITE side: module rst (high) or a
     // region reset flushes the FIFO contents on the utmi (write/push) domain.
     fifo_rst_n = ~(rst | fifo_flush);
-    // TODO (P9-0.1-C CDC): cross-domain region-reset flush of the read pointer
-    // is not handled; safe only because region-reset occurs while the FIFO is
-    // empty/idle.  A mid-stream region-reset would desync wptr/rptr -- handle
-    // via a synced flush before enabling streamed (Depth-exceeding) images.
+    // Cross-domain region-reset flush of the read
+    // pointer is intentionally NOT implemented -- folding a utmi-domain event
+    // into the dev_axi_aclk-domain read reset would itself be a CDC hazard,
+    // and a full bidirectional synchronized-flush handshake is unwarranted
+    // complexity for an administrative, rarely-issued operation. Safe ONLY
+    // because region-reset is required to occur while the FIFO is drained
+    // (empty on both sides); a mid-stream region-reset would desync the
+    // write/read gray-code pointers. This precondition is now an ENFORCED,
+    // verified contract (not just a documented assumption) via the
+    // fifo_empty assertion below (synthesis translate_off/on block).
   end
 
   // ------------------------------------------------------------------
-  // Internal DWORD FIFO instance (asynchronous P9-0.1-C):
+  // Internal DWORD FIFO instance (asynchronous):
   //   write/push side -> clk    (utmi_clk), reset = fifo_rst_n (rst|flush)
   //   read /pop  side -> clk_rd (dev_axi_aclk), reset = rst_rd_n (AXI only)
   // rst_rd_ni is the dev_axi reset ONLY -- fifo_flush is a utmi event and
-  // folding it into the AXI-domain read reset would be a CDC hazard (see the
-  // TODO above).
+  // folding it into the AXI-domain read reset would be a CDC hazard (see
+  // the region-reset flush rationale above and the fifo_empty assertion at
+  // the bottom of this file).
   // ------------------------------------------------------------------
   caliptra_prim_fifo_async #(
     .Width (FIFO_WIDTH),
@@ -392,17 +404,6 @@ module usb_ocp_recovery_cms_fifo #(
       end
 
       // ----------------------------------------------------------------
-      // INDIRECT_FIFO_STATUS write-1-to-clear of sticky flags.
-      // STATUS_FLAGS at word0 byte0 (bit2 region_reset, bit3 overflow,
-      // bit4 image_done).
-      // ----------------------------------------------------------------
-      if (is_fifo_status && fifo_rb_wr && (word_idx == 3'd0) && fifo_rb_wstrb[0]) begin
-        if (fifo_rb_wdata[2]) region_reset_q <= 1'b0;
-        if (fifo_rb_wdata[3]) overflow_q     <= 1'b0;
-        if (fifo_rb_wdata[4]) image_done_q   <= 1'b0;
-      end
-
-      // ----------------------------------------------------------------
       // INDIRECT_FIFO_DATA push (accepted): advance WRITE_INDEX and image accounting.
       // ----------------------------------------------------------------
       if (push_accept) begin
@@ -459,6 +460,27 @@ module usb_ocp_recovery_cms_fifo #(
     if (!rst && fifo_rb_sel) begin
       assert (!$isunknown(fifo_rb_cmd))
         else $error("fifo_rb_cmd is X when fifo_rb_sel=1");
+    end
+    // The region-reset flush (fifo_flush) resets
+    // ONLY the write-side pointer of the async FIFO (caliptra_prim_fifo_async
+    // rst_wr_ni); the read side (rst_rd_ni = rst_rd_n, the dev_axi_aclk reset
+    // only) is intentionally left unreset, since folding a utmi-domain event
+    // into the AXI-domain reset would itself be a CDC hazard. This is
+    // documented-safe ONLY when the FIFO is fully drained (both domains
+    // agree it is empty) before the flush -- a mid-stream region-reset would
+    // desync the write/read gray-code pointers (the write side would restart
+    // from its initial position while the read side's position is unrelated,
+    // corrupting the async FIFO's empty/full determination and potentially
+    // its data ordering). fifo_wdepth==0 (fifo_empty) is a SOUND (not merely
+    // approximate) proxy for "genuinely drained": fifo_wdepth is itself the
+    // write-domain's synchronized view of the read pointer, so it can only
+    // lag the true occupancy, never lead it -- if the write side already
+    // observes zero occupancy, the FIFO cannot have unseen outstanding data.
+    // This assertion converts the "safe only if empty/idle" design
+    // assumption into a verified contract instead of an undocumented risk.
+    if (!rst && fifo_flush) begin
+      assert (fifo_empty)
+        else $error("usb_ocp_recovery_cms_fifo: INDIRECT_FIFO_CTRL region-reset issued while the FIFO is not drained (fifo_wdepth != 0) -- this desyncs the async FIFO's write/read pointers (CDC hazard). Region-reset MUST only be issued after the FIFO is confirmed empty (INDIRECT_FIFO_STATUS byte0 bit0).");
     end
   end
 `endif

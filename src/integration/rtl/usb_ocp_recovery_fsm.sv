@@ -373,10 +373,11 @@ module usb_ocp_recovery_fsm (
     // same-cycle S_ERROR set): the first error stays latched until the host
     // clears it by reading DEVICE_STATUS.  Placed before the rclr clear so a
     // host read of DEVICE_STATUS in the same cycle still wins (clear-on-read).
-    // NOTE: the reg-bus adapter is shared by the USB-host and EXT/AHB masters,
-    // so an EXT/AHB access to an unsupported command also sets this; precise
-    // USB-host source qualification is deferred to the register use-model
-    // audit task R7.
+    // unsupported_cmd_set is already USB-host source-qualified by the
+    // reg-bus adapter (usb_ocp_recovery_rb_adapter.sv): an EXT/firmware
+    // access to an unsupported command is dropped without asserting this
+    // pulse, since that is an internal firmware issue, not a USB protocol
+    // violation.
     if (unsupported_cmd_set && (proto_err_d == 8'h00)) begin
       proto_err_d = 8'h01;
     end

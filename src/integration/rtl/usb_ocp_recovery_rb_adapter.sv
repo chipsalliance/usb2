@@ -65,6 +65,15 @@ module usb_ocp_recovery_rb_adapter (
   output logic        rb_err,
 
   // --------------------------------------------------------------------------
+  // Source qualifier from the top-level arbiter: '1' when the current rb_*
+  // access belongs to the EXT (SoC AHB/firmware) master, '0' when it belongs
+  // to the USB host.  Derived request-side (same-cycle mux select), NOT from
+  // the registered owner_q, so it is valid the same cycle as rb_wr/rb_rd (OCP
+  // Recovery v1.1 Sec 9.1 write-to-RO / capability source-qualification).
+  // --------------------------------------------------------------------------
+  input  logic        rb_is_ext,
+
+  // --------------------------------------------------------------------------
   // FIFO branch to A4 (cms_fifo).  Native 32-bit word + 4-bit byte
   // strobe passthrough; fifo_rb_offset carries the word index of the command
   // record.
@@ -154,7 +163,13 @@ module usb_ocp_recovery_rb_adapter (
   always_comb begin
     unique case (rb_cmd)
       OCP_CMD_INDIRECT_FIFO_CTRL: is_fifo_cmd = rb_wr;  // writes -> cms_fifo; reads -> regblock
-      OCP_CMD_INDIRECT_FIFO_STATUS,
+      // INDIRECT_FIFO_STATUS is strictly read-only (OCP Recovery v1.1 Sec 9.2,
+      // cmd=46, r/w=ro): only reads are FIFO-routed.  A write falls through to
+      // neither is_local_cmd nor is_fifo_cmd, so it is caught by the existing
+      // unsupported_access path below, which raises PROTOCOL_ERROR per Sec 9.1
+      // ("Writing to a read only command ... MUST generate an 'unsupported
+      // command' error").
+      OCP_CMD_INDIRECT_FIFO_STATUS: is_fifo_cmd = rb_rd;
       OCP_CMD_INDIRECT_FIFO_DATA: is_fifo_cmd = 1'b1;
       default:                is_fifo_cmd = 1'b0;
     endcase
@@ -200,6 +215,27 @@ module usb_ocp_recovery_rb_adapter (
   assign local_access   = access & is_local_cmd & ~is_fifo_cmd;
 
   // --------------------------------------------------------------------------
+  // Host-RO command detect (OCP Recovery v1.1 Sec 9.2 r/w=ro column): PROT_CAP,
+  // DEVICE_ID, DEVICE_STATUS, RECOVERY_STATUS, HW_STATUS.  A USB-host write to
+  // any of these MUST raise DEVICE_STATUS.PROTOCOL_ERROR=0x01 (Sec 9.1,
+  // "Writing to a read only command ... MUST generate an 'unsupported command'
+  // error").  INDIRECT_FIFO_STATUS is also host-RO but is handled separately
+  // above (is_fifo_cmd routing) since it is FIFO-branch, not local_access.
+  // VENDOR is host-RW per spec and is excluded.
+  // --------------------------------------------------------------------------
+  logic is_host_ro_cmd;
+  always_comb begin
+    unique case (rb_cmd)
+      OCP_CMD_PROT_CAP,
+      OCP_CMD_DEVICE_ID,
+      OCP_CMD_DEVICE_STATUS,
+      OCP_CMD_RECOVERY_STATUS,
+      OCP_CMD_HW_STATUS: is_host_ro_cmd = 1'b1;
+      default:           is_host_ro_cmd = 1'b0;
+    endcase
+  end
+
+  // --------------------------------------------------------------------------
   // FIFO branch passthrough.
   //
   // The word access engine lives entirely in A4 (cms_fifo): this adapter
@@ -229,14 +265,18 @@ module usb_ocp_recovery_rb_adapter (
   logic regblock_busy_q;
 
   // A regblock cpuif access is issued for local non-FIFO commands except
-  // dropped writes (HW_STATUS sideband-only, VENDOR stub) and out-of-window
-  // offsets.  Reads of every in-window local command go to the cpuif.
+  // dropped writes (HW_STATUS sideband-only, VENDOR stub), out-of-window
+  // offsets, and USB-host writes to PROT_CAP (capability sub-fields are
+  // sw=rw so EXT/firmware can configure them, but the USB host must not be
+  // able to write them -- see is_host_ro_cmd / host_ro_write_violation
+  // below).  Reads of every in-window local command go to the cpuif.
   logic do_cpuif_wr;
   logic do_cpuif_rd;
   always_comb begin
     do_cpuif_wr = local_access & rb_wr & off_ok
                 & (rb_cmd != OCP_CMD_HW_STATUS)
-                & (rb_cmd != OCP_CMD_VENDOR);
+                & (rb_cmd != OCP_CMD_VENDOR)
+                & ~((rb_cmd == OCP_CMD_PROT_CAP) & ~rb_is_ext);
     do_cpuif_rd = local_access & rb_rd & off_ok;
   end
 
@@ -253,7 +293,8 @@ module usb_ocp_recovery_rb_adapter (
                            {8{rb_wstrb[1]}}, {8{rb_wstrb[0]}}};
 
   // A local access that completes WITHOUT a cpuif transaction: invalid cmd,
-  // out-of-window offset, dropped HW_STATUS/VENDOR write.  These still need a
+  // out-of-window offset, dropped HW_STATUS/VENDOR write, or a USB-host write
+  // to PROT_CAP (excluded from do_cpuif_wr above).  These still need a
   // (registered) ack/err so the upstream master does not hang.
   logic local_noncpuif_acc;
   logic local_noncpuif_err;
@@ -263,13 +304,15 @@ module usb_ocp_recovery_rb_adapter (
     if (access & ~is_fifo_cmd & ~regblock_busy_q) begin
       if (~is_local_cmd) begin
         // Unsupported OCP command code (e.g. the removed direct CMS-memory
-        // window INDIRECT_CTRL/STATUS/DATA).  Complete the access cleanly (ack, NO err)
-        // rather than signalling a reg-bus error: a reg-bus error makes
-        // ctrl_decode STALL the USB control transfer, and a STALLed claimed
-        // transfer is not cleanly retired by the recovery arbiter (it would
-        // wedge the recovery endpoint -- see r4_protoerr_recovery_rca.md /
-        // task D3).  The unsupported condition is instead reported per OCP
-        // Recovery v1.1 Sec 9.1 by raising unsupported_cmd_pulse ->
+        // window INDIRECT_CTRL/STATUS/DATA, or a write to the strictly
+        // read-only INDIRECT_FIFO_STATUS -- see is_fifo_cmd above).
+        // Complete the access cleanly (ack, NO err) rather than signalling a
+        // reg-bus error: a reg-bus error makes ctrl_decode STALL the USB
+        // control transfer, and the recovery arbiter's claim FSM does not
+        // cleanly retire a STALLed claimed transfer (it can wedge the
+        // recovery endpoint until the next SETUP).  The
+        // unsupported condition is instead reported per OCP Recovery v1.1
+        // Sec 9.1 by raising unsupported_cmd_pulse ->
         // DEVICE_STATUS.PROTOCOL_ERROR = 0x01 (see unsupported_access below);
         // the read returns 0 data / the write is dropped.
         local_noncpuif_acc = 1'b1;
@@ -280,9 +323,30 @@ module usb_ocp_recovery_rb_adapter (
       end else if (rb_wr & ((rb_cmd == OCP_CMD_HW_STATUS) ||
                             (rb_cmd == OCP_CMD_VENDOR))) begin
         local_noncpuif_acc = 1'b1;     // dropped write (sideband / stub)
+      end else if (rb_wr & (rb_cmd == OCP_CMD_PROT_CAP) & ~rb_is_ext) begin
+        // USB-host write to PROT_CAP: excluded from do_cpuif_wr above so the
+        // now-sw=rw capability sub-fields cannot be corrupted by the host
+        // (OCP Recovery v1.1 Sec 9.2, PROT_CAP is host-RO).  Ack cleanly, no
+        // reg-bus error (same STALL-avoidance rationale as above); the
+        // PROTOCOL_ERROR report is raised via host_ro_write_violation below.
+        local_noncpuif_acc = 1'b1;
       end
     end
   end
+
+  // --------------------------------------------------------------------------
+  // Host-RO write violation (OCP Recovery v1.1 Sec 9.1): a USB-host write to
+  // any host-RO local command (PROT_CAP, DEVICE_ID, DEVICE_STATUS,
+  // RECOVERY_STATUS, HW_STATUS) MUST raise DEVICE_STATUS.PROTOCOL_ERROR=0x01.
+  // Gated by ~regblock_busy_q so it qualifies exactly one request cycle,
+  // matching unsupported_access below.  Only DEVICE_ID/DEVICE_STATUS/
+  // RECOVERY_STATUS/HW_STATUS writes still pass through to the cpuif (they
+  // have no sw=rw field so the write is a harmless no-op at the regblock);
+  // PROT_CAP writes are additionally blocked from the cpuif above.
+  // --------------------------------------------------------------------------
+  logic host_ro_write_violation;
+  assign host_ro_write_violation = local_access & rb_wr & off_ok & ~rb_is_ext
+                                  & is_host_ro_cmd & ~regblock_busy_q;
 
   // HW_STATUS sideband write pulse (low byte of the word).
   logic wr_hw_status;
@@ -291,9 +355,15 @@ module usb_ocp_recovery_rb_adapter (
 
   // Unsupported-command detect: an access (read or write) to a command code
   // that is neither a local nor a FIFO command (e.g. the removed direct
-  // CMS-memory window INDIRECT_CTRL/STATUS/DATA, or any unknown code).  Gated by
-  // ~regblock_busy_q so it qualifies exactly one request cycle, aligning the
-  // registered pulse below with the rb_ack window.  OCP Recovery v1.1 Sec 9.1.
+  // CMS-memory window INDIRECT_CTRL/STATUS/DATA, a write to the read-only
+  // INDIRECT_FIFO_STATUS, or any unknown code).  Gated by ~regblock_busy_q so
+  // it qualifies exactly one request cycle, aligning the registered pulse
+  // below with the rb_ack window.  Fires for EITHER master so the bus never
+  // hangs; the PROTOCOL_ERROR report itself is additionally source-qualified
+  // where it is registered below (an EXT/firmware access to an
+  // unsupported command is an internal firmware issue, not a USB protocol
+  // violation, so it must not surface to the USB host). OCP Recovery v1.1
+  // Sec 9.1.
   logic unsupported_access;
   assign unsupported_access = access & ~is_fifo_cmd & ~is_local_cmd
                             & ~regblock_busy_q;
@@ -326,7 +396,12 @@ module usb_ocp_recovery_rb_adapter (
       rb_rdata_q           <= '0;
       hw_status_wr_q       <= 1'b0;
       proto_err_rd_pulse_q <= 1'b0;
-      unsupported_cmd_pulse_q <= unsupported_access;
+      // PROTOCOL_ERROR report (Sec 9.1) is source-qualified: an EXT/firmware
+      // access to an unsupported command is dropped without raising the
+      // USB-host-visible protocol error; host_ro_write_violation is
+      // already USB-only by construction.
+      unsupported_cmd_pulse_q <= (unsupported_access & ~rb_is_ext)
+                                | host_ro_write_violation;
 
       // ----- Regblock CPUIF path (single-cycle req, registered ack) -----
       if (cpuif_fire) begin

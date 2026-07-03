@@ -27,7 +27,7 @@ module usb_ocp_recovery_top #(
   input  logic                    rst,
 
   //----------------------------------------------------------------------------
-  // Async FIFO READ port (P9-0.1-C).  Plumbed straight through to the A4
+  // Async FIFO READ port.  Plumbed straight through to the A4
   // cms_fifo so the dev_axi_aclk-domain wrapper can pop INDIRECT_FIFO_DATA
   // reads natively, bypassing the utmi-clk CDC bridge.  clk_rd is
   // dev_axi_aclk; rst_rd_n is dev_axi_aresetn (active-low).
@@ -61,6 +61,14 @@ module usb_ocp_recovery_top #(
   output logic                    rec_ctrl_set_stall,
   input  logic                    rec_ctrl_xfer_done,
 
+  // C1 emergency-fallback chicken bit: mirrors DEVICE_RESET.OCP_PATH_DISABLE
+  // (regblock field, EXT/firmware write-only via rb_is_ext/swwe gating -- see
+  // rb_hwif_in assignment below) out to the VHDL arbiter (usb_pie_recovery_arb
+  // ocp_path_disable_i), which forces legacy SIE pass-through when set. Both
+  // this module and the arbiter live in utmi_clk, so no synchronizer is
+  // needed for this same-domain registered signal.
+  output logic                    rec_ocp_path_disable,
+
   //----------------------------------------------------------------------------
   // External register-bus slave (driven by AHB sub-decoder upstream).
   // Word-wide (32-bit) management path: the SoC AXI master issues word-
@@ -84,6 +92,16 @@ module usb_ocp_recovery_top #(
 
   //----------------------------------------------------------------------------
   // SoC trigger / ack and recovery sideband.
+  //
+  // CDC guardrail: this module (usb_ocp_recovery_top) lives entirely in
+  // utmi_clk. All of the sidebands below cross into the SoC-clock domain at
+  // the top-level integration point (caliptra_ss_top or equivalent) OUTSIDE
+  // this module -- verify at integration time that any NEWLY wired consumer
+  // of these signals is either synchronized (e.g. caliptra_prim_flop_2sync
+  // for level signals) or handshake-based (for pulses), not sampled
+  // combinationally/directly in a different clock domain. Do not add a new
+  // sideband here without documenting its consumer's clock domain and
+  // synchronization method.
   //----------------------------------------------------------------------------
   input  logic                    rec_trigger,
   input  logic                    soc_boot_ack,
@@ -293,6 +311,19 @@ module usb_ocp_recovery_top #(
   assign ext_rb_ack   = rb_ack & (grant_ext | (owner_q == 2'b10) | ext_in_flight_q);
   assign ext_rb_err   = rb_err & (grant_ext | (owner_q == 2'b10) | ext_in_flight_q);
 
+  // Source qualifier for A3 (rb_adapter): '1' when the CURRENT rb_cmd/rb_wr/
+  // rb_rd mux selection (above) is driven from the EXT branch, '0' for USB.
+  // MUST be derived from the same combinational mux-select condition used to
+  // drive rb_cmd/rb_wr/rb_rd (grant_ext | ext_in_flight_q, qualified by
+  // ~grant_usb since USB has priority for new accesses), NOT from the
+  // registered owner_q: a FIFO-routed EXT access (INDIRECT_FIFO_CTRL/STATUS)
+  // acks combinationally in cms_fifo the same cycle as grant_ext, so
+  // ext_in_flight_q never sets, but owner_q still registers to EXT for one
+  // cycle afterward -- using owner_q here would misclassify a USB access
+  // issued the very next cycle as EXT.
+  logic rb_is_ext;
+  assign rb_is_ext = (grant_ext | ext_in_flight_q) & ~grant_usb;
+
   //////////////////////////////////////////////////////////////////////////////
   // EP0 SETUP routing
   //
@@ -387,6 +418,7 @@ module usb_ocp_recovery_top #(
     .rb_rdata        (rb_rdata),
     .rb_ack          (rb_ack),
     .rb_err          (rb_err),
+    .rb_is_ext       (rb_is_ext),
 
     .fifo_rb_sel     (fifo_rb_sel),
     .fifo_rb_cmd     (fifo_rb_cmd),
@@ -461,6 +493,12 @@ module usb_ocp_recovery_top #(
   assign device_reset_forced = rb_hwif_out.DEVICE_RESET.FORCED_RECOVERY.value;
   assign device_reset_iface  = rb_hwif_out.DEVICE_RESET.IF_CTRL.value;
 
+  // C1 emergency-fallback chicken bit: drive out to the VHDL arbiter
+  // (usb_pie_recovery_arb ocp_path_disable_i via the vendor IP wrapper
+  // hierarchy). Same-domain (utmi_clk) registered field value; no
+  // synchronizer needed.
+  assign rec_ocp_path_disable = rb_hwif_out.DEVICE_RESET.OCP_PATH_DISABLE.value;
+
   // RECOVERY_CTRL per-byte + activate strobes.
   assign recovery_ctrl_wr_cms     = swmod_rc_cms_q;
   assign recovery_ctrl_wr_img_sel = swmod_rc_img_sel_q;
@@ -532,6 +570,12 @@ module usb_ocp_recovery_top #(
     rb_hwif_in.DEVICE_STATUS_0.PROT_ERROR.next      = device_status_protocol_err_out;
     rb_hwif_in.DEVICE_STATUS_0.REC_REASON_CODE.next = device_status_reason_out;
 
+    // DEVICE_RESET.OCP_PATH_DISABLE (emergency-fallback chicken bit):
+    // software write-enable gated by rb_is_ext so only EXT/firmware writes
+    // commit; a USB-host write is silently ignored (swwe=0), matching the
+    // same source-qualification pattern used for PROT_CAP capability writes.
+    rb_hwif_in.DEVICE_RESET.OCP_PATH_DISABLE.swwe = rb_is_ext;
+
     // RECOVERY_STATUS byte 0 (low nibble = device status, high nibble =
     // image index) + byte 1 (vendor).
     rb_hwif_in.RECOVERY_STATUS.DEV_REC_STATUS.next         = recovery_status_out[3:0];
@@ -595,7 +639,7 @@ module usb_ocp_recovery_top #(
     .clk             (clk),
     .rst             (rst),
 
-    // Async FIFO read port (dev_axi_aclk domain) -- P9-0.1-C native pop.
+    // Async FIFO read port (dev_axi_aclk domain) -- native pop.
     .clk_rd          (clk_rd),
     .rst_rd_n        (rst_rd_n),
     .fifo_rd_valid   (fifo_rd_valid),

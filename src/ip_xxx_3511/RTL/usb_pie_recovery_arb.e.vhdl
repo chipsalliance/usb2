@@ -146,6 +146,20 @@ entity usb_pie_recovery_arb is
     ctrl_xfer_done  : out std_logic;
 
     -- ------------------------------------------------------------------
+    -- Emergency-fallback chicken bit (C1): firmware-writable via
+    -- DEVICE_RESET.OCP_PATH_DISABLE (OCP recovery regblock, EXT/firmware
+    -- write-only -- see usb_ocp_recovery_rb_adapter.sv rb_is_ext / swwe
+    -- gating).  When '1', the OCP class match is forced false so no
+    -- recovery-class SETUP is ever claimed; every EP0 transfer (including
+    -- OCP-class ones) falls through to the legacy SIE / MCU EPCS path
+    -- bit-identically to the un-arbitered IP.  Reset default '0' (normal
+    -- operation).  Quasi-static: both this arbiter and the OCP recovery
+    -- regblock live in the same utmi_clk domain, so no synchronizer is
+    -- required (same-domain registered signal).
+    -- ------------------------------------------------------------------
+    ocp_path_disable_i : in  std_logic;
+
+    -- ------------------------------------------------------------------
     -- Claim status (output).  '1' while the arbiter has claimed an OCP
     -- recovery class transfer (any of SETUP / DATA / STATUS stages).
     -- The SV wrapper consumes this purely for visibility; it is NOT in

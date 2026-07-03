@@ -168,6 +168,74 @@ module usb_ocp_recovery_reg (
     typedef struct packed{
         struct packed{
             struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_IDENTIFICATION;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_FORCED_RECOVERY;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_MGMT_RESET;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_DEVICE_RESET;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_DEVICE_STATUS;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_RECOVERY_MEM_ACCESS;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_LOCAL_C_IMAGE;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_PUSH_C_IMAGE;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_INTERFACE_ISOLATION;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_HARDWARE_STATUS;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_VENDOR_COMMAND;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_FLASHLESS_BOOT;
+            struct packed{
+                logic next;
+                logic load_next;
+            } AGENT_CAPS_FIFO_CMS_SUPPORT;
+        } PROT_CAP_2;
+        struct packed{
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
+            } NUM_OF_CMS_REGIONS;
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
+            } MAX_RESP_TIME;
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
+            } HEARTBEAT_PERIOD;
+        } PROT_CAP_3;
+        struct packed{
+            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } PROT_ERROR;
@@ -185,6 +253,10 @@ module usb_ocp_recovery_reg (
                 logic [7:0] next;
                 logic load_next;
             } IF_CTRL;
+            struct packed{
+                logic next;
+                logic load_next;
+            } OCP_PATH_DISABLE;
         } DEVICE_RESET;
         struct packed{
             struct packed{
@@ -218,6 +290,58 @@ module usb_ocp_recovery_reg (
     typedef struct packed{
         struct packed{
             struct packed{
+                logic value;
+            } AGENT_CAPS_IDENTIFICATION;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_FORCED_RECOVERY;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_MGMT_RESET;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_DEVICE_RESET;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_DEVICE_STATUS;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_RECOVERY_MEM_ACCESS;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_LOCAL_C_IMAGE;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_PUSH_C_IMAGE;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_INTERFACE_ISOLATION;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_HARDWARE_STATUS;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_VENDOR_COMMAND;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_FLASHLESS_BOOT;
+            struct packed{
+                logic value;
+            } AGENT_CAPS_FIFO_CMS_SUPPORT;
+        } PROT_CAP_2;
+        struct packed{
+            struct packed{
+                logic [7:0] value;
+            } NUM_OF_CMS_REGIONS;
+            struct packed{
+                logic [7:0] value;
+            } MAX_RESP_TIME;
+            struct packed{
+                logic [7:0] value;
+            } HEARTBEAT_PERIOD;
+        } PROT_CAP_3;
+        struct packed{
+            struct packed{
                 logic [7:0] value;
             } PROT_ERROR;
         } DEVICE_STATUS_0;
@@ -231,6 +355,9 @@ module usb_ocp_recovery_reg (
             struct packed{
                 logic [7:0] value;
             } IF_CTRL;
+            struct packed{
+                logic value;
+            } OCP_PATH_DISABLE;
         } DEVICE_RESET;
         struct packed{
             struct packed{
@@ -256,6 +383,326 @@ module usb_ocp_recovery_reg (
     } field_storage_t;
     field_storage_t field_storage;
 
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value & ~decoded_wr_biten[16:16]) | (decoded_wr_data[16:16] & decoded_wr_biten[16:16]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value <= 1'h1;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value <= field_combo.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value & ~decoded_wr_biten[17:17]) | (decoded_wr_data[17:17] & decoded_wr_biten[17:17]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value <= 1'h1;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value <= field_combo.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_MGMT_RESET
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value & ~decoded_wr_biten[18:18]) | (decoded_wr_data[18:18] & decoded_wr_biten[18:18]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value <= 1'h0;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value <= field_combo.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value & ~decoded_wr_biten[19:19]) | (decoded_wr_data[19:19] & decoded_wr_biten[19:19]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value <= 1'h1;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value <= field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value & ~decoded_wr_biten[20:20]) | (decoded_wr_data[20:20] & decoded_wr_biten[20:20]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value <= 1'h1;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value <= field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value & ~decoded_wr_biten[21:21]) | (decoded_wr_data[21:21] & decoded_wr_biten[21:21]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value <= 1'h0;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value <= field_combo.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value & ~decoded_wr_biten[22:22]) | (decoded_wr_data[22:22] & decoded_wr_biten[22:22]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value <= 1'h0;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value <= field_combo.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value & ~decoded_wr_biten[23:23]) | (decoded_wr_data[23:23] & decoded_wr_biten[23:23]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value <= 1'h1;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value <= field_combo.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value & ~decoded_wr_biten[24:24]) | (decoded_wr_data[24:24] & decoded_wr_biten[24:24]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value <= 1'h0;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value <= field_combo.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value & ~decoded_wr_biten[25:25]) | (decoded_wr_data[25:25] & decoded_wr_biten[25:25]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value <= 1'h1;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value <= field_combo.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value & ~decoded_wr_biten[26:26]) | (decoded_wr_data[26:26] & decoded_wr_biten[26:26]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value <= 1'h1;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value <= field_combo.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value & ~decoded_wr_biten[27:27]) | (decoded_wr_data[27:27] & decoded_wr_biten[27:27]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value <= 1'h1;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value <= field_combo.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value & ~decoded_wr_biten[28:28]) | (decoded_wr_data[28:28] & decoded_wr_biten[28:28]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.next = next_c;
+        field_combo.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value <= 1'h1;
+        end else if(field_combo.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.load_next) begin
+            field_storage.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value <= field_combo.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_3.NUM_OF_CMS_REGIONS
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_3.NUM_OF_CMS_REGIONS.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_3 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_3.NUM_OF_CMS_REGIONS.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_3.NUM_OF_CMS_REGIONS.next = next_c;
+        field_combo.PROT_CAP_3.NUM_OF_CMS_REGIONS.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_3.NUM_OF_CMS_REGIONS.value <= 8'h1;
+        end else if(field_combo.PROT_CAP_3.NUM_OF_CMS_REGIONS.load_next) begin
+            field_storage.PROT_CAP_3.NUM_OF_CMS_REGIONS.value <= field_combo.PROT_CAP_3.NUM_OF_CMS_REGIONS.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_3.MAX_RESP_TIME
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_3.MAX_RESP_TIME.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_3 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_3.MAX_RESP_TIME.value & ~decoded_wr_biten[15:8]) | (decoded_wr_data[15:8] & decoded_wr_biten[15:8]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_3.MAX_RESP_TIME.next = next_c;
+        field_combo.PROT_CAP_3.MAX_RESP_TIME.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_3.MAX_RESP_TIME.value <= 8'h0;
+        end else if(field_combo.PROT_CAP_3.MAX_RESP_TIME.load_next) begin
+            field_storage.PROT_CAP_3.MAX_RESP_TIME.value <= field_combo.PROT_CAP_3.MAX_RESP_TIME.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.PROT_CAP_3.HEARTBEAT_PERIOD
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PROT_CAP_3 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value & ~decoded_wr_biten[23:16]) | (decoded_wr_data[23:16] & decoded_wr_biten[23:16]);
+            load_next_c = '1;
+        end
+        field_combo.PROT_CAP_3.HEARTBEAT_PERIOD.next = next_c;
+        field_combo.PROT_CAP_3.HEARTBEAT_PERIOD.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value <= 8'h0;
+        end else if(field_combo.PROT_CAP_3.HEARTBEAT_PERIOD.load_next) begin
+            field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value <= field_combo.PROT_CAP_3.HEARTBEAT_PERIOD.next;
+        end
+    end
     // Field: usb_ocp_recovery_reg.DEVICE_STATUS_0.PROT_ERROR
     always_comb begin
         automatic logic [7:0] next_c;
@@ -345,6 +792,27 @@ module usb_ocp_recovery_reg (
     end
     assign hwif_out.DEVICE_RESET.IF_CTRL.value = field_storage.DEVICE_RESET.IF_CTRL.value;
     assign hwif_out.DEVICE_RESET.IF_CTRL.swmod = decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr;
+    // Field: usb_ocp_recovery_reg.DEVICE_RESET.OCP_PATH_DISABLE
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr && hwif_in.DEVICE_RESET.OCP_PATH_DISABLE.swwe) begin // SW write
+            next_c = (field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value & ~decoded_wr_biten[24:24]) | (decoded_wr_data[24:24] & decoded_wr_biten[24:24]);
+            load_next_c = '1;
+        end
+        field_combo.DEVICE_RESET.OCP_PATH_DISABLE.next = next_c;
+        field_combo.DEVICE_RESET.OCP_PATH_DISABLE.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value <= 1'h0;
+        end else if(field_combo.DEVICE_RESET.OCP_PATH_DISABLE.load_next) begin
+            field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value <= field_combo.DEVICE_RESET.OCP_PATH_DISABLE.next;
+        end
+    end
+    assign hwif_out.DEVICE_RESET.OCP_PATH_DISABLE.value = field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value;
     // Field: usb_ocp_recovery_reg.RECOVERY_CTRL.CMS
     always_comb begin
         automatic logic [7:0] next_c;
@@ -479,23 +947,23 @@ module usb_ocp_recovery_reg (
     assign readback_array[0][31:0] = (decoded_reg_strb.PROT_CAP_0 && !decoded_req_is_wr) ? 32'h2050434f : '0;
     assign readback_array[1][31:0] = (decoded_reg_strb.PROT_CAP_1 && !decoded_req_is_wr) ? 32'h56434552 : '0;
     assign readback_array[2][15:0] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 16'h101 : '0;
-    assign readback_array[2][16:16] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
-    assign readback_array[2][17:17] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
-    assign readback_array[2][18:18] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h0 : '0;
-    assign readback_array[2][19:19] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
-    assign readback_array[2][20:20] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
-    assign readback_array[2][21:21] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h0 : '0;
-    assign readback_array[2][22:22] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h0 : '0;
-    assign readback_array[2][23:23] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
-    assign readback_array[2][24:24] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h0 : '0;
-    assign readback_array[2][25:25] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
-    assign readback_array[2][26:26] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
-    assign readback_array[2][27:27] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
-    assign readback_array[2][28:28] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 1'h1 : '0;
+    assign readback_array[2][16:16] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value : '0;
+    assign readback_array[2][17:17] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value : '0;
+    assign readback_array[2][18:18] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value : '0;
+    assign readback_array[2][19:19] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value : '0;
+    assign readback_array[2][20:20] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value : '0;
+    assign readback_array[2][21:21] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value : '0;
+    assign readback_array[2][22:22] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value : '0;
+    assign readback_array[2][23:23] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value : '0;
+    assign readback_array[2][24:24] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value : '0;
+    assign readback_array[2][25:25] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value : '0;
+    assign readback_array[2][26:26] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value : '0;
+    assign readback_array[2][27:27] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value : '0;
+    assign readback_array[2][28:28] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? field_storage.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value : '0;
     assign readback_array[2][31:29] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 3'h0 : '0;
-    assign readback_array[3][7:0] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? 8'h1 : '0;
-    assign readback_array[3][15:8] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? 8'h0 : '0;
-    assign readback_array[3][23:16] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? 8'h0 : '0;
+    assign readback_array[3][7:0] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? field_storage.PROT_CAP_3.NUM_OF_CMS_REGIONS.value : '0;
+    assign readback_array[3][15:8] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? field_storage.PROT_CAP_3.MAX_RESP_TIME.value : '0;
+    assign readback_array[3][23:16] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value : '0;
     assign readback_array[3][31:24] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? 8'h0 : '0;
     assign readback_array[4][7:0] = (decoded_reg_strb.DEVICE_ID_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_0.DESC_TYPE.next : '0;
     assign readback_array[4][15:8] = (decoded_reg_strb.DEVICE_ID_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.next : '0;
@@ -528,7 +996,8 @@ module usb_ocp_recovery_reg (
     assign readback_array[26][7:0] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? field_storage.DEVICE_RESET.RESET_CTRL.value : '0;
     assign readback_array[26][15:8] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? field_storage.DEVICE_RESET.FORCED_RECOVERY.value : '0;
     assign readback_array[26][23:16] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? field_storage.DEVICE_RESET.IF_CTRL.value : '0;
-    assign readback_array[26][31:24] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? 8'h0 : '0;
+    assign readback_array[26][24:24] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value : '0;
+    assign readback_array[26][31:25] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? 7'h0 : '0;
     assign readback_array[27][7:0] = (decoded_reg_strb.RECOVERY_CTRL && !decoded_req_is_wr) ? field_storage.RECOVERY_CTRL.CMS.value : '0;
     assign readback_array[27][15:8] = (decoded_reg_strb.RECOVERY_CTRL && !decoded_req_is_wr) ? field_storage.RECOVERY_CTRL.REC_IMG_SEL.value : '0;
     assign readback_array[27][23:16] = (decoded_reg_strb.RECOVERY_CTRL && !decoded_req_is_wr) ? field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value : '0;

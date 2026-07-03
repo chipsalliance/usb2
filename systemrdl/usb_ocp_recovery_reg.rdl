@@ -67,7 +67,7 @@ addrmap usb_ocp_recovery_reg {
         // Bit names taken from the spec capability list (mirrored in the
         // I3C reference RDL secure_firmware_recovery_interface.rdl).
         // FIFO-only agent; bit5 direct CMS-memory access cleared.
-        // Summation of set bits = 0x169B:
+        // Summation of set bits = 0x1E9B:
         //   bit0  IDENTIFICATION         0x0001
         //   bit1  FORCED_RECOVERY        0x0002
         //   bit3  DEVICE_RESET           0x0008
@@ -75,99 +75,104 @@ addrmap usb_ocp_recovery_reg {
         //   bit7  PUSH_C_IMAGE           0x0080
         //   bit9  HARDWARE_STATUS        0x0200
         //   bit10 VENDOR_COMMAND         0x0400
+        //   bit11 FLASHLESS_BOOT         0x0800
         //   bit12 FIFO_CMS_SUPPORT       0x1000
         //   ----------------------------- -------
-        //   total                        0x169B
-        // Each sub-field is a static read-only constant (sw=r; hw=na); the
+        //   total                        0x1E9B
+        // Each sub-field is firmware-configurable (sw=rw; hw=na) with the
+        // above values as RESET defaults (OCP Recovery v1.1 Sec 9.2 PROT_CAP
+        // is host-RO: a USB-host write to PROT_CAP is rejected and raises
+        // PROTOCOL_ERROR via source-qualification in
+        // usb_ocp_recovery_rb_adapter.sv / usb_ocp_recovery_top.sv).
         // ----------------------------------------------------------------
         field {
             name = "Identification";
-            desc = "AGENT_CAPS bit 0: Identification (DEVICE_ID structure). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
-            sw = r;
+            desc = "AGENT_CAPS bit 0: Identification (DEVICE_ID structure). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1, source-qualified via rb_is_ext in usb_ocp_recovery_rb_adapter.sv).";
+            sw = rw;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_IDENTIFICATION[16:16];
         field {
             name = "Forced Recovery";
-            desc = "AGENT_CAPS bit 1: Forced Recovery (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
-            sw = r;
+            desc = "AGENT_CAPS bit 1: Forced Recovery (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_FORCED_RECOVERY[17:17];
         field {
             name = "Management Reset";
-            desc = "AGENT_CAPS bit 2: Mgmt reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0.";
-            sw = r;
+            desc = "AGENT_CAPS bit 2: Mgmt reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 1'b0;
         } AGENT_CAPS_MGMT_RESET[18:18];
         field {
             name = "Device Reset";
-            desc = "AGENT_CAPS bit 3: Device Reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
-            sw = r;
+            desc = "AGENT_CAPS bit 3: Device Reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_DEVICE_RESET[19:19];
         field {
             name = "Device Status";
-            desc = "AGENT_CAPS bit 4: Device status (DEVICE_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
-            sw = r;
+            desc = "AGENT_CAPS bit 4: Device status (DEVICE_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_DEVICE_STATUS[20:20];
         field {
             name = "Recovery Memory Access";
-            desc = "AGENT_CAPS bit 5: Recovery memory access (direct CMS-memory window via INDIRECT_CTRL/STATUS/DATA, OCP commands 0x29/0x2A/0x2B). This agent is FIFO-only; the direct memory window is NOT implemented (R3 removes those register defs). Reset 0. OCP Recovery v1.1 Sec 9.2 PROT_CAP.";
-            sw = r;
+            desc = "AGENT_CAPS bit 5: Recovery memory access (direct CMS-memory window via INDIRECT_CTRL/STATUS/DATA, OCP commands 0x29/0x2A/0x2B). This agent is FIFO-only; the direct memory window is NOT implemented (the direct CMS-memory window register definitions were removed). Reset 0. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 1'b0;
         } AGENT_CAPS_RECOVERY_MEM_ACCESS[21:21];
         field {
             name = "Local C-image Support";
-            desc = "AGENT_CAPS bit 6: Local C-image support. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0.";
-            sw = r;
+            desc = "AGENT_CAPS bit 6: Local C-image support. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 1'b0;
         } AGENT_CAPS_LOCAL_C_IMAGE[22:22];
         field {
             name = "Push C-image Support";
-            desc = "AGENT_CAPS bit 7: Push C-image support (FIFO streaming boot). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
-            sw = r;
+            desc = "AGENT_CAPS bit 7: Push C-image support (FIFO streaming boot). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_PUSH_C_IMAGE[23:23];
         field {
             name = "Interface Isolation";
-            desc = "AGENT_CAPS bit 8: Interface isolation. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0.";
-            sw = r;
+            desc = "AGENT_CAPS bit 8: Interface isolation. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 1'b0;
         } AGENT_CAPS_INTERFACE_ISOLATION[24:24];
         field {
             name = "Hardware Status";
-            desc = "AGENT_CAPS bit 9: Hardware status (HW_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
-            sw = r;
+            desc = "AGENT_CAPS bit 9: Hardware status (HW_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_HARDWARE_STATUS[25:25];
         field {
             name = "Vendor Command";
-            desc = "AGENT_CAPS bit 10: Vendor command (VENDOR). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
-            sw = r;
+            desc = "AGENT_CAPS bit 10: Vendor command (VENDOR). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_VENDOR_COMMAND[26:26];
         field {
             name = "Flashless Boot";
-            desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Advertised 1: this design supports flashless boot (host writes DEVICE_RESET.FORCED_RECOVERY=0xE to enter flashless boot on the next platform reset). Kept as a static read-only constant here; the firmware-configurable capability use-model (sw=rw with reset default) is deferred to the register use-model audit task R7. Sets AGENT_CAPS = 0x1E9B.";
-            sw = r;
+            desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Advertised 1: this design supports flashless boot (host writes DEVICE_RESET.FORCED_RECOVERY=0xE to enter flashless boot on the next platform reset). Firmware-configurable (sw=rw), reset default 1; the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1). Sets AGENT_CAPS = 0x1E9B.";
+            sw = rw;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_FLASHLESS_BOOT[27:27];
         field {
             name = "FIFO CMS Support";
-            desc = "AGENT_CAPS bit 12: FIFO CMS support (INDIRECT_FIFO_CTRL). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1.";
-            sw = r;
+            desc = "AGENT_CAPS bit 12: FIFO CMS support (INDIRECT_FIFO_CTRL). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 1'b1;
         } AGENT_CAPS_FIFO_CMS_SUPPORT[28:28];
@@ -185,22 +190,22 @@ addrmap usb_ocp_recovery_reg {
         desc = "PROT_CAP bytes 12-15. OCP Recovery v1.1 Sec 9.2 PROT_CAP.";
         field {
             name = "Total number of CMS regions";
-            desc = "Byte 12 reports the number of component memory spaces. Advertises one CMS region: after R3 removed the direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA), only the FIFO-backed CMS region remains (OCP Recovery v1.1 Sec 9.2 PROT_CAP; this count includes logging, code and vendor regions). Kept as a static read-only constant here; the firmware-configurable use-model (sw=rw) is deferred to the register use-model audit task R7.";
-            sw = r;
+            desc = "Byte 12 reports the number of component memory spaces. Advertises one CMS region: after the direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA) was removed, only the FIFO-backed CMS region remains (OCP Recovery v1.1 Sec 9.2 PROT_CAP; this count includes logging, code and vendor regions). Firmware-configurable (sw=rw), reset default 1; the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1).";
+            sw = rw;
             hw = na;
             reset = 8'h01;
         } NUM_OF_CMS_REGIONS[7:0];
         field {
             name = "Maximum response time";
-            desc = "Byte 13 reports maximum response time in 2^x microseconds. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant (sw=r; hw=na).";
-            sw = r;
+            desc = "Byte 13 reports maximum response time in 2^x microseconds. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 8'h00;
         } MAX_RESP_TIME[15:8];
         field {
             name = "Heartbeat period";
-            desc = "Byte 14 reports heartbeat period in 2^x microseconds, with 0 meaning not supported. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant (sw=r; hw=na).";
-            sw = r;
+            desc = "Byte 14 reports heartbeat period in 2^x microseconds, with 0 meaning not supported. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            sw = rw;
             hw = na;
             reset = 8'h00;
         } HEARTBEAT_PERIOD[23:16];
@@ -579,12 +584,20 @@ addrmap usb_ocp_recovery_reg {
             reset = 8'h00;
         } IF_CTRL[23:16];
         field {
+            name = "OCP Recovery Path Disable";
+            desc = "Byte 3 bit 0: emergency-fallback chicken bit (C1). When set, forces the VHDL PIE arbiter (usb_pie_recovery_arb.m.vhdl, ocp_path_disable_i port) to never claim an OCP-class SETUP; every EP0 transfer (including OCP-recovery-class ones) falls through to the legacy SIE / MCU EPCS path bit-identically to the un-arbitered IP. This is a vendor-implementation-specific control bit occupying part of the DWORD-aligned padding byte (byte 3) that is not part of the OCP command payload (OCP Recovery v1.1 Sec 9.2 DEVICE_RESET command is 3 bytes). Firmware/EXT write-only: gated by swwe (rb_is_ext in usb_ocp_recovery_rb_adapter.sv / usb_ocp_recovery_top.sv), so a USB-host write is silently ignored (no PROTOCOL_ERROR -- this bit is outside the spec-defined command payload). Reset default 0 (normal operation; OCP recovery path active).";
+            sw = rw;
+            hw = r;
+            swwe = true;
+            reset = 1'b0;
+        } OCP_PATH_DISABLE[24:24];
+        field {
             name = "Reserved";
-            desc = "Byte 3 is padding introduced by the DWORD-aligned RDL view and is not part of the OCP command payload.";
+            desc = "Byte 3 bits 7:1 are reserved padding, not part of the OCP command payload.";
             sw = r;
             hw = na;
-            reset = 8'h00;
-        } RESERVED_31_24[31:24];
+            reset = 7'h00;
+        } RESERVED_31_25[31:25];
     } DEVICE_RESET @ 0x068;
 
     reg {

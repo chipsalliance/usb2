@@ -328,6 +328,8 @@ component usb_pie_recovery_arb
     ctrl_set_stall  : in  std_logic;
     ctrl_xfer_done  : out std_logic;
 
+    ocp_path_disable_i : in  std_logic;
+
     rec_claim_status            : out std_logic;
     legacy_setup_received_gated : out std_logic
   );
@@ -1557,6 +1559,7 @@ usb_pie_recovery_arb_1 : usb_pie_recovery_arb
     ctrl_in_rdy     => rec_ctrl_in_rdy,
     ctrl_set_stall  => rec_ctrl_set_stall,
     ctrl_xfer_done  => rec_ctrl_xfer_done,
+    ocp_path_disable_i          => rec_ocp_path_disable,
     rec_claim_status            => rec_ctrl_claim,
     legacy_setup_received_gated => sieint_epinfo_setup_received_gated
   );
