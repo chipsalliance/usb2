@@ -877,11 +877,9 @@ module ip_xxx_3516_hs_mem_wrapper
    //
    // Address aperture
    // ----------------
-   //   Base : SOC_USB_OCP_RECOVERY_REG_BASE_ADDR = 0x2000_2000
-   //   Size : 4 KiB (REC_APERTURE_LOG2 = 12)
-   //   - Matches the SoC address map (next slot, I3CCSR, begins at
-   //     0x2000_4000, leaving an 8 KiB gap; we use 4 KiB to leave
-   //     symmetric margin and to fit a clean per-command 256 B page).
+   //   Base : SOC_USB_OCP_RECOVERY_REG_BASE_ADDR = 0x2000_0800
+   //   Size : 2 KiB (upper half of the shared 4 KiB USB device window
+   //          0x2000_0000-0x2000_0FFF; usbhsd owns the lower 2 KiB)
    //
    // In-aperture decode
    // ------------------
@@ -933,21 +931,27 @@ module ip_xxx_3516_hs_mem_wrapper
    //   Otherwise they pass through legacy_dev_*.
    // ==================================================================
    localparam int          REC_APERTURE_LOG2 = 12;
-   localparam logic [31:0] REC_BASE_ADDR     = 32'h2000_2000;
+   localparam logic [31:0] REC_BASE_ADDR     = 32'h2000_0800;
 
    // -- Aperture decode (combinational, dev_axi_aclk domain) --
-   // The aaxi4_interconnect routes both the legacy device aperture
-   // (0x20000000-0x20000FFF) and the OCP recovery aperture
-   // (0x20002000-0x20002FFF) to the same USB DEV subordinate. Depending
-   // on whether the interconnect strips the slot base address or passes
-   // the absolute SoC address, dev_ahb_haddr for an OCP recovery access
-   // arrives as either 0x20002xxx (absolute) or 0x00002xxx (stripped).
-   // Detect on bits[13:12]==2'b10 which uniquely matches the OCP
-   // recovery 4 KiB aperture in either case (legacy aperture has
-   // bits[13:12]==2'b00 in both views).
+   // The aaxi4_interconnect routes one contiguous 4 KiB USB DEV subordinate
+   // window (0x2000_0000-0x2000_0FFF) covering BOTH the legacy device
+   // controller (lower 2 KiB, offset 0x000) and the OCP recovery register
+   // file (upper 2 KiB, offset 0x800).  Whether the interconnect strips the
+   // slot base or passes the absolute SoC address, an OCP recovery access has
+   // offset bit [11] set (>= 0x800) while a legacy device access has [11]
+   // clear (< 0x800), so bit [11] uniquely selects the recovery half in both
+   // the absolute (0x2000_08xx) and stripped (0x0000_08xx) views.
    // (rec_addr_in_window declared at the top of the module so it is
    //  visible to the uut hsel gate above.)
-   assign rec_addr_in_window = (dev_ahb_haddr[13:12] == 2'b10);
+   assign rec_addr_in_window = dev_ahb_haddr[11];
+
+   // OCP-recovery-relative byte offset: the recovery register file occupies
+   // the upper 2 KiB of the window, so strip bit [11] (the 0x800 aperture
+   // base) to recover the 0x000-0x7FF offset the OCP decode and the
+   // usb_ocp_recovery_rb_adapter cmd_base LUT are expressed in.
+   logic [11:0] rec_offset;
+   assign rec_offset = {1'b0, dev_ahb_haddr[10:0]};
 
    // -- AHB address-phase strobe to capture in IDLE --
    logic rec_ahb_addr_phase;
@@ -962,8 +966,8 @@ module ip_xxx_3516_hs_mem_wrapper
    // exposed async FIFO read port, bypassing the utmi-clk CDC bridge.
    logic addr_is_fifo_data;
    logic is_fifo_data_read;
-   assign addr_is_fifo_data = (dev_ahb_haddr[11:0] >= 12'h1A0)
-                            & (dev_ahb_haddr[11:0] <  12'h1A4);
+   assign addr_is_fifo_data = (rec_offset >= 12'h1A0)
+                            & (rec_offset <  12'h1A4);
    assign is_fifo_data_read = rec_ahb_addr_phase
                             & addr_is_fifo_data
                             & ~dev_ahb_hwrite;
@@ -1063,10 +1067,10 @@ module ip_xxx_3516_hs_mem_wrapper
        // bridge -- guarded with !is_fifo_data_read so ahb_cmd_q is NOT
        // captured (no stray INDIRECT_FIFO_DATA command) and req_axi_q is NOT raised for it.
        if (a_state_q == A_IDLE && rec_ahb_addr_phase && !is_fifo_data_read) begin
-         casez (dev_ahb_haddr[11:0])
+         casez (rec_offset)
            12'h00?:                  begin ahb_cmd_q <= OCP_CMD_PROT_CAP; ahb_off_q <= dev_ahb_haddr[3:0]; end // PROT_CAP 0x000-0x00F
            12'h01?, 12'h02?:         // DEVICE_ID 0x010-0x027 (24 B)
-             if (dev_ahb_haddr[11:0] < 12'h028) begin
+             if (rec_offset < 12'h028) begin
                ahb_cmd_q <= OCP_CMD_DEVICE_ID;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h10;
              end else begin
@@ -1074,10 +1078,10 @@ module ip_xxx_3516_hs_mem_wrapper
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h28;
              end
            12'h03?, 12'h04?, 12'h05?, 12'h06?: // DEVICE_STATUS 0x028-0x067 plus DEVICE_RESET 0x068-0x06A and RECOVERY_CTRL 0x06C-0x06E
-             if (dev_ahb_haddr[11:0] < 12'h068) begin
+             if (rec_offset < 12'h068) begin
                ahb_cmd_q <= OCP_CMD_DEVICE_STATUS;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h28;
-             end else if (dev_ahb_haddr[11:0] < 12'h06C) begin
+             end else if (rec_offset < 12'h06C) begin
                ahb_cmd_q <= OCP_CMD_DEVICE_RESET;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h68;
              end else begin
@@ -1109,25 +1113,39 @@ module ip_xxx_3516_hs_mem_wrapper
              end
            12'h1??: // 0x100-0x183 unmapped (direct CMS-memory INDIRECT_DATA window not implemented) -> invalid command sentinel;
                     // 0x184-0x18B INDIRECT_FIFO_CTRL, 0x18C-0x19F INDIRECT_FIFO_STATUS, 0x1A0-0x1A3 INDIRECT_FIFO_DATA, 0x1A4-0x1A7 VENDOR (command codes per usb_ocp_recovery_pkg / OCP Recovery v1.1 Sec 9.2).
-             if (dev_ahb_haddr[11:0] < 12'h184) begin
+             if (rec_offset < 12'h184) begin
                ahb_cmd_q <= 8'h00;
                ahb_off_q <= 8'h00;
-             end else if (dev_ahb_haddr[11:0] < 12'h18C) begin
+             end else if (rec_offset < 12'h18C) begin
                ahb_cmd_q <= OCP_CMD_INDIRECT_FIFO_CTRL;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h84;
-             end else if (dev_ahb_haddr[11:0] < 12'h1A0) begin
+             end else if (rec_offset < 12'h1A0) begin
                ahb_cmd_q <= OCP_CMD_INDIRECT_FIFO_STATUS;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'h8C;
-             end else if (dev_ahb_haddr[11:0] < 12'h1A4) begin
+             end else if (rec_offset < 12'h1A4) begin
                ahb_cmd_q <= OCP_CMD_INDIRECT_FIFO_DATA;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'hA0;
-             end else if (dev_ahb_haddr[11:0] < 12'h1A8) begin
+             end else if (rec_offset < 12'h1A8) begin
                ahb_cmd_q <= OCP_CMD_VENDOR;
                ahb_off_q <= dev_ahb_haddr[7:0] - 8'hA4;
              end else begin
                // Out-of-range above VENDOR: forward an invalid cmd so the
                // adapter raises rb_err_q (which now also raises rb_ack_q
                // to avoid bus hang).
+               ahb_cmd_q <= 8'h00;
+               ahb_off_q <= 8'h00;
+             end
+           12'h2??: // Caliptra-specific registers (NOT OCP commands):
+                    // 0x200 CALIPTRA_CTRL, 0x204 CALIPTRA_STATUS.  Reached only
+                    // on this firmware/AXI (EXT) sub-decoder path; the
+                    // rb_adapter additionally gates them on rb_is_ext.
+             if (rec_offset < 12'h204) begin
+               ahb_cmd_q <= OCP_CMD_CALIPTRA_CTRL;
+               ahb_off_q <= dev_ahb_haddr[7:0];         // base 0x200 -> offset 0x00
+             end else if (rec_offset < 12'h208) begin
+               ahb_cmd_q <= OCP_CMD_CALIPTRA_STATUS;
+               ahb_off_q <= dev_ahb_haddr[7:0] - 8'h04; // base 0x204
+             end else begin
                ahb_cmd_q <= 8'h00;
                ahb_off_q <= 8'h00;
              end

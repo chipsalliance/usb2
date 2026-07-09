@@ -61,7 +61,7 @@ module usb_ocp_recovery_top #(
   output logic                    rec_ctrl_set_stall,
   input  logic                    rec_ctrl_xfer_done,
 
-  // C1 emergency-fallback chicken bit: mirrors DEVICE_RESET.OCP_PATH_DISABLE
+  // Emergency-fallback path-disable control: mirrors CALIPTRA_CTRL.OCP_PATH_DISABLE
   // (regblock field, EXT/firmware write-only via rb_is_ext/swwe gating -- see
   // rb_hwif_in assignment below) out to the VHDL arbiter (usb_pie_recovery_arb
   // ocp_path_disable_i), which forces legacy SIE pass-through when set. Both
@@ -493,11 +493,12 @@ module usb_ocp_recovery_top #(
   assign device_reset_forced = rb_hwif_out.DEVICE_RESET.FORCED_RECOVERY.value;
   assign device_reset_iface  = rb_hwif_out.DEVICE_RESET.IF_CTRL.value;
 
-  // C1 emergency-fallback chicken bit: drive out to the VHDL arbiter
+  // Emergency-fallback OCP path-disable control: drive out to the VHDL arbiter
   // (usb_pie_recovery_arb ocp_path_disable_i via the vendor IP wrapper
-  // hierarchy). Same-domain (utmi_clk) registered field value; no
+  // hierarchy) from the Caliptra-specific CALIPTRA_CTRL register (outside the
+  // OCP command aperture). Same-domain (utmi_clk) registered field value; no
   // synchronizer needed.
-  assign rec_ocp_path_disable = rb_hwif_out.DEVICE_RESET.OCP_PATH_DISABLE.value;
+  assign rec_ocp_path_disable = rb_hwif_out.CALIPTRA_CTRL.OCP_PATH_DISABLE.value;
 
   // RECOVERY_CTRL per-byte + activate strobes.
   assign recovery_ctrl_wr_cms     = swmod_rc_cms_q;
@@ -570,11 +571,21 @@ module usb_ocp_recovery_top #(
     rb_hwif_in.DEVICE_STATUS_0.PROT_ERROR.next      = device_status_protocol_err_out;
     rb_hwif_in.DEVICE_STATUS_0.REC_REASON_CODE.next = device_status_reason_out;
 
-    // DEVICE_RESET.OCP_PATH_DISABLE (emergency-fallback chicken bit):
+    // CALIPTRA_CTRL.OCP_PATH_DISABLE (emergency-fallback path-disable control):
     // software write-enable gated by rb_is_ext so only EXT/firmware writes
     // commit; a USB-host write is silently ignored (swwe=0), matching the
     // same source-qualification pattern used for PROT_CAP capability writes.
-    rb_hwif_in.DEVICE_RESET.OCP_PATH_DISABLE.swwe = rb_is_ext;
+    // The register itself lives outside the OCP command aperture and is only
+    // reachable via the firmware/AXI sub-decoder.
+    rb_hwif_in.CALIPTRA_CTRL.OCP_PATH_DISABLE.swwe = rb_is_ext;
+
+    // CALIPTRA_STATUS (read-only, hw=w): Caliptra-specific sticky FIFO status
+    // relocated out of the non-spec INDIRECT_FIFO_STATUS byte-0 bits. Driven
+    // from the live cms_fifo sticky signals (region_reset_q via fifo_ctrl_reset,
+    // overflow_q via fifo_overflow, image_done_q via image_push_done).
+    rb_hwif_in.CALIPTRA_STATUS.REGION_RESET.next = fifo_ctrl_reset;
+    rb_hwif_in.CALIPTRA_STATUS.OVERFLOW.next     = fifo_overflow;
+    rb_hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next   = image_push_done;
 
     // RECOVERY_STATUS byte 0 (low nibble = device status, high nibble =
     // image index) + byte 1 (vendor).
@@ -612,7 +623,10 @@ module usb_ocp_recovery_top #(
 
     .s_cpuif_req          (cpuif_req),
     .s_cpuif_req_is_wr    (cpuif_req_is_wr),
-    .s_cpuif_addr         (cpuif_addr),
+    // Regblock addrmap is 2 KiB (upper half of the merged USB device window),
+    // so s_cpuif_addr is 11 bits.  cpuif_addr[11] is always 0 (every OCP /
+    // Caliptra-specific register offset is < 0x800); slice it off explicitly.
+    .s_cpuif_addr         (cpuif_addr[10:0]),
     .s_cpuif_wr_data      (cpuif_wr_data),
     .s_cpuif_wr_biten     (cpuif_wr_biten),
     .s_cpuif_req_stall_wr (/* unused */),

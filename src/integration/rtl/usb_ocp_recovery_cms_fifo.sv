@@ -248,10 +248,11 @@ module usb_ocp_recovery_cms_fifo #(
   // ------------------------------------------------------------------
   logic [7:0] status_byte_2d;
   always_comb begin
-    status_byte_2d = {3'b0,
-                      image_done_q,
-                      overflow_q,
-                      region_reset_q,
+    // OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_STATUS byte 0 defines only
+    // bit 0 (empty) and bit 1 (full); bits 7:2 are reserved.  The
+    // Caliptra-specific sticky bits (region reset / overflow / image done) are
+    // exposed separately in the CALIPTRA_STATUS register, not packed here.
+    status_byte_2d = {6'b0,
                       fifo_full,
                       fifo_empty};
   end

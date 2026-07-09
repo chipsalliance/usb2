@@ -198,8 +198,21 @@ module usb_ocp_recovery_rb_adapter (
       // / 0x188 (CTRL_1).  Writes route to cms_fifo (is_fifo_cmd above); only
       // reads land on this regblock cpuif path.
       OCP_CMD_INDIRECT_FIFO_CTRL: begin cmd_base = 12'h184; cmd_len = 16'(OCP_LEN_INDIRECT_FIFO_CTRL); end
+      // Caliptra-specific (non-OCP) registers, firmware/EXT-reachable only (see
+      // rb_is_ext guard below).  They live above the OCP command aperture.
+      OCP_CMD_CALIPTRA_CTRL:   begin cmd_base = 12'h200; cmd_len = 16'(OCP_LEN_CALIPTRA_CTRL);   end
+      OCP_CMD_CALIPTRA_STATUS: begin cmd_base = 12'h204; cmd_len = 16'(OCP_LEN_CALIPTRA_STATUS); end
       default:             is_local_cmd = 1'b0;
     endcase
+    // Defense-in-depth: the Caliptra-specific registers are addressed only by
+    // the firmware/AXI (EXT) sub-decoder; the USB ctrl_decode can never emit
+    // these command tags (they are outside OCP_CMD_MIN..MAX), but drop the
+    // local-command routing for a non-EXT access so a stray USB access can
+    // never reach them.
+    if (((rb_cmd == OCP_CMD_CALIPTRA_CTRL) ||
+         (rb_cmd == OCP_CMD_CALIPTRA_STATUS)) && !rb_is_ext) begin
+      is_local_cmd = 1'b0;
+    end
   end
 
   // Byte address of the addressed word base = cmd_base + (rb_offset << 2).

@@ -34,6 +34,16 @@ localparam logic [7:0] OCP_CMD_INDIRECT_FIFO_DATA   = 8'h2F;
 localparam logic [7:0] OCP_CMD_MIN                  = 8'h22;
 localparam logic [7:0] OCP_CMD_MAX                  = 8'h2F;
 
+// Caliptra-specific (non-OCP) register command tags.  These carry no OCP
+// wValue and are produced ONLY by the firmware/AXI (EXT) sub-decoder in
+// ip_xxx_3516_hs_mem_wrapper.sv for the design-specific register region above
+// the OCP command aperture.  They lie outside OCP_CMD_MIN..OCP_CMD_MAX, so the
+// USB host command decode (usb_ocp_recovery_ctrl_decode.sv, which only accepts
+// OCP_CMD_MIN..OCP_CMD_MAX) can never emit them: the Caliptra-specific
+// registers are firmware-reachable only.
+localparam logic [7:0] OCP_CMD_CALIPTRA_CTRL        = 8'hE0;
+localparam logic [7:0] OCP_CMD_CALIPTRA_STATUS      = 8'hE1;
+
 // ----------------------------------------------------------------------------
 // Per-command payload lengths (bytes), per OCP Recovery v1.1 Sec 9.2 Command
 // Summary.  These bound the regblock command window in the rb_adapter (the
@@ -78,6 +88,10 @@ localparam int OCP_LEN_INDIRECT_FIFO_CTRL  = 6;
 localparam int OCP_LEN_INDIRECT_FIFO_STATUS= 20;
 localparam int OCP_LEN_INDIRECT_FIFO_DATA  = 4;
 localparam int OCP_LEN_VENDOR              = 1;  // stub - reduced from spec max
+
+// Caliptra-specific (non-OCP) register payload lengths (bytes).
+localparam int OCP_LEN_CALIPTRA_CTRL       = 4;
+localparam int OCP_LEN_CALIPTRA_STATUS     = 4;
 
 // ----------------------------------------------------------------------------
 // Within-record byte offsets used by multiple modules.

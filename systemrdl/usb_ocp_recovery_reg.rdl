@@ -584,20 +584,12 @@ addrmap usb_ocp_recovery_reg {
             reset = 8'h00;
         } IF_CTRL[23:16];
         field {
-            name = "OCP Recovery Path Disable";
-            desc = "Byte 3 bit 0: emergency-fallback chicken bit (C1). When set, forces the VHDL PIE arbiter (usb_pie_recovery_arb.m.vhdl, ocp_path_disable_i port) to never claim an OCP-class SETUP; every EP0 transfer (including OCP-recovery-class ones) falls through to the legacy SIE / MCU EPCS path bit-identically to the un-arbitered IP. This is a vendor-implementation-specific control bit occupying part of the DWORD-aligned padding byte (byte 3) that is not part of the OCP command payload (OCP Recovery v1.1 Sec 9.2 DEVICE_RESET command is 3 bytes). Firmware/EXT write-only: gated by swwe (rb_is_ext in usb_ocp_recovery_rb_adapter.sv / usb_ocp_recovery_top.sv), so a USB-host write is silently ignored (no PROTOCOL_ERROR -- this bit is outside the spec-defined command payload). Reset default 0 (normal operation; OCP recovery path active).";
-            sw = rw;
-            hw = r;
-            swwe = true;
-            reset = 1'b0;
-        } OCP_PATH_DISABLE[24:24];
-        field {
             name = "Reserved";
-            desc = "Byte 3 bits 7:1 are reserved padding, not part of the OCP command payload.";
+            desc = "Byte 3 is padding introduced by the DWORD-aligned RDL view and is not part of the OCP Recovery DEVICE_RESET command payload (OCP Recovery v1.1 Sec 9.2 DEVICE_RESET is 3 bytes). Matches the clean reserved byte-3 pattern of RECOVERY_CTRL.";
             sw = r;
             hw = na;
-            reset = 7'h00;
-        } RESERVED_31_25[31:25];
+            reset = 8'h00;
+        } RESERVED_31_24[31:24];
     } DEVICE_RESET @ 0x068;
 
     reg {
@@ -796,37 +788,13 @@ addrmap usb_ocp_recovery_reg {
             reset = 1'b0;
         } FULL[1:1];
         field {
-            name = "Region Reset sticky status";
-            desc = "Byte 0 bit 2 is a USB transport sticky status bit cleared by writing 1 to status byte 0, matching usb_ocp_recovery_cms_fifo.sv.";
-            sw = r;
-            hw = w;
-            we = false;
-            reset = 1'b0;
-        } REGION_RESET[2:2];
-        field {
-            name = "Overflow sticky status";
-            desc = "Byte 0 bit 3 is a USB transport sticky overflow bit cleared by writing 1 to status byte 0, matching usb_ocp_recovery_cms_fifo.sv.";
-            sw = r;
-            hw = w;
-            we = false;
-            reset = 1'b0;
-        } OVERFLOW[3:3];
-        field {
-            name = "Image done sticky status";
-            desc = "Byte 0 bit 4 is a USB transport sticky image-done bit cleared by writing 1 to status byte 0, matching usb_ocp_recovery_cms_fifo.sv.";
-            sw = r;
-            hw = w;
-            we = false;
-            reset = 1'b0;
-        } IMAGE_DONE[4:4];
-        field {
             name = "Reserved status bits";
-            desc = "Byte 0 bits 7:5 are reserved in this USB transport view.";
+            desc = "Byte 0 bits 7:2 are reserved in the OCP Recovery INDIRECT_FIFO_STATUS command (Sec 9.2 defines only bit 0 empty and bit 1 full). Caliptra-specific FIFO status (region reset / overflow / image done) lives in the CALIPTRA_STATUS register outside the OCP command aperture.";
             sw = r;
             hw = w;
             we = false;
-            reset = 3'h0;
-        } RESERVED_7_5[7:5];
+            reset = 6'h0;
+        } RESERVED_7_2[7:2];
         field {
             name = "Region type";
             desc = "Byte 1 reports the selected FIFO region type. The current USB implementation returns 0x00 for code space. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_STATUS command summary and usb_ocp_recovery_cms_fifo.sv.";
@@ -929,16 +897,78 @@ addrmap usb_ocp_recovery_reg {
         } RESERVED_31_8[31:8];
     } VENDOR @ 0x1A4;
 
+    // Caliptra-specific registers, placed above the OCP Recovery command
+    // aperture (the highest OCP command, VENDOR, ends at 0x1A7).  These are
+    // NOT OCP Recovery commands: they carry no OCP wValue and are reached only
+    // via the firmware/AXI (EXT) sub-decoder path, never the USB host command
+    // decode, so they cannot perturb any spec-defined OCP command.
+    reg {
+        name = "Caliptra-specific control";
+        desc = "Caliptra/vendor-specific control bits outside the OCP Recovery command set. Firmware (EXT/AXI) writable only.";
+        field {
+            name = "OCP Recovery Path Disable";
+            desc = "Emergency-fallback control bit. When set, forces the VHDL PIE arbiter (usb_pie_recovery_arb.m.vhdl, ocp_path_disable_i port) to never claim an OCP-class SETUP, so every EP0 transfer falls through to the legacy SIE / MCU EPCS path bit-identically to the un-arbitered IP. Firmware/EXT write-only (swwe gated by rb_is_ext in usb_ocp_recovery_top.sv), so a USB-host write is ignored. Reset default 0 (OCP recovery path active).";
+            sw = rw;
+            hw = r;
+            swwe = true;
+            reset = 1'b0;
+        } OCP_PATH_DISABLE[0:0];
+        field {
+            name = "Reserved";
+            desc = "Reserved for future Caliptra-specific control bits.";
+            sw = r;
+            hw = na;
+            reset = 31'h0;
+        } RESERVED_31_1[31:1];
+    } CALIPTRA_CTRL @ 0x200;
+
+    reg {
+        name = "Caliptra-specific status";
+        desc = "Caliptra/vendor-specific FIFO status bits outside the OCP Recovery command set, relocated from the non-spec INDIRECT_FIFO_STATUS byte-0 bits. Read-only; driven by usb_ocp_recovery_cms_fifo.sv.";
+        field {
+            name = "Region reset sticky status";
+            desc = "Sticky: set when an INDIRECT_FIFO_CTRL region reset occurs; cleared on the next region reset. Driven by usb_ocp_recovery_cms_fifo.sv region_reset_q.";
+            sw = r;
+            hw = w;
+            we = false;
+            reset = 1'b0;
+        } REGION_RESET[0:0];
+        field {
+            name = "Overflow sticky status";
+            desc = "Sticky: set on a genuine FIFO-full overflow drop while the image is still incomplete. Driven by usb_ocp_recovery_cms_fifo.sv overflow_q.";
+            sw = r;
+            hw = w;
+            we = false;
+            reset = 1'b0;
+        } OVERFLOW[1:1];
+        field {
+            name = "Image done sticky status";
+            desc = "Sticky: set when the pushed DWORD count reaches the programmed image size. Driven by usb_ocp_recovery_cms_fifo.sv image_done_q.";
+            sw = r;
+            hw = w;
+            we = false;
+            reset = 1'b0;
+        } IMAGE_DONE[2:2];
+        field {
+            name = "Reserved";
+            desc = "Reserved for future Caliptra-specific status bits.";
+            sw = r;
+            hw = w;
+            we = false;
+            reset = 29'h0;
+        } RESERVED_31_3[31:3];
+    } CALIPTRA_STATUS @ 0x204;
+
     reg {
         name = "Window size pad";
-        desc = "Padding register used only to force the elaborated usb_ocp_recovery addrmap size to a natural 4 KiB window ending at offset 0xFFC.";
+        desc = "Padding register used only to force the elaborated usb_ocp_recovery addrmap size to a natural 2 KiB window ending at offset 0x7FC. The register block occupies the upper 2 KiB (offset 0x800-0xFFF) of the shared 4 KiB USB device subordinate window; usbhsd owns the lower 2 KiB (offset 0x000-0x7FF).";
         field {
             name = "Reserved pad";
-            desc = "Not part of the OCP Recovery register set. This filler forces a 4 KiB elaborated addrmap for the SoC AHB sub-decoder window.";
+            desc = "Not part of the OCP Recovery register set. This filler forces a 2 KiB elaborated addrmap for the SoC AHB sub-decoder window.";
             sw = r;
             hw = na;
             reset = 32'h00000000;
         } DATA[31:0];
-    } WINDOW_PAD @ 0xFFC;
+    } WINDOW_PAD @ 0x7FC;
 
 };

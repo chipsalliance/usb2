@@ -7,7 +7,7 @@ module usb_ocp_recovery_reg (
 
         input wire s_cpuif_req,
         input wire s_cpuif_req_is_wr,
-        input wire [11:0] s_cpuif_addr,
+        input wire [10:0] s_cpuif_addr,
         input wire [31:0] s_cpuif_wr_data,
         input wire [31:0] s_cpuif_wr_biten,
         output wire s_cpuif_req_stall_wr,
@@ -27,7 +27,7 @@ module usb_ocp_recovery_reg (
     //--------------------------------------------------------------------------
     logic cpuif_req;
     logic cpuif_req_is_wr;
-    logic [11:0] cpuif_addr;
+    logic [10:0] cpuif_addr;
     logic [31:0] cpuif_wr_data;
     logic [31:0] cpuif_wr_biten;
     logic cpuif_req_stall_wr;
@@ -105,6 +105,8 @@ module usb_ocp_recovery_reg (
         logic INDIRECT_FIFO_STATUS_4;
         logic INDIRECT_FIFO_DATA;
         logic VENDOR;
+        logic CALIPTRA_CTRL;
+        logic CALIPTRA_STATUS;
         logic WINDOW_PAD;
     } decoded_reg_strb_t;
     decoded_reg_strb_t decoded_reg_strb;
@@ -114,46 +116,48 @@ module usb_ocp_recovery_reg (
     logic [31:0] decoded_wr_biten;
 
     always_comb begin
-        decoded_reg_strb.PROT_CAP_0 = cpuif_req_masked & (cpuif_addr == 12'h0);
-        decoded_reg_strb.PROT_CAP_1 = cpuif_req_masked & (cpuif_addr == 12'h4);
-        decoded_reg_strb.PROT_CAP_2 = cpuif_req_masked & (cpuif_addr == 12'h8);
-        decoded_reg_strb.PROT_CAP_3 = cpuif_req_masked & (cpuif_addr == 12'hc);
-        decoded_reg_strb.DEVICE_ID_0 = cpuif_req_masked & (cpuif_addr == 12'h10);
-        decoded_reg_strb.DEVICE_ID_1 = cpuif_req_masked & (cpuif_addr == 12'h14);
-        decoded_reg_strb.DEVICE_ID_2 = cpuif_req_masked & (cpuif_addr == 12'h18);
-        decoded_reg_strb.DEVICE_ID_3 = cpuif_req_masked & (cpuif_addr == 12'h1c);
-        decoded_reg_strb.DEVICE_ID_4 = cpuif_req_masked & (cpuif_addr == 12'h20);
-        decoded_reg_strb.DEVICE_ID_5 = cpuif_req_masked & (cpuif_addr == 12'h24);
-        decoded_reg_strb.DEVICE_STATUS_0 = cpuif_req_masked & (cpuif_addr == 12'h28);
-        decoded_reg_strb.DEVICE_STATUS_1 = cpuif_req_masked & (cpuif_addr == 12'h2c);
-        decoded_reg_strb.DEVICE_STATUS_2 = cpuif_req_masked & (cpuif_addr == 12'h30);
-        decoded_reg_strb.DEVICE_STATUS_3 = cpuif_req_masked & (cpuif_addr == 12'h34);
-        decoded_reg_strb.DEVICE_STATUS_4 = cpuif_req_masked & (cpuif_addr == 12'h38);
-        decoded_reg_strb.DEVICE_STATUS_5 = cpuif_req_masked & (cpuif_addr == 12'h3c);
-        decoded_reg_strb.DEVICE_STATUS_6 = cpuif_req_masked & (cpuif_addr == 12'h40);
-        decoded_reg_strb.DEVICE_STATUS_7 = cpuif_req_masked & (cpuif_addr == 12'h44);
-        decoded_reg_strb.DEVICE_STATUS_8 = cpuif_req_masked & (cpuif_addr == 12'h48);
-        decoded_reg_strb.DEVICE_STATUS_9 = cpuif_req_masked & (cpuif_addr == 12'h4c);
-        decoded_reg_strb.DEVICE_STATUS_10 = cpuif_req_masked & (cpuif_addr == 12'h50);
-        decoded_reg_strb.DEVICE_STATUS_11 = cpuif_req_masked & (cpuif_addr == 12'h54);
-        decoded_reg_strb.DEVICE_STATUS_12 = cpuif_req_masked & (cpuif_addr == 12'h58);
-        decoded_reg_strb.DEVICE_STATUS_13 = cpuif_req_masked & (cpuif_addr == 12'h5c);
-        decoded_reg_strb.DEVICE_STATUS_14 = cpuif_req_masked & (cpuif_addr == 12'h60);
-        decoded_reg_strb.DEVICE_STATUS_15 = cpuif_req_masked & (cpuif_addr == 12'h64);
-        decoded_reg_strb.DEVICE_RESET = cpuif_req_masked & (cpuif_addr == 12'h68);
-        decoded_reg_strb.RECOVERY_CTRL = cpuif_req_masked & (cpuif_addr == 12'h6c);
-        decoded_reg_strb.RECOVERY_STATUS = cpuif_req_masked & (cpuif_addr == 12'h70);
-        decoded_reg_strb.HW_STATUS = cpuif_req_masked & (cpuif_addr == 12'h74);
-        decoded_reg_strb.INDIRECT_FIFO_CTRL_0 = cpuif_req_masked & (cpuif_addr == 12'h184);
-        decoded_reg_strb.INDIRECT_FIFO_CTRL_1 = cpuif_req_masked & (cpuif_addr == 12'h188);
-        decoded_reg_strb.INDIRECT_FIFO_STATUS_0 = cpuif_req_masked & (cpuif_addr == 12'h18c);
-        decoded_reg_strb.INDIRECT_FIFO_STATUS_1 = cpuif_req_masked & (cpuif_addr == 12'h190);
-        decoded_reg_strb.INDIRECT_FIFO_STATUS_2 = cpuif_req_masked & (cpuif_addr == 12'h194);
-        decoded_reg_strb.INDIRECT_FIFO_STATUS_3 = cpuif_req_masked & (cpuif_addr == 12'h198);
-        decoded_reg_strb.INDIRECT_FIFO_STATUS_4 = cpuif_req_masked & (cpuif_addr == 12'h19c);
-        decoded_reg_strb.INDIRECT_FIFO_DATA = cpuif_req_masked & (cpuif_addr == 12'h1a0);
-        decoded_reg_strb.VENDOR = cpuif_req_masked & (cpuif_addr == 12'h1a4);
-        decoded_reg_strb.WINDOW_PAD = cpuif_req_masked & (cpuif_addr == 12'hffc);
+        decoded_reg_strb.PROT_CAP_0 = cpuif_req_masked & (cpuif_addr == 11'h0);
+        decoded_reg_strb.PROT_CAP_1 = cpuif_req_masked & (cpuif_addr == 11'h4);
+        decoded_reg_strb.PROT_CAP_2 = cpuif_req_masked & (cpuif_addr == 11'h8);
+        decoded_reg_strb.PROT_CAP_3 = cpuif_req_masked & (cpuif_addr == 11'hc);
+        decoded_reg_strb.DEVICE_ID_0 = cpuif_req_masked & (cpuif_addr == 11'h10);
+        decoded_reg_strb.DEVICE_ID_1 = cpuif_req_masked & (cpuif_addr == 11'h14);
+        decoded_reg_strb.DEVICE_ID_2 = cpuif_req_masked & (cpuif_addr == 11'h18);
+        decoded_reg_strb.DEVICE_ID_3 = cpuif_req_masked & (cpuif_addr == 11'h1c);
+        decoded_reg_strb.DEVICE_ID_4 = cpuif_req_masked & (cpuif_addr == 11'h20);
+        decoded_reg_strb.DEVICE_ID_5 = cpuif_req_masked & (cpuif_addr == 11'h24);
+        decoded_reg_strb.DEVICE_STATUS_0 = cpuif_req_masked & (cpuif_addr == 11'h28);
+        decoded_reg_strb.DEVICE_STATUS_1 = cpuif_req_masked & (cpuif_addr == 11'h2c);
+        decoded_reg_strb.DEVICE_STATUS_2 = cpuif_req_masked & (cpuif_addr == 11'h30);
+        decoded_reg_strb.DEVICE_STATUS_3 = cpuif_req_masked & (cpuif_addr == 11'h34);
+        decoded_reg_strb.DEVICE_STATUS_4 = cpuif_req_masked & (cpuif_addr == 11'h38);
+        decoded_reg_strb.DEVICE_STATUS_5 = cpuif_req_masked & (cpuif_addr == 11'h3c);
+        decoded_reg_strb.DEVICE_STATUS_6 = cpuif_req_masked & (cpuif_addr == 11'h40);
+        decoded_reg_strb.DEVICE_STATUS_7 = cpuif_req_masked & (cpuif_addr == 11'h44);
+        decoded_reg_strb.DEVICE_STATUS_8 = cpuif_req_masked & (cpuif_addr == 11'h48);
+        decoded_reg_strb.DEVICE_STATUS_9 = cpuif_req_masked & (cpuif_addr == 11'h4c);
+        decoded_reg_strb.DEVICE_STATUS_10 = cpuif_req_masked & (cpuif_addr == 11'h50);
+        decoded_reg_strb.DEVICE_STATUS_11 = cpuif_req_masked & (cpuif_addr == 11'h54);
+        decoded_reg_strb.DEVICE_STATUS_12 = cpuif_req_masked & (cpuif_addr == 11'h58);
+        decoded_reg_strb.DEVICE_STATUS_13 = cpuif_req_masked & (cpuif_addr == 11'h5c);
+        decoded_reg_strb.DEVICE_STATUS_14 = cpuif_req_masked & (cpuif_addr == 11'h60);
+        decoded_reg_strb.DEVICE_STATUS_15 = cpuif_req_masked & (cpuif_addr == 11'h64);
+        decoded_reg_strb.DEVICE_RESET = cpuif_req_masked & (cpuif_addr == 11'h68);
+        decoded_reg_strb.RECOVERY_CTRL = cpuif_req_masked & (cpuif_addr == 11'h6c);
+        decoded_reg_strb.RECOVERY_STATUS = cpuif_req_masked & (cpuif_addr == 11'h70);
+        decoded_reg_strb.HW_STATUS = cpuif_req_masked & (cpuif_addr == 11'h74);
+        decoded_reg_strb.INDIRECT_FIFO_CTRL_0 = cpuif_req_masked & (cpuif_addr == 11'h184);
+        decoded_reg_strb.INDIRECT_FIFO_CTRL_1 = cpuif_req_masked & (cpuif_addr == 11'h188);
+        decoded_reg_strb.INDIRECT_FIFO_STATUS_0 = cpuif_req_masked & (cpuif_addr == 11'h18c);
+        decoded_reg_strb.INDIRECT_FIFO_STATUS_1 = cpuif_req_masked & (cpuif_addr == 11'h190);
+        decoded_reg_strb.INDIRECT_FIFO_STATUS_2 = cpuif_req_masked & (cpuif_addr == 11'h194);
+        decoded_reg_strb.INDIRECT_FIFO_STATUS_3 = cpuif_req_masked & (cpuif_addr == 11'h198);
+        decoded_reg_strb.INDIRECT_FIFO_STATUS_4 = cpuif_req_masked & (cpuif_addr == 11'h19c);
+        decoded_reg_strb.INDIRECT_FIFO_DATA = cpuif_req_masked & (cpuif_addr == 11'h1a0);
+        decoded_reg_strb.VENDOR = cpuif_req_masked & (cpuif_addr == 11'h1a4);
+        decoded_reg_strb.CALIPTRA_CTRL = cpuif_req_masked & (cpuif_addr == 11'h200);
+        decoded_reg_strb.CALIPTRA_STATUS = cpuif_req_masked & (cpuif_addr == 11'h204);
+        decoded_reg_strb.WINDOW_PAD = cpuif_req_masked & (cpuif_addr == 11'h7fc);
     end
 
     // Pass down signals to next stage
@@ -253,10 +257,6 @@ module usb_ocp_recovery_reg (
                 logic [7:0] next;
                 logic load_next;
             } IF_CTRL;
-            struct packed{
-                logic next;
-                logic load_next;
-            } OCP_PATH_DISABLE;
         } DEVICE_RESET;
         struct packed{
             struct packed{
@@ -284,6 +284,12 @@ module usb_ocp_recovery_reg (
                 logic load_next;
             } VENDOR_DATA;
         } VENDOR;
+        struct packed{
+            struct packed{
+                logic next;
+                logic load_next;
+            } OCP_PATH_DISABLE;
+        } CALIPTRA_CTRL;
     } field_combo_t;
     field_combo_t field_combo;
 
@@ -355,9 +361,6 @@ module usb_ocp_recovery_reg (
             struct packed{
                 logic [7:0] value;
             } IF_CTRL;
-            struct packed{
-                logic value;
-            } OCP_PATH_DISABLE;
         } DEVICE_RESET;
         struct packed{
             struct packed{
@@ -380,6 +383,11 @@ module usb_ocp_recovery_reg (
                 logic [7:0] value;
             } VENDOR_DATA;
         } VENDOR;
+        struct packed{
+            struct packed{
+                logic value;
+            } OCP_PATH_DISABLE;
+        } CALIPTRA_CTRL;
     } field_storage_t;
     field_storage_t field_storage;
 
@@ -792,27 +800,6 @@ module usb_ocp_recovery_reg (
     end
     assign hwif_out.DEVICE_RESET.IF_CTRL.value = field_storage.DEVICE_RESET.IF_CTRL.value;
     assign hwif_out.DEVICE_RESET.IF_CTRL.swmod = decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr;
-    // Field: usb_ocp_recovery_reg.DEVICE_RESET.OCP_PATH_DISABLE
-    always_comb begin
-        automatic logic [0:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr && hwif_in.DEVICE_RESET.OCP_PATH_DISABLE.swwe) begin // SW write
-            next_c = (field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value & ~decoded_wr_biten[24:24]) | (decoded_wr_data[24:24] & decoded_wr_biten[24:24]);
-            load_next_c = '1;
-        end
-        field_combo.DEVICE_RESET.OCP_PATH_DISABLE.next = next_c;
-        field_combo.DEVICE_RESET.OCP_PATH_DISABLE.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value <= 1'h0;
-        end else if(field_combo.DEVICE_RESET.OCP_PATH_DISABLE.load_next) begin
-            field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value <= field_combo.DEVICE_RESET.OCP_PATH_DISABLE.next;
-        end
-    end
-    assign hwif_out.DEVICE_RESET.OCP_PATH_DISABLE.value = field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value;
     // Field: usb_ocp_recovery_reg.RECOVERY_CTRL.CMS
     always_comb begin
         automatic logic [7:0] next_c;
@@ -926,6 +913,27 @@ module usb_ocp_recovery_reg (
             field_storage.VENDOR.VENDOR_DATA.value <= field_combo.VENDOR.VENDOR_DATA.next;
         end
     end
+    // Field: usb_ocp_recovery_reg.CALIPTRA_CTRL.OCP_PATH_DISABLE
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.CALIPTRA_CTRL && decoded_req_is_wr && hwif_in.CALIPTRA_CTRL.OCP_PATH_DISABLE.swwe) begin // SW write
+            next_c = (field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value & ~decoded_wr_biten[0:0]) | (decoded_wr_data[0:0] & decoded_wr_biten[0:0]);
+            load_next_c = '1;
+        end
+        field_combo.CALIPTRA_CTRL.OCP_PATH_DISABLE.next = next_c;
+        field_combo.CALIPTRA_CTRL.OCP_PATH_DISABLE.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value <= 1'h0;
+        end else if(field_combo.CALIPTRA_CTRL.OCP_PATH_DISABLE.load_next) begin
+            field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value <= field_combo.CALIPTRA_CTRL.OCP_PATH_DISABLE.next;
+        end
+    end
+    assign hwif_out.CALIPTRA_CTRL.OCP_PATH_DISABLE.value = field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value;
 
     //--------------------------------------------------------------------------
     // Write response
@@ -943,7 +951,7 @@ module usb_ocp_recovery_reg (
     logic [31:0] readback_data;
 
     // Assign readback values to a flattened array
-    logic [40-1:0][31:0] readback_array;
+    logic [42-1:0][31:0] readback_array;
     assign readback_array[0][31:0] = (decoded_reg_strb.PROT_CAP_0 && !decoded_req_is_wr) ? 32'h2050434f : '0;
     assign readback_array[1][31:0] = (decoded_reg_strb.PROT_CAP_1 && !decoded_req_is_wr) ? 32'h56434552 : '0;
     assign readback_array[2][15:0] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 16'h101 : '0;
@@ -996,8 +1004,7 @@ module usb_ocp_recovery_reg (
     assign readback_array[26][7:0] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? field_storage.DEVICE_RESET.RESET_CTRL.value : '0;
     assign readback_array[26][15:8] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? field_storage.DEVICE_RESET.FORCED_RECOVERY.value : '0;
     assign readback_array[26][23:16] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? field_storage.DEVICE_RESET.IF_CTRL.value : '0;
-    assign readback_array[26][24:24] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? field_storage.DEVICE_RESET.OCP_PATH_DISABLE.value : '0;
-    assign readback_array[26][31:25] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? 7'h0 : '0;
+    assign readback_array[26][31:24] = (decoded_reg_strb.DEVICE_RESET && !decoded_req_is_wr) ? 8'h0 : '0;
     assign readback_array[27][7:0] = (decoded_reg_strb.RECOVERY_CTRL && !decoded_req_is_wr) ? field_storage.RECOVERY_CTRL.CMS.value : '0;
     assign readback_array[27][15:8] = (decoded_reg_strb.RECOVERY_CTRL && !decoded_req_is_wr) ? field_storage.RECOVERY_CTRL.REC_IMG_SEL.value : '0;
     assign readback_array[27][23:16] = (decoded_reg_strb.RECOVERY_CTRL && !decoded_req_is_wr) ? field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value : '0;
@@ -1019,10 +1026,7 @@ module usb_ocp_recovery_reg (
     assign readback_array[31][31:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next : '0;
     assign readback_array[32][0:0] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.EMPTY.next : '0;
     assign readback_array[32][1:1] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.FULL.next : '0;
-    assign readback_array[32][2:2] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.REGION_RESET.next : '0;
-    assign readback_array[32][3:3] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.OVERFLOW.next : '0;
-    assign readback_array[32][4:4] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.IMAGE_DONE.next : '0;
-    assign readback_array[32][7:5] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.RESERVED_7_5.next : '0;
+    assign readback_array[32][7:2] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.RESERVED_7_2.next : '0;
     assign readback_array[32][15:8] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.REGION_TYPE.next : '0;
     assign readback_array[32][31:16] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.RESERVED_31_16.next : '0;
     assign readback_array[33][31:0] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_1 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_1.WRITE_INDEX.next : '0;
@@ -1032,7 +1036,13 @@ module usb_ocp_recovery_reg (
     assign readback_array[37][31:0] = (decoded_reg_strb.INDIRECT_FIFO_DATA && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_DATA.DATA.value : '0;
     assign readback_array[38][7:0] = (decoded_reg_strb.VENDOR && !decoded_req_is_wr) ? field_storage.VENDOR.VENDOR_DATA.value : '0;
     assign readback_array[38][31:8] = (decoded_reg_strb.VENDOR && !decoded_req_is_wr) ? 24'h0 : '0;
-    assign readback_array[39][31:0] = (decoded_reg_strb.WINDOW_PAD && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[39][0:0] = (decoded_reg_strb.CALIPTRA_CTRL && !decoded_req_is_wr) ? field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value : '0;
+    assign readback_array[39][31:1] = (decoded_reg_strb.CALIPTRA_CTRL && !decoded_req_is_wr) ? 31'h0 : '0;
+    assign readback_array[40][0:0] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.REGION_RESET.next : '0;
+    assign readback_array[40][1:1] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.OVERFLOW.next : '0;
+    assign readback_array[40][2:2] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next : '0;
+    assign readback_array[40][31:3] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.RESERVED_31_3.next : '0;
+    assign readback_array[41][31:0] = (decoded_reg_strb.WINDOW_PAD && !decoded_req_is_wr) ? 32'h0 : '0;
 
     // Reduce the array
     always_comb begin
@@ -1040,7 +1050,7 @@ module usb_ocp_recovery_reg (
         readback_done = decoded_req & ~decoded_req_is_wr;
         readback_err = '0;
         readback_data_var = '0;
-        for(int i=0; i<40; i++) readback_data_var |= readback_array[i];
+        for(int i=0; i<42; i++) readback_data_var |= readback_array[i];
         readback_data = readback_data_var;
     end
 
