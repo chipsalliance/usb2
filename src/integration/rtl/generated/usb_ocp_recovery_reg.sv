@@ -242,12 +242,6 @@ module usb_ocp_recovery_reg (
             struct packed{
                 logic [7:0] next;
                 logic load_next;
-            } PROT_ERROR;
-        } DEVICE_STATUS_0;
-        struct packed{
-            struct packed{
-                logic [7:0] next;
-                logic load_next;
             } RESET_CTRL;
             struct packed{
                 logic [7:0] next;
@@ -346,11 +340,6 @@ module usb_ocp_recovery_reg (
                 logic [7:0] value;
             } HEARTBEAT_PERIOD;
         } PROT_CAP_3;
-        struct packed{
-            struct packed{
-                logic [7:0] value;
-            } PROT_ERROR;
-        } DEVICE_STATUS_0;
         struct packed{
             struct packed{
                 logic [7:0] value;
@@ -711,29 +700,6 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value <= field_combo.PROT_CAP_3.HEARTBEAT_PERIOD.next;
         end
     end
-    // Field: usb_ocp_recovery_reg.DEVICE_STATUS_0.PROT_ERROR
-    always_comb begin
-        automatic logic [7:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.DEVICE_STATUS_0.PROT_ERROR.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) begin // SW clear on read
-            next_c = '0;
-            load_next_c = '1;
-        end else begin // HW Write
-            next_c = hwif_in.DEVICE_STATUS_0.PROT_ERROR.next;
-            load_next_c = '1;
-        end
-        field_combo.DEVICE_STATUS_0.PROT_ERROR.next = next_c;
-        field_combo.DEVICE_STATUS_0.PROT_ERROR.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.DEVICE_STATUS_0.PROT_ERROR.value <= 8'h0;
-        end else if(field_combo.DEVICE_STATUS_0.PROT_ERROR.load_next) begin
-            field_storage.DEVICE_STATUS_0.PROT_ERROR.value <= field_combo.DEVICE_STATUS_0.PROT_ERROR.next;
-        end
-    end
     // Field: usb_ocp_recovery_reg.DEVICE_RESET.RESET_CTRL
     always_comb begin
         automatic logic [7:0] next_c;
@@ -982,7 +948,7 @@ module usb_ocp_recovery_reg (
     assign readback_array[8][31:0] = (decoded_reg_strb.DEVICE_ID_4 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_4.DATA_19_16.next : '0;
     assign readback_array[9][31:0] = (decoded_reg_strb.DEVICE_ID_5 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_5.DATA_23_20.next : '0;
     assign readback_array[10][7:0] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_0.DEV_STATUS.next : '0;
-    assign readback_array[10][15:8] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? field_storage.DEVICE_STATUS_0.PROT_ERROR.value : '0;
+    assign readback_array[10][15:8] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_0.PROT_ERROR.next : '0;
     assign readback_array[10][31:16] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_0.REC_REASON_CODE.next : '0;
     assign readback_array[11][15:0] = (decoded_reg_strb.DEVICE_STATUS_1 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_1.HEARTBEAT.next : '0;
     assign readback_array[11][23:16] = (decoded_reg_strb.DEVICE_STATUS_1 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_1.VENDOR_STATUS_LENGTH.next : '0;

@@ -39,7 +39,7 @@
 // Control plane (FSM):
 //   S_IDLE  - wait for SETUP; classify.
 //   S_WRITE - stream OUT words to the reg bus.
-//   S_RLAT  - issue rb_rd, wait for rb_ack.
+//   S_RLAT  - issue rb_rd and latch a same-cycle combinational read response.
 //   S_READ  - drive IN word; advance on ctrl_in_rdy.
 //   S_RDONE - drive a zero-length ctrl_in_last terminating beat for a clean
 //             short-packet end (rb_err past the command's valid length).
@@ -66,6 +66,7 @@ module usb_ocp_recovery_ctrl_decode (
   input  logic        ctrl_in_rdy,
   output logic        ctrl_set_stall,
   input  logic        ctrl_xfer_done,
+  output logic        proto_err_rd_pulse,
 
   // to/from regs (A3) -- word-wide reg bus, rb_offset is a WORD index
   output logic [7:0]  rb_cmd,
@@ -128,6 +129,7 @@ module usb_ocp_recovery_ctrl_decode (
   // Latched SETUP fields.  offset_q is a WORD index; length_q is wLength bytes.
   //---------------------------------------------------------------------------
   logic [7:0]  cmd_q,     cmd_d;
+  logic        is_in_q,   is_in_d;
   logic [15:0] length_q,  length_d;
   logic [15:0] offset_q,  offset_d;     // word index
   logic [31:0] rdata_q,   rdata_d;
@@ -166,12 +168,14 @@ module usb_ocp_recovery_ctrl_decode (
     if (rst) begin
       state_q  <= S_IDLE;
       cmd_q    <= '0;
+      is_in_q  <= 1'b0;
       length_q <= '0;
       offset_q <= '0;
       rdata_q  <= '0;
     end else begin
       state_q  <= state_d;
       cmd_q    <= cmd_d;
+      is_in_q  <= is_in_d;
       length_q <= length_d;
       offset_q <= offset_d;
       rdata_q  <= rdata_d;
@@ -185,6 +189,7 @@ module usb_ocp_recovery_ctrl_decode (
     // Defaults
     state_d        = state_q;
     cmd_d          = cmd_q;
+    is_in_d        = is_in_q;
     length_d       = length_q;
     offset_d       = offset_q;
     rdata_d        = rdata_q;
@@ -195,6 +200,11 @@ module usb_ocp_recovery_ctrl_decode (
     ctrl_in_vld    = 1'b0;
     ctrl_in_last   = 1'b0;
     ctrl_set_stall = 1'b0;
+    proto_err_rd_pulse = ctrl_xfer_done
+                       && (state_q == S_WAIT)
+                       && is_in_q
+                       && (cmd_q == OCP_CMD_DEVICE_STATUS)
+                       && (length_q >= 16'd2);
 
     rb_cmd         = cmd_q;
     rb_offset      = offset_q;
@@ -213,6 +223,7 @@ module usb_ocp_recovery_ctrl_decode (
       S_IDLE: begin
         if (setup_pkt_vld) begin
           cmd_d    = cmd_code_s;
+          is_in_d  = is_in_s;
           offset_d = 16'h0000;
           length_d = wlength_s;
           if (!ocp_req_valid_s) begin
@@ -249,7 +260,10 @@ module usb_ocp_recovery_ctrl_decode (
       end
 
       //-----------------------------------------------------------------------
-      // IN data stage step 1: issue rb_rd, wait for rb_ack.
+      // IN data stage step 1: issue exactly one rb_rd and latch its
+      // combinational response. The adapter retains its one-shot cpuif_req
+      // discipline, while the decoder keeps rdata_q as the stable skid
+      // register presented in S_READ if ctrl_in_rdy backpressures.
       //
       // rb_err semantics on the read path:
       //   - rb_err with offset_q == 0: the very first word of the command is
@@ -353,6 +367,15 @@ module usb_ocp_recovery_ctrl_decode (
       if (rb_ack) begin
         assert (!$isunknown(rb_rdata))
           else $error("ctrl_decode: rb_rdata X with ack high");
+      end
+      if (ctrl_in_vld && !ctrl_in_rdy) begin
+        assert ($stable(rdata_q))
+          else $error("ctrl_decode: rdata_q changed while ctrl_in was backpressured");
+      end
+      if (proto_err_rd_pulse) begin
+        assert (ctrl_xfer_done && (state_q == S_WAIT) && is_in_q
+                && (cmd_q == OCP_CMD_DEVICE_STATUS))
+          else $error("ctrl_decode: PROTOCOL_ERROR clear was not a completed IN DEVICE_STATUS transfer");
       end
       if (setup_pkt_vld) begin
         assert (is_class_s)

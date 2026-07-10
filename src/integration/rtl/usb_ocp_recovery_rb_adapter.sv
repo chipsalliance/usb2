@@ -107,13 +107,9 @@ module usb_ocp_recovery_rb_adapter (
   // HW_STATUS sideband write pulse to A5 FSM.  HW_STATUS regblock fields are
   // hw=w / we=false (host writes ignored at the regblock), so the host write
   // is converted to a sideband pulse + low byte rather than a cpuif write.
-  // proto_err_rd_pulse implements PROTOCOL_ERROR onread=rclr (OCP Recovery
-  // v1.1 Sec 9.2): pulse on a successful read of the DEVICE_STATUS
-  // word that contains PROT_ERROR (byte 1 -> word 0).
   // --------------------------------------------------------------------------
   output logic        hw_status_wr,
   output logic [7:0]  hw_status_wdata,
-  output logic        proto_err_rd_pulse,
 
   // Unsupported-command detect pulse to A5 FSM (OCP Recovery v1.1 Sec 9.1:
   // unsupported command MUST set DEVICE_STATUS.PROTOCOL_ERROR).  High for one
@@ -145,10 +141,6 @@ module usb_ocp_recovery_rb_adapter (
   // wValue decode has a single definition (OCP Recovery v1.1 Sec 9.2).
   // --------------------------------------------------------------------------
   import usb_ocp_recovery_pkg::*;
-
-  // DEVICE_STATUS word 0 holds DEV_STATUS (byte 0) + PROT_ERROR (byte 1)
-  // + REC_REASON_CODE (bytes 2..3); reading word 0 read-clears PROTOCOL_ERROR.
-  localparam logic [15:0] WOFF_DS_WORD0 = 16'd0;
 
   // --------------------------------------------------------------------------
   // FIFO-routing decode
@@ -296,7 +288,9 @@ module usb_ocp_recovery_rb_adapter (
   // Single-cycle request: gated by ~regblock_busy_q so the held-level access
   // does not re-fire cpuif_req (and therefore swmod) on the ack cycle.
   logic cpuif_fire;
+  logic local_read_fire;
   assign cpuif_fire     = (do_cpuif_wr | do_cpuif_rd) & ~regblock_busy_q;
+  assign local_read_fire = do_cpuif_rd & ~regblock_busy_q;
   assign cpuif_req      = cpuif_fire;
   assign cpuif_req_is_wr= rb_wr;
   assign cpuif_addr     = cmd_base + word_base_byte[11:0];
@@ -389,7 +383,6 @@ module usb_ocp_recovery_rb_adapter (
   logic [31:0] rb_rdata_q;
   logic        hw_status_wr_q;
   logic [7:0]  hw_status_wdata_q;
-  logic        proto_err_rd_pulse_q;
   logic        unsupported_cmd_pulse_q;
 
   always_ff @(posedge clk) begin
@@ -400,7 +393,6 @@ module usb_ocp_recovery_rb_adapter (
       regblock_busy_q      <= 1'b0;
       hw_status_wr_q       <= 1'b0;
       hw_status_wdata_q    <= 8'h00;
-      proto_err_rd_pulse_q <= 1'b0;
       unsupported_cmd_pulse_q <= 1'b0;
     end else begin
       // Defaults: handshake / pulses low.
@@ -408,7 +400,6 @@ module usb_ocp_recovery_rb_adapter (
       rb_err_q             <= 1'b0;
       rb_rdata_q           <= '0;
       hw_status_wr_q       <= 1'b0;
-      proto_err_rd_pulse_q <= 1'b0;
       // PROTOCOL_ERROR report (Sec 9.1) is source-qualified: an EXT/firmware
       // access to an unsupported command is dropped without raising the
       // USB-host-visible protocol error; host_ro_write_violation is
@@ -422,12 +413,6 @@ module usb_ocp_recovery_rb_adapter (
         if (do_cpuif_rd) begin
           rb_rdata_q <= cpuif_rd_data;
           rb_err_q   <= cpuif_rd_err;
-          // PROTOCOL_ERROR onread=rclr (OCP Recovery v1.1 Sec 9.2):
-          // pulse on a successful read of the DEVICE_STATUS word holding
-          // PROT_ERROR (byte 1 -> word 0).
-          if ((rb_cmd == OCP_CMD_DEVICE_STATUS) && (rb_offset == WOFF_DS_WORD0)) begin
-            proto_err_rd_pulse_q <= 1'b1;
-          end
         end else begin
           rb_err_q <= cpuif_wr_err;
         end
@@ -456,14 +441,23 @@ module usb_ocp_recovery_rb_adapter (
   // Outputs.  Regblock / FIFO paths are mutually exclusive by is_fifo_cmd.
   //   - FIFO commands: ack/err/rdata come combinationally from A4 (cms_fifo),
   //     which now owns the word-level handshake and the byte-SRAM sequencing.
-  //   - Local (regblock / sideband) commands: the registered handshake above.
+  //   - Local writes and non-cpuif completions: the registered handshake above.
+  //   - Local reads: cpuif_rd_data/ack are combinational in the one-shot
+  //     request cycle, so return them immediately. This removes the otherwise
+  //     unnecessary rb_ack_q cycle while regblock_busy_q still prevents a
+  //     held rb_rd level from issuing more than one cpuif request.
   // --------------------------------------------------------------------------
-  assign rb_ack             = is_fifo_cmd ? fifo_rb_ack   : rb_ack_q;
-  assign rb_err             = is_fifo_cmd ? fifo_rb_err   : rb_err_q;
-  assign rb_rdata           = is_fifo_cmd ? fifo_rb_rdata : rb_rdata_q;
+  assign rb_ack             = is_fifo_cmd ? fifo_rb_ack
+                            : local_read_fire ? cpuif_rd_ack
+                            : rb_ack_q;
+  assign rb_err             = is_fifo_cmd ? fifo_rb_err
+                            : local_read_fire ? cpuif_rd_err
+                            : rb_err_q;
+  assign rb_rdata           = is_fifo_cmd ? fifo_rb_rdata
+                            : local_read_fire ? cpuif_rd_data
+                            : rb_rdata_q;
   assign hw_status_wr       = hw_status_wr_q;
   assign hw_status_wdata    = hw_status_wdata_q;
-  assign proto_err_rd_pulse = proto_err_rd_pulse_q;
   assign unsupported_cmd_pulse = unsupported_cmd_pulse_q;
 
   // --------------------------------------------------------------------------
@@ -478,6 +472,10 @@ module usb_ocp_recovery_rb_adapter (
       if (rb_wr | rb_rd) begin
         assert (!$isunknown({rb_cmd, rb_offset}))
           else $error("usb_ocp_recovery_rb_adapter: X on rb_cmd/rb_offset during access");
+      end
+      if (local_read_fire) begin
+        assert (cpuif_req && cpuif_rd_ack)
+          else $error("usb_ocp_recovery_rb_adapter: local read did not receive a same-cycle cpuif ack");
       end
     end
   end

@@ -83,10 +83,10 @@ module usb_ocp_recovery_fsm (
   // regs block can hw-clear recovery_ctrl_activate_q.
   output logic        recovery_ctrl_activate_consume,
 
-  // PROTOCOL_ERROR rclr pulse from regs (OCP v1.1 Section 9.2 /
-  // i3c-rdl line 274: onread = rclr).  High for one cycle in the ack window
-  // of a successful host read of DEVICE_STATUS byte 1.  Clears the sticky
-  // proto-err latch driving device_status_protocol_err_out.
+  // PROTOCOL_ERROR clear pulse from the control decoder. OCP Recovery v1.1
+  // Sec 9.2 defines the clear-on-read behavior for the Recovery Agent USB
+  // command; this pulses only after the Agent completes an IN DEVICE_STATUS
+  // transfer that includes Byte 1, so firmware reads are non-destructive.
   input  logic        proto_err_rd_pulse,
 
   // Unsupported-command detect pulse from the reg-bus adapter (OCP Recovery
@@ -189,9 +189,8 @@ module usb_ocp_recovery_fsm (
   logic       reset_pulse_q, reset_pulse_d; // 1-cycle device_reset_req pulse
   // Sticky PROTOCOL_ERROR latch (OCP Recovery v1.1 Section 9.2).
   // Set when the FSM enters S_ERROR (rising edge of size_err/auth_err);
-  // cleared on proto_err_rd_pulse (read-clear by host).  Drives
-  // device_status_protocol_err_out so the regs block presents the spec
-  // rclr semantic without an extra read-side flop.
+  // cleared on proto_err_rd_pulse (completed Recovery Agent read). Drives
+  // device_status_protocol_err_out for the RDL hw=w status mirror.
   logic [7:0] proto_err_q, proto_err_d;
 
   // Detection of device-reset request: Sec 7 - any non-zero DEVICE_RESET ctrl
@@ -352,11 +351,10 @@ module usb_ocp_recovery_fsm (
       end
     endcase
 
-    // C5: PROTOCOL_ERROR sticky set/clear (placed after the case so the
-    // _d signals reflect this cycle's transitions).  Set when the FSM is
-    // about to enter S_ERROR from any other state; clear on host read
-    // (rclr) pulse from the regs block.  Clear wins over set in the same
-    // cycle so the host always observes the latest "drain" semantics.
+    // PROTOCOL_ERROR sticky set/clear is after the state case so _d reflects
+    // this cycle's state transition. Clear on a completed Recovery Agent read
+    // wins over a same-cycle set, implementing the OCP Recovery v1.1 Sec 9.2
+    // clear-on-read behavior.
     if ((state_d == S_ERROR) && (state_q != S_ERROR)) begin
       if (auth_err_d) begin
         proto_err_d = 8'h02;  // auth failure
@@ -370,9 +368,9 @@ module usb_ocp_recovery_fsm (
     // DEVICE_STATUS byte 1 = 0x01).  Set when the host accesses an unsupported OCP
     // command code.  Guarded by proto_err_d == 0 so it does NOT overwrite an
     // existing sticky error (e.g. a recovery auth/size/generic failure or a
-    // same-cycle S_ERROR set): the first error stays latched until the host
-    // clears it by reading DEVICE_STATUS.  Placed before the rclr clear so a
-    // host read of DEVICE_STATUS in the same cycle still wins (clear-on-read).
+    // same-cycle S_ERROR set): the first error stays latched until the
+    // Recovery Agent completes a DEVICE_STATUS read. Placed before the clear
+    // so a same-cycle completed read still wins (clear-on-read).
     // unsupported_cmd_set is already USB-host source-qualified by the
     // reg-bus adapter (usb_ocp_recovery_rb_adapter.sv): an EXT/firmware
     // access to an unsupported command is dropped without asserting this
@@ -394,7 +392,7 @@ module usb_ocp_recovery_fsm (
   always_comb begin
     // Defaults (healthy/idle)
     device_status_out              = DS_DEVICE_HEALTHY;
-    // C5: PROTOCOL_ERROR sourced from sticky proto_err_q (rclr semantic).
+    // PROTOCOL_ERROR is sourced from the sticky latch.
     device_status_protocol_err_out = proto_err_q;
     device_status_reason_out       = 16'h0000;
     rec_status_code                = RS_NOT_IN_RECOVERY;
