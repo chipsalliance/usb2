@@ -380,6 +380,9 @@ module usb_ocp_recovery_reg (
     } field_storage_t;
     field_storage_t field_storage;
 
+    assign hwif_out.PROT_CAP_0.REC_MAGIC_STRING_0.value = 32'h2050434f;
+    assign hwif_out.PROT_CAP_1.REC_MAGIC_STRING_1.value = 32'h56434552;
+    assign hwif_out.PROT_CAP_2.REC_PROT_VERSION.value = 16'h101;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION
     always_comb begin
         automatic logic [0:0] next_c;
@@ -400,6 +403,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value <= field_combo.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value = field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY
     always_comb begin
         automatic logic [0:0] next_c;
@@ -420,6 +424,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value <= field_combo.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value = field_storage.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_MGMT_RESET
     always_comb begin
         automatic logic [0:0] next_c;
@@ -440,6 +445,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value <= field_combo.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value = field_storage.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET
     always_comb begin
         automatic logic [0:0] next_c;
@@ -460,6 +466,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value <= field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value = field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS
     always_comb begin
         automatic logic [0:0] next_c;
@@ -480,6 +487,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value <= field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value = field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS
     always_comb begin
         automatic logic [0:0] next_c;
@@ -500,6 +508,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value <= field_combo.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value = field_storage.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE
     always_comb begin
         automatic logic [0:0] next_c;
@@ -520,6 +529,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value <= field_combo.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value = field_storage.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE
     always_comb begin
         automatic logic [0:0] next_c;
@@ -540,6 +550,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value <= field_combo.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value = field_storage.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION
     always_comb begin
         automatic logic [0:0] next_c;
@@ -560,6 +571,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value <= field_combo.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value = field_storage.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS
     always_comb begin
         automatic logic [0:0] next_c;
@@ -580,6 +592,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value <= field_combo.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value = field_storage.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND
     always_comb begin
         automatic logic [0:0] next_c;
@@ -600,6 +613,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value <= field_combo.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value = field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT
     always_comb begin
         automatic logic [0:0] next_c;
@@ -620,6 +634,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value <= field_combo.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value = field_storage.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT
     always_comb begin
         automatic logic [0:0] next_c;
@@ -640,6 +655,8 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value <= field_combo.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.next;
         end
     end
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value = field_storage.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value;
+    assign hwif_out.PROT_CAP_2.AGENT_CAPS_RESERVED.value = 3'h0;
     // Field: usb_ocp_recovery_reg.PROT_CAP_3.NUM_OF_CMS_REGIONS
     always_comb begin
         automatic logic [7:0] next_c;
@@ -660,6 +677,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_3.NUM_OF_CMS_REGIONS.value <= field_combo.PROT_CAP_3.NUM_OF_CMS_REGIONS.next;
         end
     end
+    assign hwif_out.PROT_CAP_3.NUM_OF_CMS_REGIONS.value = field_storage.PROT_CAP_3.NUM_OF_CMS_REGIONS.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_3.MAX_RESP_TIME
     always_comb begin
         automatic logic [7:0] next_c;
@@ -680,6 +698,7 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_3.MAX_RESP_TIME.value <= field_combo.PROT_CAP_3.MAX_RESP_TIME.next;
         end
     end
+    assign hwif_out.PROT_CAP_3.MAX_RESP_TIME.value = field_storage.PROT_CAP_3.MAX_RESP_TIME.value;
     // Field: usb_ocp_recovery_reg.PROT_CAP_3.HEARTBEAT_PERIOD
     always_comb begin
         automatic logic [7:0] next_c;
@@ -700,6 +719,8 @@ module usb_ocp_recovery_reg (
             field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value <= field_combo.PROT_CAP_3.HEARTBEAT_PERIOD.next;
         end
     end
+    assign hwif_out.PROT_CAP_3.HEARTBEAT_PERIOD.value = field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value;
+    assign hwif_out.PROT_CAP_3.RESERVED_31_24.value = 8'h0;
     // Field: usb_ocp_recovery_reg.DEVICE_RESET.RESET_CTRL
     always_comb begin
         automatic logic [7:0] next_c;
@@ -708,6 +729,9 @@ module usb_ocp_recovery_reg (
         load_next_c = '0;
         if(decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr) begin // SW write
             next_c = (field_storage.DEVICE_RESET.RESET_CTRL.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
+            load_next_c = '1;
+        end else if(hwif_in.DEVICE_RESET.RESET_CTRL.we) begin // HW Write - we
+            next_c = hwif_in.DEVICE_RESET.RESET_CTRL.next;
             load_next_c = '1;
         end
         field_combo.DEVICE_RESET.RESET_CTRL.next = next_c;
@@ -721,7 +745,6 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.DEVICE_RESET.RESET_CTRL.value = field_storage.DEVICE_RESET.RESET_CTRL.value;
-    assign hwif_out.DEVICE_RESET.RESET_CTRL.swmod = decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr;
     // Field: usb_ocp_recovery_reg.DEVICE_RESET.FORCED_RECOVERY
     always_comb begin
         automatic logic [7:0] next_c;
@@ -730,6 +753,9 @@ module usb_ocp_recovery_reg (
         load_next_c = '0;
         if(decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr) begin // SW write
             next_c = (field_storage.DEVICE_RESET.FORCED_RECOVERY.value & ~decoded_wr_biten[15:8]) | (decoded_wr_data[15:8] & decoded_wr_biten[15:8]);
+            load_next_c = '1;
+        end else if(hwif_in.DEVICE_RESET.FORCED_RECOVERY.we) begin // HW Write - we
+            next_c = hwif_in.DEVICE_RESET.FORCED_RECOVERY.next;
             load_next_c = '1;
         end
         field_combo.DEVICE_RESET.FORCED_RECOVERY.next = next_c;
@@ -743,7 +769,6 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.DEVICE_RESET.FORCED_RECOVERY.value = field_storage.DEVICE_RESET.FORCED_RECOVERY.value;
-    assign hwif_out.DEVICE_RESET.FORCED_RECOVERY.swmod = decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr;
     // Field: usb_ocp_recovery_reg.DEVICE_RESET.IF_CTRL
     always_comb begin
         automatic logic [7:0] next_c;
@@ -752,6 +777,9 @@ module usb_ocp_recovery_reg (
         load_next_c = '0;
         if(decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr) begin // SW write
             next_c = (field_storage.DEVICE_RESET.IF_CTRL.value & ~decoded_wr_biten[23:16]) | (decoded_wr_data[23:16] & decoded_wr_biten[23:16]);
+            load_next_c = '1;
+        end else if(hwif_in.DEVICE_RESET.IF_CTRL.we) begin // HW Write - we
+            next_c = hwif_in.DEVICE_RESET.IF_CTRL.next;
             load_next_c = '1;
         end
         field_combo.DEVICE_RESET.IF_CTRL.next = next_c;
@@ -765,7 +793,6 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.DEVICE_RESET.IF_CTRL.value = field_storage.DEVICE_RESET.IF_CTRL.value;
-    assign hwif_out.DEVICE_RESET.IF_CTRL.swmod = decoded_reg_strb.DEVICE_RESET && decoded_req_is_wr;
     // Field: usb_ocp_recovery_reg.RECOVERY_CTRL.CMS
     always_comb begin
         automatic logic [7:0] next_c;
@@ -774,6 +801,9 @@ module usb_ocp_recovery_reg (
         load_next_c = '0;
         if(decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr) begin // SW write
             next_c = (field_storage.RECOVERY_CTRL.CMS.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
+            load_next_c = '1;
+        end else if(hwif_in.RECOVERY_CTRL.CMS.we) begin // HW Write - we
+            next_c = hwif_in.RECOVERY_CTRL.CMS.next;
             load_next_c = '1;
         end
         field_combo.RECOVERY_CTRL.CMS.next = next_c;
@@ -787,7 +817,6 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.RECOVERY_CTRL.CMS.value = field_storage.RECOVERY_CTRL.CMS.value;
-    assign hwif_out.RECOVERY_CTRL.CMS.swmod = decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr;
     // Field: usb_ocp_recovery_reg.RECOVERY_CTRL.REC_IMG_SEL
     always_comb begin
         automatic logic [7:0] next_c;
@@ -796,6 +825,9 @@ module usb_ocp_recovery_reg (
         load_next_c = '0;
         if(decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr) begin // SW write
             next_c = (field_storage.RECOVERY_CTRL.REC_IMG_SEL.value & ~decoded_wr_biten[15:8]) | (decoded_wr_data[15:8] & decoded_wr_biten[15:8]);
+            load_next_c = '1;
+        end else if(hwif_in.RECOVERY_CTRL.REC_IMG_SEL.we) begin // HW Write - we
+            next_c = hwif_in.RECOVERY_CTRL.REC_IMG_SEL.next;
             load_next_c = '1;
         end
         field_combo.RECOVERY_CTRL.REC_IMG_SEL.next = next_c;
@@ -809,7 +841,6 @@ module usb_ocp_recovery_reg (
         end
     end
     assign hwif_out.RECOVERY_CTRL.REC_IMG_SEL.value = field_storage.RECOVERY_CTRL.REC_IMG_SEL.value;
-    assign hwif_out.RECOVERY_CTRL.REC_IMG_SEL.swmod = decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr;
     // Field: usb_ocp_recovery_reg.RECOVERY_CTRL.ACTIVATE_REC_IMG
     always_comb begin
         automatic logic [7:0] next_c;
@@ -819,8 +850,8 @@ module usb_ocp_recovery_reg (
         if(decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr) begin // SW write
             next_c = (field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value & ~decoded_wr_biten[23:16]) | (decoded_wr_data[23:16] & decoded_wr_biten[23:16]);
             load_next_c = '1;
-        end else if(hwif_in.RECOVERY_CTRL.ACTIVATE_REC_IMG.hwclr) begin // HW Clear
-            next_c = '0;
+        end else if(hwif_in.RECOVERY_CTRL.ACTIVATE_REC_IMG.we) begin // HW Write - we
+            next_c = hwif_in.RECOVERY_CTRL.ACTIVATE_REC_IMG.next;
             load_next_c = '1;
         end
         field_combo.RECOVERY_CTRL.ACTIVATE_REC_IMG.next = next_c;
@@ -868,6 +899,9 @@ module usb_ocp_recovery_reg (
         if(decoded_reg_strb.VENDOR && decoded_req_is_wr) begin // SW write
             next_c = (field_storage.VENDOR.VENDOR_DATA.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
             load_next_c = '1;
+        end else if(hwif_in.VENDOR.VENDOR_DATA.we) begin // HW Write - we
+            next_c = hwif_in.VENDOR.VENDOR_DATA.next;
+            load_next_c = '1;
         end
         field_combo.VENDOR.VENDOR_DATA.next = next_c;
         field_combo.VENDOR.VENDOR_DATA.load_next = load_next_c;
@@ -879,6 +913,7 @@ module usb_ocp_recovery_reg (
             field_storage.VENDOR.VENDOR_DATA.value <= field_combo.VENDOR.VENDOR_DATA.next;
         end
     end
+    assign hwif_out.VENDOR.VENDOR_DATA.value = field_storage.VENDOR.VENDOR_DATA.value;
     // Field: usb_ocp_recovery_reg.CALIPTRA_CTRL.OCP_PATH_DISABLE
     always_comb begin
         automatic logic [0:0] next_c;

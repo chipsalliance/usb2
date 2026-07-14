@@ -34,7 +34,7 @@ addrmap usb_ocp_recovery_reg {
             name = "Recovery protocol magic string 0";
             desc = "ASCII bytes 0-3 of the OCP RECV magic string. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
             sw = r;
-            hw = na;
+            hw = r;
             reset = 32'h2050434F;
         } REC_MAGIC_STRING_0[31:0];
     } PROT_CAP_0 @ 0x000;
@@ -46,7 +46,7 @@ addrmap usb_ocp_recovery_reg {
             name = "Recovery protocol magic string 1";
             desc = "ASCII bytes 4-7 of the OCP RECV magic string. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
             sw = r;
-            hw = na;
+            hw = r;
             reset = 32'h56434552;
         } REC_MAGIC_STRING_1[31:0];
     } PROT_CAP_1 @ 0x004;
@@ -58,7 +58,7 @@ addrmap usb_ocp_recovery_reg {
             name = "Recovery protocol version";
             desc = "Bytes 8-9 encode major=1 and minor=1 for OCP Recovery v1.1. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant: the RDL reset is the single source of truth (no hw drive).";
             sw = r;
-            hw = na;
+            hw = r;
             reset = 16'h0101;
         } REC_PROT_VERSION[15:0];
         // ----------------------------------------------------------------
@@ -89,98 +89,98 @@ addrmap usb_ocp_recovery_reg {
             name = "Identification";
             desc = "AGENT_CAPS bit 0: Identification (DEVICE_ID structure). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1, source-qualified via rb_is_ext in usb_ocp_recovery_rb_adapter.sv).";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b1;
         } AGENT_CAPS_IDENTIFICATION[16:16];
         field {
             name = "Forced Recovery";
             desc = "AGENT_CAPS bit 1: Forced Recovery (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b1;
         } AGENT_CAPS_FORCED_RECOVERY[17:17];
         field {
             name = "Management Reset";
             desc = "AGENT_CAPS bit 2: Mgmt reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b0;
         } AGENT_CAPS_MGMT_RESET[18:18];
         field {
             name = "Device Reset";
             desc = "AGENT_CAPS bit 3: Device Reset (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b1;
         } AGENT_CAPS_DEVICE_RESET[19:19];
         field {
             name = "Device Status";
             desc = "AGENT_CAPS bit 4: Device status (DEVICE_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b1;
         } AGENT_CAPS_DEVICE_STATUS[20:20];
         field {
             name = "Recovery Memory Access";
             desc = "AGENT_CAPS bit 5: Recovery memory access (direct CMS-memory window via INDIRECT_CTRL/STATUS/DATA, OCP commands 0x29/0x2A/0x2B). This agent is FIFO-only; the direct memory window is NOT implemented (the direct CMS-memory window register definitions were removed). Reset 0. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b0;
         } AGENT_CAPS_RECOVERY_MEM_ACCESS[21:21];
         field {
             name = "Local C-image Support";
             desc = "AGENT_CAPS bit 6: Local C-image support. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b0;
         } AGENT_CAPS_LOCAL_C_IMAGE[22:22];
         field {
             name = "Push C-image Support";
             desc = "AGENT_CAPS bit 7: Push C-image support (FIFO streaming boot). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b1;
         } AGENT_CAPS_PUSH_C_IMAGE[23:23];
         field {
             name = "Interface Isolation";
             desc = "AGENT_CAPS bit 8: Interface isolation. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Not supported; reset 0. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b0;
         } AGENT_CAPS_INTERFACE_ISOLATION[24:24];
         field {
             name = "Hardware Status";
             desc = "AGENT_CAPS bit 9: Hardware status (HW_STATUS). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b1;
         } AGENT_CAPS_HARDWARE_STATUS[25:25];
         field {
             name = "Vendor Command";
             desc = "AGENT_CAPS bit 10: Vendor command (VENDOR). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b1;
         } AGENT_CAPS_VENDOR_COMMAND[26:26];
         field {
             name = "Flashless Boot";
             desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Advertised 1: this design supports flashless boot (host writes DEVICE_RESET.FORCED_RECOVERY=0xE to enter flashless boot on the next platform reset). Firmware-configurable (sw=rw), reset default 1; the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1). Sets AGENT_CAPS = 0x1E9B.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b1;
         } AGENT_CAPS_FLASHLESS_BOOT[27:27];
         field {
             name = "FIFO CMS Support";
             desc = "AGENT_CAPS bit 12: FIFO CMS support (INDIRECT_FIFO_CTRL). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 1'b1;
         } AGENT_CAPS_FIFO_CMS_SUPPORT[28:28];
         field {
             name = "Reserved";
             desc = "AGENT_CAPS bits 13-15: reserved. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 0.";
             sw = r;
-            hw = na;
+            hw = r;
             reset = 3'b000;
         } AGENT_CAPS_RESERVED[31:29];
     } PROT_CAP_2 @ 0x008;
@@ -192,28 +192,28 @@ addrmap usb_ocp_recovery_reg {
             name = "Total number of CMS regions";
             desc = "Byte 12 reports the number of component memory spaces. Advertises one CMS region: after the direct CMS-memory window (INDIRECT_CTRL/STATUS/DATA) was removed, only the FIFO-backed CMS region remains (OCP Recovery v1.1 Sec 9.2 PROT_CAP; this count includes logging, code and vendor regions). Firmware-configurable (sw=rw), reset default 1; the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1).";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 8'h01;
         } NUM_OF_CMS_REGIONS[7:0];
         field {
             name = "Maximum response time";
             desc = "Byte 13 reports maximum response time in 2^x microseconds. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 8'h00;
         } MAX_RESP_TIME[15:8];
         field {
             name = "Heartbeat period";
             desc = "Byte 14 reports heartbeat period in 2^x microseconds, with 0 meaning not supported. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
-            hw = na;
+            hw = r;
             reset = 8'h00;
         } HEARTBEAT_PERIOD[23:16];
         field {
             name = "Reserved";
             desc = "Byte 15 is reserved. OCP Recovery v1.1 Sec 9.2 PROT_CAP. Static read-only constant (sw=r; hw=na).";
             sw = r;
-            hw = na;
+            hw = r;
             reset = 8'h00;
         } RESERVED_31_24[31:24];
     } PROT_CAP_3 @ 0x00C;
@@ -557,29 +557,29 @@ addrmap usb_ocp_recovery_reg {
     // DEVICE_RESET, RECOVERY_CTRL, RECOVERY_STATUS, and HW_STATUS commands.
     reg {
         name = "Reset control";
-        desc = "DEVICE_RESET bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET. The OCP r/w column is rw, so the fields are sw=rw: firmware can read back the last host-written value (e.g. to act on FORCED_RECOVERY=0xE flashless-boot / 0xF recovery requests). Each writable byte carries swmod so the SV recovery FSM sees a one-cycle write strobe directly from the CPUIF path.";
+        desc = "DEVICE_RESET bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET. Firmware accesses the fields through cpuif; USB Recovery Agent writes use the hardware interface. Recovery FSM actions are qualified by the USB hardware write path, not by the firmware cpuif write.";
         field {
             name = "Device Reset Control";
-            desc = "Byte 0 requests device reset or management reset. swmod gives the FSM a one-cycle write strobe, matching OCP Recovery v1.1 Sec 9.2 DEVICE_RESET.";
+            desc = "Byte 0 requests device reset or management reset. USB Recovery Agent writes use the hardware interface; firmware can read or clear the request through cpuif.";
             sw = rw;
-            hw = r;
-            swmod = true;
+            hw = rw;
+            we = true;
             reset = 8'h00;
         } RESET_CTRL[7:0];
         field {
             name = "Forced Recovery";
             desc = "Byte 1 controls forced recovery or flashless boot on the next platform reset (0xE = enter flashless boot mode, 0xF = enter recovery mode). OCP Recovery v1.1 Sec 9.2 DEVICE_RESET.";
             sw = rw;
-            hw = r;
-            swmod = true;
+            hw = rw;
+            we = true;
             reset = 8'h00;
         } FORCED_RECOVERY[15:8];
         field {
             name = "Interface Control";
             desc = "Byte 2 controls interface mastering enable. OCP Recovery v1.1 Sec 9.2 DEVICE_RESET.";
             sw = rw;
-            hw = r;
-            swmod = true;
+            hw = rw;
+            we = true;
             reset = 8'h00;
         } IF_CTRL[23:16];
         field {
@@ -593,29 +593,29 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Recovery configuration/control";
-        desc = "RECOVERY_CTRL bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL; CMS / REC_IMG_SEL carry swmod write strobes and ACTIVATE_REC_IMG is hardware-cleared by the recovery FSM consume pulse.";
+        desc = "RECOVERY_CTRL bytes 0-2 plus one pad byte. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL. Firmware accesses the fields through cpuif; USB Recovery Agent writes use the hardware interface. Recovery FSM actions are qualified by the USB hardware write path, not by the firmware cpuif write.";
         field {
             name = "Component Memory Space";
-            desc = "Byte 0 selects the component memory space containing the recovery image. swmod gives the FSM a one-cycle write strobe. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL.";
+            desc = "Byte 0 selects the component memory space containing the recovery image. USB Recovery Agent writes use the hardware interface. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL.";
             sw = rw;
-            hw = r;
-            swmod = true;
+            hw = rw;
+            we = true;
             reset = 8'h00;
         } CMS[7:0];
         field {
             name = "Recovery Image Selection";
-            desc = "Byte 1 selects memory-window or device-stored recovery image source. swmod gives the FSM a one-cycle write strobe. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL.";
+            desc = "Byte 1 selects memory-window or device-stored recovery image source. USB Recovery Agent writes use the hardware interface. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL.";
             sw = rw;
-            hw = r;
-            swmod = true;
+            hw = rw;
+            we = true;
             reset = 8'h00;
         } REC_IMG_SEL[15:8];
         field {
             name = "Activate Recovery Image";
-            desc = "Byte 2 requests activation of the selected recovery image. The host writes 0x0F to request activation (OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL); the recovery FSM consumes the request and hardware-clears the byte via hwclr. swmod gives the FSM a one-cycle write strobe.";
+            desc = "Byte 2 requests activation of the selected recovery image. The USB Recovery Agent writes 0x0F through the hardware interface; firmware can clear the stored request through cpuif after device handling. OCP Recovery v1.1 Sec 9.2 RECOVERY_CTRL.";
             sw = rw;
-            hw = r;
-            hwclr;
+            hw = rw;
+            we = true;
             swmod = true;
             reset = 8'h00;
         } ACTIVATE_REC_IMG[23:16];
@@ -884,7 +884,8 @@ addrmap usb_ocp_recovery_reg {
             name = "Vendor placeholder byte";
             desc = "Byte 0 placeholder for the vendor-defined command space. This project currently models only one byte, reset to 0. OCP Recovery v1.1 Sec 9.2 VENDOR command summary.";
             sw = rw;
-            hw = na;
+            hw = rw;
+            we = true;
             reset = 8'h00;
         } VENDOR_DATA[7:0];
         field {

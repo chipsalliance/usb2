@@ -78,10 +78,10 @@ module usb_ocp_recovery_fsm (
   input  logic [7:0]  recovery_ctrl_img_sel,
   input  logic [7:0]  recovery_ctrl_activate,
 
-  // ACTIVATE woclr feedback to regs (OCP v1.1 Section 9.2 / i3c-rdl
-  // line 434).  Pulsed for one cycle when the FSM enters S_ACTIVATE so the
-  // regs block can hw-clear recovery_ctrl_activate_q.
-  output logic        recovery_ctrl_activate_consume,
+  // Firmware writes zero to RECOVERY_CTRL.ACTIVATE_REC_IMG after it drains and
+  // verifies the FIFO-backed image. This completes the device-side clear of a
+  // pending Recovery Agent activation request.
+  input  logic        firmware_activate_clear,
 
   // PROTOCOL_ERROR clear pulse from the control decoder. OCP Recovery v1.1
   // Sec 9.2 defines the clear-on-read behavior for the Recovery Agent USB
@@ -187,6 +187,7 @@ module usb_ocp_recovery_fsm (
   logic       size_err_q, size_err_d;
   logic       auth_err_q, auth_err_d;   // placeholder; latched by rec_trigger-time semantics
   logic       reset_pulse_q, reset_pulse_d; // 1-cycle device_reset_req pulse
+  logic       activation_pending_q, activation_pending_d;
   // Sticky PROTOCOL_ERROR latch (OCP Recovery v1.1 Section 9.2).
   // Set when the FSM enters S_ERROR (rising edge of size_err/auth_err);
   // cleared on proto_err_rd_pulse (completed Recovery Agent read). Drives
@@ -221,7 +222,7 @@ module usb_ocp_recovery_fsm (
     size_err_d    = size_err_q;
     auth_err_d    = auth_err_q;
     reset_pulse_d = 1'b0;
-    recovery_ctrl_activate_consume = 1'b0;
+    activation_pending_d = activation_pending_q;
     // PROTOCOL_ERROR sticky latch defaults (final value set after case).
     proto_err_d = proto_err_q;
 
@@ -229,6 +230,7 @@ module usb_ocp_recovery_fsm (
       S_IDLE: begin
         size_err_d = 1'b0;
         auth_err_d = 1'b0;
+        activation_pending_d = 1'b0;
         if (device_reset_cmd) begin
           state_d       = S_RESETTING;
           reset_pulse_d = 1'b1;
@@ -293,11 +295,12 @@ module usb_ocp_recovery_fsm (
         if (device_reset_cmd) begin
           state_d       = S_RESETTING;
           reset_pulse_d = 1'b1;
+          activation_pending_d = 1'b0;
         end else if (activate_cmd) begin
+          activation_pending_d = 1'b1;
+        end else if (activation_pending_q && firmware_activate_clear) begin
           state_d = S_ACTIVATE;
-          // Pulse activate-consume back to regs so the woclr byte clears
-          // (OCP v1.1 Section 9.2, i3c-rdl line 434).
-          recovery_ctrl_activate_consume = 1'b1;
+          activation_pending_d = 1'b0;
         end else if (image_push_active) begin
           state_d = S_PUSH_ACTIVE;
         end
@@ -344,6 +347,7 @@ module usb_ocp_recovery_fsm (
         // device_reset_req pulsed one cycle on entry. Return to IDLE so SoC
         // re-triggers recovery if desired.
         state_d = S_IDLE;
+        activation_pending_d = 1'b0;
       end
 
       default: begin
@@ -506,6 +510,7 @@ module usb_ocp_recovery_fsm (
       size_err_q    <= 1'b0;
       auth_err_q    <= 1'b0;
       reset_pulse_q <= 1'b0;
+      activation_pending_q <= 1'b0;
       proto_err_q   <= 8'h00;
     end else begin
       state_q       <= state_d;
@@ -513,6 +518,7 @@ module usb_ocp_recovery_fsm (
       size_err_q    <= size_err_d;
       auth_err_q    <= auth_err_d;
       reset_pulse_q <= reset_pulse_d;
+      activation_pending_q <= activation_pending_d;
       proto_err_q   <= proto_err_d;
     end
   end
@@ -555,6 +561,25 @@ module usb_ocp_recovery_fsm (
   endproperty
   assert property (p_reset_req_pulse)
     else $error("usb_ocp_recovery_fsm: device_reset_req not a pulse");
+
+  // The Recovery Agent's 0x0F write records a pending activation request but
+  // must not boot before firmware finishes drain/verification and clears the
+  // standard field. Firmware nonzero writes are not presented as a clear.
+  property p_ra_activate_waits_for_firmware_clear;
+    @(posedge clk) disable iff (rst)
+      (state_q == S_IMAGE_LOADED && activate_cmd && !firmware_activate_clear)
+      |=> (state_q == S_IMAGE_LOADED);
+  endproperty
+  assert property (p_ra_activate_waits_for_firmware_clear)
+    else $error("usb_ocp_recovery_fsm: RA activation booted before firmware clear");
+
+  property p_firmware_clear_consumes_pending_activation;
+    @(posedge clk) disable iff (rst)
+      (state_q == S_IMAGE_LOADED && activation_pending_q && firmware_activate_clear)
+      |=> (state_q == S_ACTIVATE);
+  endproperty
+  assert property (p_firmware_clear_consumes_pending_activation)
+    else $error("usb_ocp_recovery_fsm: firmware activation clear did not enter S_ACTIVATE");
 
   // suppress unused-signal warnings for reserved inputs
   logic _unused_ok;

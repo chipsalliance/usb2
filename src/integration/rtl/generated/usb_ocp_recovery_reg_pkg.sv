@@ -213,10 +213,44 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__DEVICE_STATUS_15__in_t;
 
     typedef struct packed{
-        logic hwclr;
+        logic [7:0] next;
+        logic we;
+    } usb_ocp_recovery_reg__DEVICE_RESET__RESET_CTRL__in_t;
+
+    typedef struct packed{
+        logic [7:0] next;
+        logic we;
+    } usb_ocp_recovery_reg__DEVICE_RESET__FORCED_RECOVERY__in_t;
+
+    typedef struct packed{
+        logic [7:0] next;
+        logic we;
+    } usb_ocp_recovery_reg__DEVICE_RESET__IF_CTRL__in_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__DEVICE_RESET__RESET_CTRL__in_t RESET_CTRL;
+        usb_ocp_recovery_reg__DEVICE_RESET__FORCED_RECOVERY__in_t FORCED_RECOVERY;
+        usb_ocp_recovery_reg__DEVICE_RESET__IF_CTRL__in_t IF_CTRL;
+    } usb_ocp_recovery_reg__DEVICE_RESET__in_t;
+
+    typedef struct packed{
+        logic [7:0] next;
+        logic we;
+    } usb_ocp_recovery_reg__RECOVERY_CTRL__CMS__in_t;
+
+    typedef struct packed{
+        logic [7:0] next;
+        logic we;
+    } usb_ocp_recovery_reg__RECOVERY_CTRL__REC_IMG_SEL__in_t;
+
+    typedef struct packed{
+        logic [7:0] next;
+        logic we;
     } usb_ocp_recovery_reg__RECOVERY_CTRL__ACTIVATE_REC_IMG__in_t;
 
     typedef struct packed{
+        usb_ocp_recovery_reg__RECOVERY_CTRL__CMS__in_t CMS;
+        usb_ocp_recovery_reg__RECOVERY_CTRL__REC_IMG_SEL__in_t REC_IMG_SEL;
         usb_ocp_recovery_reg__RECOVERY_CTRL__ACTIVATE_REC_IMG__in_t ACTIVATE_REC_IMG;
     } usb_ocp_recovery_reg__RECOVERY_CTRL__in_t;
 
@@ -367,6 +401,15 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__INDIRECT_FIFO_DATA__in_t;
 
     typedef struct packed{
+        logic [7:0] next;
+        logic we;
+    } usb_ocp_recovery_reg__VENDOR__VENDOR_DATA__in_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__VENDOR__VENDOR_DATA__in_t VENDOR_DATA;
+    } usb_ocp_recovery_reg__VENDOR__in_t;
+
+    typedef struct packed{
         logic swwe;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_PATH_DISABLE__in_t;
 
@@ -420,6 +463,7 @@ package usb_ocp_recovery_reg_pkg;
         usb_ocp_recovery_reg__DEVICE_STATUS_13__in_t DEVICE_STATUS_13;
         usb_ocp_recovery_reg__DEVICE_STATUS_14__in_t DEVICE_STATUS_14;
         usb_ocp_recovery_reg__DEVICE_STATUS_15__in_t DEVICE_STATUS_15;
+        usb_ocp_recovery_reg__DEVICE_RESET__in_t DEVICE_RESET;
         usb_ocp_recovery_reg__RECOVERY_CTRL__in_t RECOVERY_CTRL;
         usb_ocp_recovery_reg__RECOVERY_STATUS__in_t RECOVERY_STATUS;
         usb_ocp_recovery_reg__HW_STATUS__in_t HW_STATUS;
@@ -431,23 +475,138 @@ package usb_ocp_recovery_reg_pkg;
         usb_ocp_recovery_reg__INDIRECT_FIFO_STATUS_3__in_t INDIRECT_FIFO_STATUS_3;
         usb_ocp_recovery_reg__INDIRECT_FIFO_STATUS_4__in_t INDIRECT_FIFO_STATUS_4;
         usb_ocp_recovery_reg__INDIRECT_FIFO_DATA__in_t INDIRECT_FIFO_DATA;
+        usb_ocp_recovery_reg__VENDOR__in_t VENDOR;
         usb_ocp_recovery_reg__CALIPTRA_CTRL__in_t CALIPTRA_CTRL;
         usb_ocp_recovery_reg__CALIPTRA_STATUS__in_t CALIPTRA_STATUS;
     } usb_ocp_recovery_reg__in_t;
 
     typedef struct packed{
+        logic [31:0] value;
+    } usb_ocp_recovery_reg__PROT_CAP_0__REC_MAGIC_STRING_0__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__PROT_CAP_0__REC_MAGIC_STRING_0__out_t REC_MAGIC_STRING_0;
+    } usb_ocp_recovery_reg__PROT_CAP_0__out_t;
+
+    typedef struct packed{
+        logic [31:0] value;
+    } usb_ocp_recovery_reg__PROT_CAP_1__REC_MAGIC_STRING_1__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__PROT_CAP_1__REC_MAGIC_STRING_1__out_t REC_MAGIC_STRING_1;
+    } usb_ocp_recovery_reg__PROT_CAP_1__out_t;
+
+    typedef struct packed{
+        logic [15:0] value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__REC_PROT_VERSION__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_IDENTIFICATION__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_FORCED_RECOVERY__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_MGMT_RESET__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_DEVICE_RESET__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_DEVICE_STATUS__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_RECOVERY_MEM_ACCESS__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_LOCAL_C_IMAGE__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_PUSH_C_IMAGE__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_INTERFACE_ISOLATION__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_HARDWARE_STATUS__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_VENDOR_COMMAND__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_FLASHLESS_BOOT__out_t;
+
+    typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_FIFO_CMS_SUPPORT__out_t;
+
+    typedef struct packed{
+        logic [2:0] value;
+    } usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_RESERVED__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__PROT_CAP_2__REC_PROT_VERSION__out_t REC_PROT_VERSION;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_IDENTIFICATION__out_t AGENT_CAPS_IDENTIFICATION;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_FORCED_RECOVERY__out_t AGENT_CAPS_FORCED_RECOVERY;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_MGMT_RESET__out_t AGENT_CAPS_MGMT_RESET;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_DEVICE_RESET__out_t AGENT_CAPS_DEVICE_RESET;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_DEVICE_STATUS__out_t AGENT_CAPS_DEVICE_STATUS;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_RECOVERY_MEM_ACCESS__out_t AGENT_CAPS_RECOVERY_MEM_ACCESS;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_LOCAL_C_IMAGE__out_t AGENT_CAPS_LOCAL_C_IMAGE;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_PUSH_C_IMAGE__out_t AGENT_CAPS_PUSH_C_IMAGE;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_INTERFACE_ISOLATION__out_t AGENT_CAPS_INTERFACE_ISOLATION;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_HARDWARE_STATUS__out_t AGENT_CAPS_HARDWARE_STATUS;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_VENDOR_COMMAND__out_t AGENT_CAPS_VENDOR_COMMAND;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_FLASHLESS_BOOT__out_t AGENT_CAPS_FLASHLESS_BOOT;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_FIFO_CMS_SUPPORT__out_t AGENT_CAPS_FIFO_CMS_SUPPORT;
+        usb_ocp_recovery_reg__PROT_CAP_2__AGENT_CAPS_RESERVED__out_t AGENT_CAPS_RESERVED;
+    } usb_ocp_recovery_reg__PROT_CAP_2__out_t;
+
+    typedef struct packed{
         logic [7:0] value;
-        logic swmod;
+    } usb_ocp_recovery_reg__PROT_CAP_3__NUM_OF_CMS_REGIONS__out_t;
+
+    typedef struct packed{
+        logic [7:0] value;
+    } usb_ocp_recovery_reg__PROT_CAP_3__MAX_RESP_TIME__out_t;
+
+    typedef struct packed{
+        logic [7:0] value;
+    } usb_ocp_recovery_reg__PROT_CAP_3__HEARTBEAT_PERIOD__out_t;
+
+    typedef struct packed{
+        logic [7:0] value;
+    } usb_ocp_recovery_reg__PROT_CAP_3__RESERVED_31_24__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__PROT_CAP_3__NUM_OF_CMS_REGIONS__out_t NUM_OF_CMS_REGIONS;
+        usb_ocp_recovery_reg__PROT_CAP_3__MAX_RESP_TIME__out_t MAX_RESP_TIME;
+        usb_ocp_recovery_reg__PROT_CAP_3__HEARTBEAT_PERIOD__out_t HEARTBEAT_PERIOD;
+        usb_ocp_recovery_reg__PROT_CAP_3__RESERVED_31_24__out_t RESERVED_31_24;
+    } usb_ocp_recovery_reg__PROT_CAP_3__out_t;
+
+    typedef struct packed{
+        logic [7:0] value;
     } usb_ocp_recovery_reg__DEVICE_RESET__RESET_CTRL__out_t;
 
     typedef struct packed{
         logic [7:0] value;
-        logic swmod;
     } usb_ocp_recovery_reg__DEVICE_RESET__FORCED_RECOVERY__out_t;
 
     typedef struct packed{
         logic [7:0] value;
-        logic swmod;
     } usb_ocp_recovery_reg__DEVICE_RESET__IF_CTRL__out_t;
 
     typedef struct packed{
@@ -458,12 +617,10 @@ package usb_ocp_recovery_reg_pkg;
 
     typedef struct packed{
         logic [7:0] value;
-        logic swmod;
     } usb_ocp_recovery_reg__RECOVERY_CTRL__CMS__out_t;
 
     typedef struct packed{
         logic [7:0] value;
-        logic swmod;
     } usb_ocp_recovery_reg__RECOVERY_CTRL__REC_IMG_SEL__out_t;
 
     typedef struct packed{
@@ -486,6 +643,14 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__INDIRECT_FIFO_DATA__out_t;
 
     typedef struct packed{
+        logic [7:0] value;
+    } usb_ocp_recovery_reg__VENDOR__VENDOR_DATA__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__VENDOR__VENDOR_DATA__out_t VENDOR_DATA;
+    } usb_ocp_recovery_reg__VENDOR__out_t;
+
+    typedef struct packed{
         logic value;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_PATH_DISABLE__out_t;
 
@@ -494,9 +659,14 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__out_t;
 
     typedef struct packed{
+        usb_ocp_recovery_reg__PROT_CAP_0__out_t PROT_CAP_0;
+        usb_ocp_recovery_reg__PROT_CAP_1__out_t PROT_CAP_1;
+        usb_ocp_recovery_reg__PROT_CAP_2__out_t PROT_CAP_2;
+        usb_ocp_recovery_reg__PROT_CAP_3__out_t PROT_CAP_3;
         usb_ocp_recovery_reg__DEVICE_RESET__out_t DEVICE_RESET;
         usb_ocp_recovery_reg__RECOVERY_CTRL__out_t RECOVERY_CTRL;
         usb_ocp_recovery_reg__INDIRECT_FIFO_DATA__out_t INDIRECT_FIFO_DATA;
+        usb_ocp_recovery_reg__VENDOR__out_t VENDOR;
         usb_ocp_recovery_reg__CALIPTRA_CTRL__out_t CALIPTRA_CTRL;
     } usb_ocp_recovery_reg__out_t;
 
