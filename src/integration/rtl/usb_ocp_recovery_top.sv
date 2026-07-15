@@ -57,6 +57,8 @@ module usb_ocp_recovery_top #(
   output logic                    rec_ctrl_in_vld,
   output logic                    rec_ctrl_in_last,
   input  logic                    rec_ctrl_in_rdy,
+  output logic [6:0]              rec_ctrl_in_resp_bytes,
+  output logic                    rec_ctrl_in_resp_known,
 
   output logic                    rec_ctrl_set_stall,
   input  logic                    rec_ctrl_xfer_done,
@@ -162,6 +164,7 @@ module usb_ocp_recovery_top #(
 
   // --- A3 <-> A4 FIFO-routed reg-bus (32-bit word + byte strobe) ---
   logic                       fifo_rb_sel;
+  logic                       fifo_rb_from_usb;
   logic [7:0]                 fifo_rb_cmd;
   logic [15:0]                fifo_rb_offset;
   logic                       fifo_rb_wr;
@@ -376,6 +379,8 @@ module usb_ocp_recovery_top #(
     .ctrl_in_vld     (rec_ctrl_in_vld),
     .ctrl_in_last    (rec_ctrl_in_last),
     .ctrl_in_rdy     (rec_ctrl_in_rdy),
+    .ctrl_in_resp_bytes(rec_ctrl_in_resp_bytes),
+    .ctrl_in_resp_known(rec_ctrl_in_resp_known),
     .ctrl_set_stall  (rec_ctrl_set_stall),
     .ctrl_xfer_done  (rec_ctrl_xfer_done),
     .proto_err_rd_pulse (proto_err_rd_pulse),
@@ -743,6 +748,7 @@ module usb_ocp_recovery_top #(
 
   always_comb begin
     fifo_rb_sel    = 1'b0;
+    fifo_rb_from_usb = 1'b0;
     fifo_rb_cmd    = '0;
     fifo_rb_offset = '0;
     fifo_rb_wr     = 1'b0;
@@ -752,6 +758,7 @@ module usb_ocp_recovery_top #(
 
     if (usb_fifo_req) begin
       fifo_rb_sel    = 1'b1;
+      fifo_rb_from_usb = 1'b1;
       fifo_rb_cmd    = usb_rb_cmd;
       fifo_rb_offset = usb_rb_offset;
       fifo_rb_wr     = usb_rb_wr;
@@ -761,6 +768,7 @@ module usb_ocp_recovery_top #(
     end else if (ext_fifo_rb_sel && !ext_fifo_data_write_reject
                  && !ext_fifo_config_blocked) begin
       fifo_rb_sel    = ext_fifo_rb_sel;
+      fifo_rb_from_usb = 1'b0;
       fifo_rb_cmd    = ext_fifo_rb_cmd;
       fifo_rb_offset = ext_fifo_rb_offset;
       fifo_rb_wr     = ext_fifo_rb_wr;
@@ -799,6 +807,7 @@ module usb_ocp_recovery_top #(
     .fifo_rd_depth   (fifo_rd_depth),
 
     .fifo_rb_sel     (fifo_rb_sel),
+    .fifo_rb_from_usb(fifo_rb_from_usb),
     .fifo_rb_cmd     (fifo_rb_cmd),
     .fifo_rb_offset  (fifo_rb_offset),
     .fifo_rb_wr      (fifo_rb_wr),

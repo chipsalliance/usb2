@@ -133,6 +133,12 @@ entity usb_pie_recovery_arb is
     ctrl_in_vld     : in  std_logic;
     ctrl_in_last    : in  std_logic;
     ctrl_in_rdy     : out std_logic;
+    -- Exact implementation response bytes for the current claimed IN transfer.
+    -- Computed in the SV decoder from shared OCP metadata, clipped to wLength,
+    -- and captured here during S_SETUP so epinfo_nbytes matches the real data
+    -- stage byte count (USB 2.0 Sec 8.5.3 short-packet termination rules).
+    ctrl_in_resp_bytes : in  std_logic_vector(6 downto 0);
+    ctrl_in_resp_known : in  std_logic;
 
     -- STALL request from SV recovery; OR'd into epinfo_to_pie_stall while
     -- the arbiter holds claim (OCP Recovery v1.1 Sec 8.5: malformed class

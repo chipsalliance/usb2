@@ -39,8 +39,9 @@
 // Control plane (FSM):
 //   S_IDLE  - wait for SETUP; classify.
 //   S_WRITE - stream OUT words to the reg bus.
-//   S_RLAT  - issue rb_rd and latch a same-cycle combinational read response.
-//   S_READ  - drive IN word; advance on ctrl_in_rdy.
+//   S_READ  - issue one same-cycle combinational read per cycle and either
+//             retire it immediately or hold it in a skid register if the VHDL
+//             arbiter backpressures.
 //   S_RDONE - drive a zero-length ctrl_in_last terminating beat for a clean
 //             short-packet end (rb_err past the command's valid length).
 //   S_STALL - pulse ctrl_set_stall for one cycle.
@@ -64,6 +65,8 @@ module usb_ocp_recovery_ctrl_decode (
   output logic        ctrl_in_vld,
   output logic        ctrl_in_last,
   input  logic        ctrl_in_rdy,
+  output logic [6:0]  ctrl_in_resp_bytes,
+  output logic        ctrl_in_resp_known,
   output logic        ctrl_set_stall,
   input  logic        ctrl_xfer_done,
   output logic        proto_err_rd_pulse,
@@ -95,6 +98,8 @@ module usb_ocp_recovery_ctrl_decode (
   logic [7:0]  cmd_code_s;
   logic        cmd_code_valid_s;
   logic        ocp_req_valid_s;
+  ocp_response_meta_t response_meta_s;
+  logic [15:0]        read_length_s;
 
   always_comb begin
     bmrt_s      = setup_pkt[7:0];
@@ -108,6 +113,12 @@ module usb_ocp_recovery_ctrl_decode (
     cmd_code_valid_s = (cmd_code_s >= OCP_CMD_MIN) && (cmd_code_s <= OCP_CMD_MAX);
     ocp_req_valid_s  = (brq_s == 8'h00) && (wvalue_s[15:8] == 8'h00)
                        && cmd_code_valid_s;
+    response_meta_s  = ocp_response_meta(cmd_code_s);
+    if (response_meta_s.known && (wlength_s < {9'h000, response_meta_s.bytes})) begin
+      read_length_s = wlength_s;
+    end else begin
+      read_length_s = {9'h000, response_meta_s.bytes};
+    end
   end
 
   //---------------------------------------------------------------------------
@@ -117,22 +128,28 @@ module usb_ocp_recovery_ctrl_decode (
     S_IDLE  = 3'd0,
     S_WRITE = 3'd1,
     S_READ  = 3'd2,
-    S_RLAT  = 3'd3,
-    S_STALL = 3'd4,
-    S_WAIT  = 3'd5,
-    S_RDONE = 3'd6
+    S_STALL = 3'd3,
+    S_WAIT  = 3'd4,
+    S_RDONE = 3'd5
   } state_t;
 
   state_t state_q, state_d;
 
   //---------------------------------------------------------------------------
-  // Latched SETUP fields.  offset_q is a WORD index; length_q is wLength bytes.
+  // Latched SETUP fields. offset_q is a WORD index. length_q is the effective
+  // transfer byte count: raw wLength for OUT, implementation response bytes
+  // clipped to wLength for IN.
   //---------------------------------------------------------------------------
   logic [7:0]  cmd_q,     cmd_d;
   logic        is_in_q,   is_in_d;
   logic [15:0] length_q,  length_d;
   logic [15:0] offset_q,  offset_d;     // word index
-  logic [31:0] rdata_q,   rdata_d;
+  logic [6:0]  resp_bytes_q, resp_bytes_d;
+  logic        resp_known_q, resp_known_d;
+  logic [31:0] hold_data_q,  hold_data_d;
+  logic [3:0]  hold_be_q,    hold_be_d;
+  logic        hold_last_q,  hold_last_d;
+  logic        hold_vld_q,   hold_vld_d;
 
   //---------------------------------------------------------------------------
   // Partial-final-word arithmetic (combinational, from offset_q / length_q).
@@ -171,14 +188,24 @@ module usb_ocp_recovery_ctrl_decode (
       is_in_q  <= 1'b0;
       length_q <= '0;
       offset_q <= '0;
-      rdata_q  <= '0;
+      resp_bytes_q <= '0;
+      resp_known_q <= 1'b0;
+      hold_data_q  <= '0;
+      hold_be_q    <= '0;
+      hold_last_q  <= 1'b0;
+      hold_vld_q   <= 1'b0;
     end else begin
       state_q  <= state_d;
       cmd_q    <= cmd_d;
       is_in_q  <= is_in_d;
       length_q <= length_d;
       offset_q <= offset_d;
-      rdata_q  <= rdata_d;
+      resp_bytes_q <= resp_bytes_d;
+      resp_known_q <= resp_known_d;
+      hold_data_q  <= hold_data_d;
+      hold_be_q    <= hold_be_d;
+      hold_last_q  <= hold_last_d;
+      hold_vld_q   <= hold_vld_d;
     end
   end
 
@@ -192,19 +219,26 @@ module usb_ocp_recovery_ctrl_decode (
     is_in_d        = is_in_q;
     length_d       = length_q;
     offset_d       = offset_q;
-    rdata_d        = rdata_q;
+    resp_bytes_d   = resp_bytes_q;
+    resp_known_d   = resp_known_q;
+    hold_data_d    = hold_data_q;
+    hold_be_d      = hold_be_q;
+    hold_last_d    = hold_last_q;
+    hold_vld_d     = hold_vld_q;
 
     ctrl_out_rdy   = 1'b0;
-    ctrl_in_data   = 32'h0;
-    ctrl_in_be     = 4'h0;
+    ctrl_in_data   = '0;
+    ctrl_in_be     = '0;
     ctrl_in_vld    = 1'b0;
     ctrl_in_last   = 1'b0;
+    ctrl_in_resp_bytes = resp_bytes_q;
+    ctrl_in_resp_known = resp_known_q;
     ctrl_set_stall = 1'b0;
     proto_err_rd_pulse = ctrl_xfer_done
                        && (state_q == S_WAIT)
                        && is_in_q
-                       && (cmd_q == OCP_CMD_DEVICE_STATUS)
-                       && (length_q >= 16'd2);
+                        && (cmd_q == OCP_CMD_DEVICE_STATUS)
+                       && (length_q >= 16'(OCP_SPEC_LEN_RECOVERY_STATUS));
 
     rb_cmd         = cmd_q;
     rb_offset      = offset_q;
@@ -217,6 +251,12 @@ module usb_ocp_recovery_ctrl_decode (
     if (ctrl_xfer_done) begin
       state_d  = S_IDLE;
       offset_d = '0;
+      resp_bytes_d = '0;
+      resp_known_d = 1'b0;
+      hold_data_d  = '0;
+      hold_be_d    = '0;
+      hold_last_d  = 1'b0;
+      hold_vld_d   = 1'b0;
     end else begin
     unique case (state_q)
       //-----------------------------------------------------------------------
@@ -224,15 +264,34 @@ module usb_ocp_recovery_ctrl_decode (
         if (setup_pkt_vld) begin
           cmd_d    = cmd_code_s;
           is_in_d  = is_in_s;
-          offset_d = 16'h0000;
-          length_d = wlength_s;
+          offset_d = '0;
+          hold_data_d  = '0;
+          hold_be_d    = '0;
+          hold_last_d  = 1'b0;
+          hold_vld_d   = 1'b0;
           if (!ocp_req_valid_s) begin
+            length_d     = '0;
+            resp_bytes_d = '0;
+            resp_known_d = 1'b0;
             state_d = S_STALL;
           end else if (wlength_s == 16'd0) begin
+            length_d     = '0;
+            resp_bytes_d = '0;
+            resp_known_d = 1'b0;
             state_d = S_STALL;
           end else if (is_in_s) begin
-            state_d = S_RLAT;
+            length_d     = read_length_s;
+            resp_bytes_d = read_length_s[6:0];
+            resp_known_d = response_meta_s.known;
+            if (read_length_s == '0) begin
+              state_d = S_RDONE;
+            end else begin
+              state_d = S_READ;
+            end
           end else begin
+            length_d     = wlength_s;
+            resp_bytes_d = '0;
+            resp_known_d = 1'b0;
             state_d = S_WRITE;
           end
         end
@@ -260,10 +319,8 @@ module usb_ocp_recovery_ctrl_decode (
       end
 
       //-----------------------------------------------------------------------
-      // IN data stage step 1: issue exactly one rb_rd and latch its
-      // combinational response. The adapter retains its one-shot cpuif_req
-      // discipline, while the decoder keeps rdata_q as the stable skid
-      // register presented in S_READ if ctrl_in_rdy backpressures.
+      // IN data stage: present a same-cycle response every cycle the rb path
+      // acks, or replay the held skid word while backpressured.
       //
       // rb_err semantics on the read path:
       //   - rb_err with offset_q == 0: the very first word of the command is
@@ -277,38 +334,49 @@ module usb_ocp_recovery_ctrl_decode (
       //     stage shorter than wLength terminates the transfer; the host
       //     accepts the short packet as end-of-data).
       //-----------------------------------------------------------------------
-      S_RLAT: begin
-        rb_rd    = 1'b1;
-        rb_wstrb = word_mask;
-        if (rb_ack) begin
-          if (rb_err) begin
-            if (offset_q == 16'd0) begin
-              state_d = S_STALL;   // first-word unreadable -> genuine STALL
-            end else begin
-              state_d = S_RDONE;   // ran past valid length -> short-packet end
-            end
-          end else begin
-            rdata_d = rb_rdata;
-            state_d = S_READ;
-          end
-        end
-      end
-
-      //-----------------------------------------------------------------------
-      // IN data stage step 2: drive word on ctrl_in; advance on rdy.
-      //-----------------------------------------------------------------------
       S_READ: begin
-        ctrl_in_data = rdata_q;
-        ctrl_in_be   = word_mask;
-        ctrl_in_vld  = 1'b1;
-        ctrl_in_last = is_last_word;
-
-        if (ctrl_in_rdy) begin
-          offset_d = offset_q + 16'd1;
-          if (is_last_word) begin
-            state_d = S_WAIT;
-          end else begin
-            state_d = S_RLAT;
+        if (hold_vld_q) begin
+          ctrl_in_data = hold_data_q;
+          ctrl_in_be   = hold_be_q;
+          ctrl_in_vld  = 1'b1;
+          ctrl_in_last = hold_last_q;
+          if (ctrl_in_rdy) begin
+            hold_data_d = '0;
+            hold_be_d   = '0;
+            hold_last_d = 1'b0;
+            hold_vld_d  = 1'b0;
+            offset_d    = offset_q + 16'd1;
+            if (hold_last_q) begin
+              state_d = S_WAIT;
+            end
+          end
+        end else begin
+          rb_rd    = 1'b1;
+          rb_wstrb = word_mask;
+          if (rb_ack) begin
+            if (rb_err) begin
+              if (offset_q == 16'd0) begin
+                state_d = S_STALL;
+              end else begin
+                state_d = S_RDONE;
+              end
+            end else begin
+              ctrl_in_data = rb_rdata;
+              ctrl_in_be   = word_mask;
+              ctrl_in_vld  = 1'b1;
+              ctrl_in_last = is_last_word;
+              if (ctrl_in_rdy) begin
+                offset_d = offset_q + 16'd1;
+                if (is_last_word) begin
+                  state_d = S_WAIT;
+                end
+              end else begin
+                hold_data_d = rb_rdata;
+                hold_be_d   = word_mask;
+                hold_last_d = is_last_word;
+                hold_vld_d  = 1'b1;
+              end
+            end
           end
         end
       end
@@ -322,17 +390,19 @@ module usb_ocp_recovery_ctrl_decode (
       //-----------------------------------------------------------------------
       // Short-packet terminating beat.  The valid words were already
       // delivered in prior S_READ cycles; drive one final zero-length beat
-      // (ctrl_in_be = 0) with ctrl_in_last = 1 so the arbiter staging buffer
-      // marks the response complete at exactly the bytes already accumulated
-      // (no extra bytes are added).  This yields a correct short packet for a
-      // command shorter than wLength (e.g. PROT_CAP: 16 bytes for wLength=64).
+      // (ctrl_in_be = 0) with ctrl_in_last = 1 so the arbiter queue marks the
+      // response complete without adding bytes to the packet payload.
       //-----------------------------------------------------------------------
       S_RDONE: begin
-        ctrl_in_data = 32'h0;
-        ctrl_in_be   = 4'h0;
+        ctrl_in_data = '0;
+        ctrl_in_be   = '0;
         ctrl_in_vld  = 1'b1;
         ctrl_in_last = 1'b1;
         if (ctrl_in_rdy) begin
+          hold_data_d = '0;
+          hold_be_d   = '0;
+          hold_last_d = 1'b0;
+          hold_vld_d  = 1'b0;
           state_d = S_WAIT;
         end
       end
@@ -342,6 +412,12 @@ module usb_ocp_recovery_ctrl_decode (
         if (ctrl_xfer_done) begin
           state_d  = S_IDLE;
           offset_d = '0;
+          resp_bytes_d = '0;
+          resp_known_d = 1'b0;
+          hold_data_d  = '0;
+          hold_be_d    = '0;
+          hold_last_d  = 1'b0;
+          hold_vld_d   = 1'b0;
         end
       end
 
@@ -368,9 +444,9 @@ module usb_ocp_recovery_ctrl_decode (
         assert (!$isunknown(rb_rdata))
           else $error("ctrl_decode: rb_rdata X with ack high");
       end
-      if (ctrl_in_vld && !ctrl_in_rdy) begin
-        assert ($stable(rdata_q))
-          else $error("ctrl_decode: rdata_q changed while ctrl_in was backpressured");
+      if (hold_vld_q && !ctrl_in_rdy && $past(hold_vld_q && !ctrl_in_rdy)) begin
+        assert ($stable(hold_data_q) && $stable(hold_be_q) && $stable(hold_last_q))
+          else $error("ctrl_decode: held read word changed while ctrl_in was backpressured");
       end
       if (proto_err_rd_pulse) begin
         assert (ctrl_xfer_done && (state_q == S_WAIT) && is_in_q
@@ -380,6 +456,14 @@ module usb_ocp_recovery_ctrl_decode (
       if (setup_pkt_vld) begin
         assert (is_class_s)
           else $error("ctrl_decode: setup_pkt_vld asserted on non-class SETUP");
+      end
+      if (setup_pkt_vld && is_in_s) begin
+        assert (!response_meta_s.known || (response_meta_s.bytes <= 7'(OCP_MAX_IMPLEMENTED_RESPONSE_BYTES)))
+          else $error("ctrl_decode: response metadata exceeds the single-packet implementation bound");
+        assert (!response_meta_s.known || (read_length_s <= wlength_s))
+          else $error("ctrl_decode: clipped response length exceeded wLength");
+        assert (response_meta_s.known || (read_length_s == '0))
+          else $error("ctrl_decode: unknown response metadata must not fall back to wLength");
       end
       assert (!(rb_wr && rb_rd))
         else $error("ctrl_decode: rb_wr and rb_rd asserted simultaneously");

@@ -247,6 +247,8 @@ entity ip_xxx_3516_hs_mem is
        rec_ctrl_in_vld     : in  std_logic;
        rec_ctrl_in_last    : in  std_logic;
        rec_ctrl_in_rdy     : out std_logic;
+       rec_ctrl_in_resp_bytes : in std_logic_vector(6 downto 0);
+       rec_ctrl_in_resp_known : in std_logic;
        rec_ctrl_set_stall  : in  std_logic;
        rec_ctrl_xfer_done  : out std_logic;
        rec_ctrl_claim      : out std_logic;
@@ -259,4 +261,3 @@ entity ip_xxx_3516_hs_mem is
       );
 -- VSIA_Soft_IP_Tag % Vendor NXP B.V. % Product ip_xxx_3516_hs_mem % Version svn://apc5008/projects/next0/ip_xxx_3516_hs_mem_sms/trunk % Metric 0 % Date_Time 20190602 % IP_Owner MCU % Celltype IP % Cell_Id ip_xxx_3516_hs_mem % Signature 0 % Tag_Spec cru45
 end ip_xxx_3516_hs_mem;
-

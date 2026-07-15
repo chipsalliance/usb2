@@ -324,6 +324,8 @@ component usb_pie_recovery_arb
     ctrl_in_vld     : in  std_logic;
     ctrl_in_last    : in  std_logic;
     ctrl_in_rdy     : out std_logic;
+    ctrl_in_resp_bytes : in std_logic_vector(6 downto 0);
+    ctrl_in_resp_known : in std_logic;
 
     ctrl_set_stall  : in  std_logic;
     ctrl_xfer_done  : out std_logic;
@@ -1557,6 +1559,8 @@ usb_pie_recovery_arb_1 : usb_pie_recovery_arb
     ctrl_in_vld     => rec_ctrl_in_vld,
     ctrl_in_last    => rec_ctrl_in_last,
     ctrl_in_rdy     => rec_ctrl_in_rdy,
+    ctrl_in_resp_bytes => rec_ctrl_in_resp_bytes,
+    ctrl_in_resp_known => rec_ctrl_in_resp_known,
     ctrl_set_stall  => rec_ctrl_set_stall,
     ctrl_xfer_done  => rec_ctrl_xfer_done,
     ocp_path_disable_i          => rec_ocp_path_disable,

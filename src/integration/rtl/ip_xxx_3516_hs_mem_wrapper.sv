@@ -365,6 +365,8 @@ module ip_xxx_3516_hs_mem_wrapper
    logic                          rec_ctrl_in_vld_w;
    logic                          rec_ctrl_in_last_w;
    logic                          rec_ctrl_in_rdy_w;
+   logic [6:0]                    rec_ctrl_in_resp_bytes_w;
+   logic                          rec_ctrl_in_resp_known_w;
    logic                          rec_ctrl_set_stall_w;
    logic                          rec_ctrl_xfer_done_w;
    // C1 emergency-fallback chicken bit: usb_ocp_recovery_top drives this
@@ -821,6 +823,8 @@ module ip_xxx_3516_hs_mem_wrapper
                .rec_ctrl_in_vld     (rec_ctrl_in_vld_w),
                .rec_ctrl_in_last    (rec_ctrl_in_last_w),
                .rec_ctrl_in_rdy     (rec_ctrl_in_rdy_w),
+               .rec_ctrl_in_resp_bytes(rec_ctrl_in_resp_bytes_w),
+               .rec_ctrl_in_resp_known(rec_ctrl_in_resp_known_w),
                .rec_ctrl_set_stall  (rec_ctrl_set_stall_w),
                .rec_ctrl_xfer_done  (rec_ctrl_xfer_done_w),
                .rec_ctrl_claim      (),
@@ -1311,6 +1315,8 @@ module ip_xxx_3516_hs_mem_wrapper
        .rec_ctrl_in_vld    (rec_ctrl_in_vld_w),
        .rec_ctrl_in_last   (rec_ctrl_in_last_w),
        .rec_ctrl_in_rdy    (rec_ctrl_in_rdy_w),
+       .rec_ctrl_in_resp_bytes(rec_ctrl_in_resp_bytes_w),
+       .rec_ctrl_in_resp_known(rec_ctrl_in_resp_known_w),
        .rec_ctrl_set_stall (rec_ctrl_set_stall_w),
        .rec_ctrl_xfer_done (rec_ctrl_xfer_done_w),
        .rec_ocp_path_disable (rec_ocp_path_disable_w),
@@ -1346,4 +1352,3 @@ module ip_xxx_3516_hs_mem_wrapper
    assign ocp_firmware_activated = image_ready;
 
 endmodule
-

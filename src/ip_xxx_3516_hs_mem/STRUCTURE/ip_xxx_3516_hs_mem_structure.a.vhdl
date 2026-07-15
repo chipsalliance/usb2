@@ -324,6 +324,8 @@ end component;
        rec_ctrl_in_vld     : in  std_logic;
        rec_ctrl_in_last    : in  std_logic;
        rec_ctrl_in_rdy     : out std_logic;
+       rec_ctrl_in_resp_bytes : in std_logic_vector(6 downto 0);
+       rec_ctrl_in_resp_known : in std_logic;
        rec_ctrl_set_stall  : in  std_logic;
        rec_ctrl_xfer_done  : out std_logic;
        rec_ctrl_claim      : out std_logic;
@@ -689,6 +691,8 @@ signal ip_xxx_3511_hs_fpga : std_logic_vector(255 downto 0);
       rec_ctrl_in_vld     => rec_ctrl_in_vld,
       rec_ctrl_in_last    => rec_ctrl_in_last,
       rec_ctrl_in_rdy     => rec_ctrl_in_rdy,
+      rec_ctrl_in_resp_bytes => rec_ctrl_in_resp_bytes,
+      rec_ctrl_in_resp_known => rec_ctrl_in_resp_known,
       rec_ctrl_set_stall  => rec_ctrl_set_stall,
       rec_ctrl_xfer_done  => rec_ctrl_xfer_done,
       rec_ctrl_claim      => rec_ctrl_claim,
@@ -938,4 +942,3 @@ configuration ip_xxx_3516_hs_mem_structure_cfg of ip_xxx_3516_hs_mem is
     end for;
   end for;
 end ip_xxx_3516_hs_mem_structure_cfg;
-

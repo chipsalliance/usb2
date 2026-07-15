@@ -87,6 +87,7 @@ module usb_ocp_recovery_cms_fifo #(
   // 32-bit word + 4-bit byte strobe.  fifo_rb_offset is a WORD index into the
   // command record (low bits select the DWORD within a multi-word record).
   input  logic        fifo_rb_sel,
+  input  logic        fifo_rb_from_usb,
   input  logic [7:0]  fifo_rb_cmd,
   input  logic [15:0] fifo_rb_offset,
   input  logic        fifo_rb_wr,
@@ -151,6 +152,10 @@ module usb_ocp_recovery_cms_fifo #(
   logic        image_done_q;        // sticky; emitted as image_push_done
   logic        image_push_active_q; // set by first INDIRECT_FIFO_DATA push, cleared on
                                      // region reset / image complete.
+  logic        usb_fifo_status_snapshot_vld_q;
+  logic        ext_fifo_status_snapshot_vld_q;
+  logic [31:0] usb_fifo_status_snapshot_q [0:4];
+  logic [31:0] ext_fifo_status_snapshot_q [0:4];
 
   // ------------------------------------------------------------------
   // Internal DWORD FIFO (caliptra_prim_fifo_async, used synchronously)
@@ -257,6 +262,39 @@ module usb_ocp_recovery_cms_fifo #(
                       fifo_empty};
   end
 
+  logic       usb_fifo_status_snapshot_start;
+  logic       usb_fifo_status_snapshot_use;
+  logic       ext_fifo_status_snapshot_start;
+  logic       ext_fifo_status_snapshot_use;
+  logic       usb_fifo_status_read_active;
+  logic       ext_fifo_status_read_active;
+  logic [31:0] fifo_status_word_0;
+  logic [31:0] fifo_status_word_1;
+  logic [31:0] fifo_status_word_2;
+  logic [31:0] fifo_status_word_3;
+  logic [31:0] fifo_status_word_4;
+
+  assign usb_fifo_status_snapshot_start =
+      fifo_rb_from_usb && is_fifo_status && fifo_rb_rd && (word_idx == 3'd0);
+  assign ext_fifo_status_snapshot_start =
+      !fifo_rb_from_usb && is_fifo_status && fifo_rb_rd && (word_idx == 3'd0);
+  assign usb_fifo_status_snapshot_use =
+      fifo_rb_from_usb && is_fifo_status && usb_fifo_status_snapshot_vld_q;
+  assign ext_fifo_status_snapshot_use =
+      !fifo_rb_from_usb && is_fifo_status && ext_fifo_status_snapshot_vld_q;
+  assign usb_fifo_status_read_active =
+      fifo_rb_from_usb && is_fifo_status && fifo_rb_rd;
+  assign ext_fifo_status_read_active =
+      !fifo_rb_from_usb && is_fifo_status && fifo_rb_rd;
+
+  always_comb begin
+    fifo_status_word_0 = {16'h0000, 8'h00, status_byte_2d};
+    fifo_status_word_1 = write_index_q;
+    fifo_status_word_2 = read_index_derived;
+    fifo_status_word_3 = FIFO_SIZE_DWORDS;
+    fifo_status_word_4 = MAX_XFER_SIZE_DWORDS;
+  end
+
   // ------------------------------------------------------------------
   // Register-record read mux (32-bit word assembled per WORD index)
   //
@@ -264,7 +302,9 @@ module usb_ocp_recovery_cms_fifo #(
   // INDIRECT_FIFO_CTRL_0/_1 regblock fields (hw=w) and the host reads them
   // through the A3 regblock command window (rb_adapter routes CTRL reads to the
   // regblock; CTRL writes still land here).  Only INDIRECT_FIFO_STATUS is
-  // synthesized on this read path (dynamic write/read-index state).
+  // synthesized on this read path. USB and EXT each capture their own word0
+  // snapshot and reuse it only while that same source continues its multiword
+  // status-read sequence.
   // ------------------------------------------------------------------
   logic [31:0] reg_rdata;
   always_comb begin
@@ -277,11 +317,31 @@ module usb_ocp_recovery_cms_fifo #(
       //   word3 FIFO_SIZE          (DWORD units) = Depth
       //   word4 MAX_TRANSFER_SIZE  (DWORD units) = Depth
       unique case (word_idx)
-        3'd0:    reg_rdata = {24'h0, status_byte_2d};
-        3'd1:    reg_rdata = write_index_q;
-        3'd2:    reg_rdata = read_index_derived;
-        3'd3:    reg_rdata = FIFO_SIZE_DWORDS;
-        3'd4:    reg_rdata = MAX_XFER_SIZE_DWORDS;
+        3'd0:    reg_rdata = usb_fifo_status_snapshot_use
+                           ? usb_fifo_status_snapshot_q[0]
+                           : ext_fifo_status_snapshot_use
+                           ? ext_fifo_status_snapshot_q[0]
+                           : fifo_status_word_0;
+        3'd1:    reg_rdata = usb_fifo_status_snapshot_use
+                           ? usb_fifo_status_snapshot_q[1]
+                           : ext_fifo_status_snapshot_use
+                           ? ext_fifo_status_snapshot_q[1]
+                           : fifo_status_word_1;
+        3'd2:    reg_rdata = usb_fifo_status_snapshot_use
+                           ? usb_fifo_status_snapshot_q[2]
+                           : ext_fifo_status_snapshot_use
+                           ? ext_fifo_status_snapshot_q[2]
+                           : fifo_status_word_2;
+        3'd3:    reg_rdata = usb_fifo_status_snapshot_use
+                           ? usb_fifo_status_snapshot_q[3]
+                           : ext_fifo_status_snapshot_use
+                           ? ext_fifo_status_snapshot_q[3]
+                           : fifo_status_word_3;
+        3'd4:    reg_rdata = usb_fifo_status_snapshot_use
+                           ? usb_fifo_status_snapshot_q[4]
+                           : ext_fifo_status_snapshot_use
+                           ? ext_fifo_status_snapshot_q[4]
+                           : fifo_status_word_4;
         default: reg_rdata = 32'h0;
       endcase
     end
@@ -375,7 +435,33 @@ module usb_ocp_recovery_cms_fifo #(
       region_reset_q      <= 1'b0;
       image_done_q        <= 1'b0;
       image_push_active_q <= 1'b0;
+      usb_fifo_status_snapshot_vld_q <= 1'b0;
+      ext_fifo_status_snapshot_vld_q <= 1'b0;
+      for (int i = 0; i < 5; i++) begin
+        usb_fifo_status_snapshot_q[i] <= '0;
+        ext_fifo_status_snapshot_q[i] <= '0;
+      end
     end else begin
+      if (usb_fifo_status_snapshot_start) begin
+        usb_fifo_status_snapshot_vld_q <= 1'b1;
+        usb_fifo_status_snapshot_q[0] <= fifo_status_word_0;
+        usb_fifo_status_snapshot_q[1] <= fifo_status_word_1;
+        usb_fifo_status_snapshot_q[2] <= fifo_status_word_2;
+        usb_fifo_status_snapshot_q[3] <= fifo_status_word_3;
+        usb_fifo_status_snapshot_q[4] <= fifo_status_word_4;
+      end else if (!usb_fifo_status_read_active) begin
+        usb_fifo_status_snapshot_vld_q <= 1'b0;
+      end
+      if (ext_fifo_status_snapshot_start) begin
+        ext_fifo_status_snapshot_vld_q <= 1'b1;
+        ext_fifo_status_snapshot_q[0] <= fifo_status_word_0;
+        ext_fifo_status_snapshot_q[1] <= fifo_status_word_1;
+        ext_fifo_status_snapshot_q[2] <= fifo_status_word_2;
+        ext_fifo_status_snapshot_q[3] <= fifo_status_word_3;
+        ext_fifo_status_snapshot_q[4] <= fifo_status_word_4;
+      end else if (!ext_fifo_status_read_active) begin
+        ext_fifo_status_snapshot_vld_q <= 1'b0;
+      end
 
       // ----------------------------------------------------------------
       // INDIRECT_FIFO_CTRL write handler (same-cycle).
@@ -392,6 +478,8 @@ module usb_ocp_recovery_cms_fifo #(
               image_done_q        <= 1'b0;
               region_reset_q      <= 1'b1;
               image_push_active_q <= 1'b0;
+              usb_fifo_status_snapshot_vld_q <= 1'b0;
+              ext_fifo_status_snapshot_vld_q <= 1'b0;
             end
             if (fifo_rb_wstrb[2]) image_size_q[7:0]   <= fifo_rb_wdata[23:16];
             if (fifo_rb_wstrb[3]) image_size_q[15:8]  <= fifo_rb_wdata[31:24];

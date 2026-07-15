@@ -39,18 +39,18 @@
 --      N+1 before a single-slot serializer could drain beat N.  The buffer
 --      absorbs the whole packet so no beat is dropped.  It is enabled only
 --      while claim_q='1' and the beat is not a SETUP.
---    * TX store-and-forward buffer: ctrl_in_* 32b words accumulate into a
---      full-EP0-MaxPacket (64 B) buffer.  The PIE data phase is held inactive
---      (NAKing early host IN tokens) until the whole IN response is staged,
---      then activated with the actual staged byte count.  The buffered beats
---      drain to PIE txdata with no possibility of a late beat (no underrun).
---      ctrl_in_rdy honours both buffer-full backpressure and claim_q so the SV
---      producer sees backpressure the cycle the arbiter releases ownership.
---      Buffer state is flushed whenever claim_q='0' so no response leaks across
---      transfer boundaries.
---    * wLength latched into nbytes_r and driven into PIE's epinfo_nbytes so
---      the data-stage length matches the host-requested byte count when the
---      transfer is presented to usb_pie.
+ --    * TX cut-through queue: ctrl_in_* 32b words accumulate into exactly two
+ --      resident 64-bit beats (current + next) plus one 32-bit half-word
+ --      assembler.  The PIE data phase is held inactive until the queue meets
+ --      the launch rule implied by usb_pie sampling: <=8 B responses wait for
+ --      current+producer-end, >8 B responses wait for current+next.  A visible
+ --      fetch shifts next -> current only for non-final beats; the final beat
+ --      remains stable through pie_endtransfer because pie_txdata_fetched does
+ --      not pulse for the last beat.
+ --    * wLength is latched into nbytes_r for OUT transfers. IN transfers drive
+ --      epinfo_nbytes from exact response metadata supplied by the SV decoder,
+ --      clipped to wLength, so short responses terminate correctly and the
+ --      exact-64-B case still emits the terminating ZLP.
 --    * The legacy bundle pass-through is bit-identical to the un-arbitered IP
 --      whenever claim_q='0', so standard USB enumeration (GET_DESCRIPTOR /
 --      SET_ADDRESS / SET_CONFIGURATION / GET_STATUS / class hooks for non-OCP
@@ -62,14 +62,13 @@
 --    * rx_wr_beat_r   : 4-bit (0..8)         -- OUT buffer beat write index
 --    * rx_rd_widx_r   : 5-bit (0..16)        -- OUT buffer word read index
 --    * rx_total_r     : 12-bit (matches pie_rx_nbytes width) staged OUT bytes
---    * tx_wr_widx_r   : 5-bit (0..16)        -- IN buffer word write index
---    * tx_rd_beat_r   : 4-bit (0..8)         -- IN buffer beat read index
---    * tx_nbytes_r    : 7-bit (0..64)        -- staged IN byte count
---    * nbytes_r       : 15-bit (matches epinfo_nbytes width)
---    * claim_state_r  : 2-bit (four-state FSM enum)
---  The OUT path accumulates whole 64-bit beats into a full-MaxPacket
---  store-and-forward buffer (rx_buf_r), symmetric to the IN tx_buf_r buffer,
---  then drains 32-bit words to ctrl_decode.
+  --    * tx_curr_valid_r/tx_next_valid_r : 1 bit each -- resident 64b beats
+  --    * tx_half_word_valid_r            : 1 bit      -- 32b assembler occupancy
+  --    * tx_bytes_sent_r                 : 7-bit      -- bytes retired by visible fetches
+  --    * nbytes_r       : 15-bit (matches epinfo_nbytes width)
+  --    * claim_state_r  : 2-bit (four-state FSM enum)
+  --  The OUT path accumulates whole 64-bit beats into a bounded elastic queue
+  --  (rx_buf_r) and drains 32-bit words to ctrl_decode.
 --  ----------------------------------------------------------------------------
 
 library IEEE;
@@ -195,108 +194,96 @@ architecture rtl of usb_pie_recovery_arb is
   -- any spec-legal recovery transfer.
   -- ----------------------------------------------------------------------
   signal nbytes_r : unsigned(14 downto 0);
+  signal tx_response_bytes_r : unsigned(6 downto 0);
+  signal tx_response_known_r : std_logic;
 
   -- ----------------------------------------------------------------------
-  -- Control-OUT store-and-forward buffer.
+  -- Control-OUT elastic cut-through queue.
   --
-  -- The legacy PIE drives pie_rxdatavalid as a 1-cycle pulse once per 64-bit
-  -- received word (every 8 bytes) and has NO RX backpressure input -- it
-  -- delivers from its own post-ACK RX FIFO.  A depth-1 serializer could not
-  -- drain a beat (2 x 32-bit ctrl_decode words, gated by ctrl_out_rdy) before
-  -- the next beat arrived, so multi-beat OUT transfers (INDIRECT_FIFO_DATA,
-  -- 64 B = 8 beats) dropped beats.  The buffer absorbs the whole packet:
-  --   * CAPTURE: each pie_rxdatavalid beat (claim_q, NOT SETUP) is written to
-  --     rx_buf_r at rx_wr_beat_r and the index advances.  The buffer holds a
-  --     full EP0 HS MaxPacket (64 B = 8 x 64-bit beats = 16 x 32-bit words).
-  --   * Total byte count: pie_rx_nbytes is the WHOLE-packet byte count, but
-  --     the PIE only registers it at packet end (set_rx_nbytes at crc16-valid,
-  --     coincident with pie_endtransfer for the DATA stage; see
-  --     usb_pie.m.vhdl:2860/3528).  It is therefore NOT valid at the first
-  --     beat; the arbiter latches it (rx_total_r) on the DATA-stage
-  --     pie_endtransfer pulse, when it authoritatively holds the total.
-  --   * DRAIN: 32-bit words stream to ctrl_out_* at ctrl_out_rdy pace.  Word0
-  --     = beat[31:0], word1 = beat[63:32] (little-endian, lowest OCP offset in
-  --     the lowest lane).  The final word's ctrl_out_be reflects the partial
-  --     byte count and ctrl_out_last marks the last valid word.
-  --   * ctrl_xfer_done for the OUT data stage is sourced from rx_drain_done_r
-  --     (drain complete), NOT the DATA-stage pie_endtransfer, so ctrl_decode
-  --     consumes every buffered word before the transfer is finalized.
-  --   * Buffer/indices/active flushed on claim release or a fresh SETUP.
+  -- PIE delivers post-ACK 64-bit beats without a backpressure input. The
+  -- queue holds three beats: one tail beat is withheld until pie_endtransfer
+  -- makes pie_rx_nbytes authoritative, while older beats stream immediately
+  -- as two 32-bit ctrl_out words. A successor beat proves the previous beat
+  -- cannot be final, so it may be drained with a full byte mask before packet
+  -- end. The final beat uses the authoritative total for its partial mask.
   --
-  -- Scope: a single MaxPacket (<= 64 bytes).  All current OCP recovery OUT
-  -- commands fit one EP0 HS packet (INDIRECT_FIFO_DATA = 64 bytes is the max).
-  -- Multi-packet OUT (wLength > 64) is OUT OF SCOPE for this milestone.
+  -- The PIE can emit a CRC-flush beat after payload delivery. Capture is
+  -- bounded by the SETUP wLength-derived expected beat count, and the final
+  -- ctrl_out_last terminates on rx_total_r, so a flush tail is never emitted.
+  -- ctrl_xfer_done remains sourced from rx_drain_done_r after the final valid
+  -- word is accepted.
   -- ----------------------------------------------------------------------
-  constant RX_MAXBYTES : integer := 64;                       -- EP0 HS MaxPacket
-  constant RX_NBEATS   : integer := RX_MAXBYTES / BYTES_PER_BEAT; -- 8 beats
-  constant RX_NWORDS   : integer := RX_MAXBYTES / 4;             -- 16 words
+  constant RX_ELASTIC_BEATS : integer := 3;
 
-  type t_rx_buf is array (0 to RX_NBEATS-1)
+  type t_rx_buf is array (0 to RX_ELASTIC_BEATS-1)
                      of std_logic_vector(USB_DATAWIDTH-1 downto 0);
-  signal rx_buf_r          : t_rx_buf;
-  signal rx_wr_beat_r      : unsigned(3 downto 0);  -- beat write index 0..8
-  signal rx_rd_widx_r      : unsigned(4 downto 0);  -- word read index 0..16
-  signal rx_total_r        : unsigned(11 downto 0); -- staged OUT bytes
-  signal rx_drain_active_r : std_logic;             -- buffer -> ctrl_decode
-  signal rx_drain_done_r   : std_logic;             -- 1-cycle finalize pulse
+  signal rx_buf_r            : t_rx_buf;
+  signal rx_wr_beat_r        : unsigned(1 downto 0);
+  signal rx_rd_beat_r        : unsigned(1 downto 0);
+  signal rx_count_r          : unsigned(1 downto 0);
+  signal rx_captured_beats_r : unsigned(3 downto 0);
+  signal rx_rd_word_r        : std_logic;
+  signal rx_word_index_r     : unsigned(4 downto 0);
+  signal rx_total_r          : unsigned(11 downto 0);
+  signal rx_end_seen_r       : std_logic;
+  signal rx_drain_done_r     : std_logic;
 
-  signal rx_last_word_c    : std_logic;             -- current word is last
-  signal ctrl_out_data_c   : std_logic_vector(31 downto 0);
-  signal ctrl_out_be_c     : std_logic_vector(3 downto 0);
-  signal ctrl_out_vld_c    : std_logic;
-  signal ctrl_out_last_c   : std_logic;
+  signal rx_expected_beats_c : unsigned(3 downto 0);
+  signal rx_drain_enable_c   : std_logic;
+  signal rx_last_word_c      : std_logic;
+  signal ctrl_out_data_c     : std_logic_vector(31 downto 0);
+  signal ctrl_out_be_c       : std_logic_vector(3 downto 0);
+  signal ctrl_out_vld_c      : std_logic;
+  signal ctrl_out_last_c     : std_logic;
 
   -- ----------------------------------------------------------------------
-  -- Control-IN store-and-forward buffer.
+  -- Control-IN elastic queue.
   --
-  -- A full EP0 high-speed MaxPacket buffer (64 bytes = 8 x 64-bit beats =
-  -- 16 x 32-bit words) is required because the PIE can drain the packet at the
-  -- HS wire rate while ctrl_decode is still producing later words.  The buffer
-  -- stages the entire response before the data phase is activated, so the PIE
-  -- never fetches an empty beat and never underruns the packet.
+  -- The S1 hardware read path produces a 64-bit response beat faster than the
+  -- PIE fetch cadence. Two resident beats plus a one-word assembler are enough
+  -- to absorb fetch handshakes while allowing the data phase to activate as
+  -- soon as the first complete beat is ready.
   -- The arbiter:
-  --   * accumulates the 32-bit ctrl_decode words (respecting ctrl_in_be on
-  --     the final partial word; little-endian, lowest OCP offset byte in the
-  --     lowest byte lane -- mapping preserved) into tx_buf_r while HOLDING
-  --     the PIE data phase inactive (epinfo_to_pie_active = '0') so the PIE
-  --     NAKs any host IN token that arrives before the whole response is
-  --     buffered (USB 2.0 Sec 8.5.3.2 / Sec 8.4.5: a device NAKs an IN token
-  --     when it is not yet able to return the data).  This is the spec-
-  --     compliant way to win the SETUP->IN race for a multi-beat response;
-  --   * marks staging complete (tx_resp_ready_r) when ctrl_decode asserts
-  --     ctrl_in_last (true end-of-data; the SV short-packet end is handled in
-  --     usb_ocp_recovery_ctrl_decode.sv).  On completion it activates the PIE
-  --     data phase and drives epinfo_to_pie_nbytes from the ACTUAL staged
-  --     byte count (tx_nbytes_r), NOT wLength -- so a short command such as
-  --     PROT_CAP (16 real bytes for a 64-byte request) emits a correct short
-  --     packet, which the host accepts as end-of-data;
-  --   * feeds the buffered beats to the PIE on pie_txdata_fetched.  Because
-  --     the buffer is fully populated before activation, no beat can ever be
-  --     late, so the underrun is impossible by construction.
-  --   * resets the buffer, the word/byte counters and the active-gate on
-  --     claim release (or a fresh SETUP) so the next transfer starts clean.
+  --   * holds exactly two 64-bit beats plus one 32-bit half-word assembler.
+  --     The decoder supplies exact implementation byte-count metadata during
+  --     S_SETUP, so the arbiter can activate as soon as the queue guarantees
+  --     the PIE's sampling contract:
+  --       - responses <= 8 B wait for the final producer beat
+  --       - responses > 8 B wait for current+next beats to be valid
+  --   * shifts next -> current only on a visible PIE fetch for a non-final
+  --     beat. The final current beat remains valid and data-stable until
+  --     pie_endtransfer because usb_pie samples epinfo_txdata every beat while
+  --     pie_txdata_fetched pulses only for non-final beats.
+  --   * drives epinfo_to_pie_nbytes from the captured exact metadata, never
+  --     from wLength or an accumulated staging count, so short responses and
+  --     the exact-64-B terminating-ZLP case follow USB 2.0 Sec 5.5.3 /
+  --     Sec 8.5.3 precisely.
+  --   * flushes queue state on claim release or a fresh SETUP, preventing data
+  --     leakage across transfers.
   --
   -- Scope: a single MaxPacket (<= 64 bytes).  All current OCP recovery IN
   -- responses fit one EP0 HS packet (DEVICE_STATUS = 64 bytes is the max).
   -- Multi-packet IN (wLength > 64) is OUT OF SCOPE for this milestone.
   -- ----------------------------------------------------------------------
-  constant TX_MAXBYTES : integer := 64;                       -- EP0 HS MaxPacket
-  constant TX_NBEATS   : integer := TX_MAXBYTES / BYTES_PER_BEAT; -- 8 beats
-  constant TX_NWORDS   : integer := TX_MAXBYTES / 4;              -- 16 words
+  constant TX_MAXBYTES : integer := 64;
+  signal tx_curr_data_r       : std_logic_vector(USB_DATAWIDTH-1 downto 0);
+  signal tx_curr_valid_r      : std_logic;
+  signal tx_next_data_r       : std_logic_vector(USB_DATAWIDTH-1 downto 0);
+  signal tx_next_valid_r      : std_logic;
+  signal tx_half_word_r       : std_logic_vector(31 downto 0);
+  signal tx_half_word_valid_r : std_logic;
+  signal tx_producer_done_r   : std_logic;
+  signal tx_bytes_sent_r      : unsigned(6 downto 0);
+  signal tx_packet_started_r  : std_logic;
+  signal xfer_dir_in_r        : std_logic;             -- latched SETUP IN dir
 
-  type t_tx_buf is array (0 to TX_NBEATS-1)
-                     of std_logic_vector(USB_DATAWIDTH-1 downto 0);
-  signal tx_buf_r          : t_tx_buf;
-  signal tx_wr_widx_r      : unsigned(4 downto 0);  -- word write index 0..16
-  signal tx_nbytes_r       : unsigned(6 downto 0);  -- staged bytes 0..64
-  signal tx_resp_ready_r   : std_logic;             -- whole response staged
-  signal tx_rd_beat_r      : unsigned(3 downto 0);  -- beat read index 0..8
-  signal xfer_dir_in_r     : std_logic;             -- latched SETUP IN dir
-
-  signal ctrl_in_rdy_c     : std_logic;
-  signal tx_staged_beats_c : unsigned(3 downto 0);  -- ceil(tx_nbytes/8)
-  signal tx_in_data_c      : std_logic;             -- claim & S_DATA & dir=IN & data pkt
-  signal tx_beat_valid_c   : std_logic;             -- current beat has data
+  signal ctrl_in_rdy_c        : std_logic;
+  signal tx_in_data_c         : std_logic;             -- claim & S_DATA & dir=IN & data pkt
+  signal tx_launch_ready_c    : std_logic;
+  signal tx_beat_valid_c      : std_logic;
+  signal tx_shift_c           : std_logic;
+  signal tx_slot_free_c       : std_logic;
+  signal tx_remaining_bytes_c : unsigned(6 downto 0);
 
   -- Data-stage toggle sequencing for IN control reads (USB 2.0 Sec 5.5.3 /
   -- Sec 8.6).  in_data_toggle_r is the running per-packet DATA toggle: it
@@ -308,6 +295,20 @@ architecture rtl of usb_pie_recovery_arb is
   signal in_data_toggle_r  : std_logic;             -- running DATA-stage toggle (DATA1 first)
   signal zlp_phase_r       : std_logic;             -- emitting the terminating ZLP in S_DATA
   signal zlp_owed_c        : std_logic;             -- exact-MaxPacket IN read owes a ZLP
+
+  function mask_word32(data : std_logic_vector(31 downto 0);
+                       be   : std_logic_vector(3 downto 0))
+    return std_logic_vector is
+    variable masked_v : std_logic_vector(31 downto 0);
+  begin
+    masked_v := (others => '0');
+    for idx in 0 to 3 loop
+      if be(idx) = '1' then
+        masked_v(idx*8+7 downto idx*8) := data(idx*8+7 downto idx*8);
+      end if;
+    end loop;
+    return masked_v;
+  end function;
 
 begin
 
@@ -322,6 +323,8 @@ begin
       setup_pkt_r          <= (others => '0');
       setup_pkt_vld_r      <= '0';
       nbytes_r             <= (others => '0');
+      tx_response_bytes_r  <= (others => '0');
+      tx_response_known_r  <= '0';
       last_setup_was_ocp_q <= '0';
       xfer_dir_in_r        <= '0';
     elsif rising_edge(clk) then
@@ -333,6 +336,8 @@ begin
         -- (USB 2.0 Sec 9.3 Tbl 9-2).  Bit 63 is dropped to fit the
         -- 15-bit PIE nbytes port (see nbytes_r decl comment).
         nbytes_r <= unsigned(pie_rxdata(62 downto 48));
+        tx_response_bytes_r <= (others => '0');
+        tx_response_known_r <= '0';
         -- Latch the transfer direction so the TX active gate knows
         -- whether the upcoming DATA stage is an IN (device->host) response
         -- that must be fully staged before the PIE is activated.
@@ -342,6 +347,12 @@ begin
         -- never sees a standard or unrelated-class SETUP.
         setup_pkt_vld_r      <= setup_is_ocp_match_c;
         last_setup_was_ocp_q <= setup_is_ocp_match_c;
+      elsif claim_state_r = S_SETUP then
+        tx_response_bytes_r <= unsigned(ctrl_in_resp_bytes);
+        tx_response_known_r <= ctrl_in_resp_known;
+      elsif claim_q = '0' then
+        tx_response_bytes_r <= (others => '0');
+        tx_response_known_r <= '0';
       end if;
     end if;
   end process setup_clk_proc;
@@ -400,7 +411,7 @@ begin
   -- ======================================================================
   claim_fsm_comb_proc : process (claim_state_r, setup_capture_c,
                                  setup_is_ocp_match_c, pie_endtransfer_pulse_c,
-                                 nbytes_r, rx_drain_active_r, status_end_pend_r,
+                                 nbytes_r, rx_count_r, status_end_pend_r,
                                  zlp_phase_r, zlp_owed_c)
   begin
     -- Default: hold.
@@ -463,12 +474,11 @@ begin
             claim_state_nxt <= S_IDLE;
           end if;
         elsif ((pie_endtransfer_pulse_c = '1') or (status_end_pend_r = '1'))
-              and (rx_drain_active_r = '0') then
-          -- Hold ownership until the OUT RX buffer has fully drained to
-          -- ctrl_decode (rx_drain_active_r='0').  For IN transfers the drain
-          -- never activates so this reduces to the plain pie_endtransfer
-          -- release.  status_end_pend_r captures a STATUS-end pulse that
-          -- arrives while the drain is still in flight.
+              and (rx_count_r = to_unsigned(0, rx_count_r'length)) then
+          -- Hold ownership until the OUT elastic queue has fully drained to
+          -- ctrl_decode. For IN transfers the queue remains empty, so this
+          -- reduces to the plain pie_endtransfer release. status_end_pend_r
+          -- captures a STATUS-end pulse that arrives before the tail drains.
           claim_state_nxt <= S_IDLE;
         end if;
 
@@ -541,10 +551,11 @@ begin
         decline_pend_q <= '0';
       end if;
       -- status_end_pend_r: latch a STATUS-stage end that arrives while the
-      -- OUT RX buffer is still draining, so the S_STATUS->S_IDLE release is
-      -- deferred until the drain completes.  Cleared on leaving S_STATUS.
+      -- OUT elastic queue still contains valid beats, so the
+      -- S_STATUS->S_IDLE release is deferred until the final word drains.
       if claim_state_r = S_STATUS then
-        if (pie_endtransfer_pulse_c = '1') and (rx_drain_active_r = '1') then
+        if (pie_endtransfer_pulse_c = '1') and
+           (rx_count_r /= to_unsigned(0, rx_count_r'length)) then
           status_end_pend_r <= '1';
         end if;
       else
@@ -590,17 +601,17 @@ begin
   -- ======================================================================
   -- xfer-done re-emission to SV.
   --   * IN transfers (xfer_dir_in_r='1'): pulse on the DATA/STATUS-stage
-  --     pie_endtransfer rising edge, BUT only once the response is fully
-  --     staged (tx_resp_ready_r='1').  A 64-byte IN read takes ~800 ns to
-  --     stage; the host's first IN token can arrive mid-staging, and the
+  --     pie_endtransfer rising edge, BUT only after the launch contract is
+  --     satisfied (tx_launch_ready_c='1'). The host's first IN token can
+  --     arrive while the elastic queue is still filling, and the
   --     PIE legitimately NAKs it (NAK raises pie_endtransfer).  Without the
-  --     tx_resp_ready_r qualifier that NAK edge would fire ctrl_xfer_done
+  --     tx_launch_ready_c qualifier that NAK edge would fire ctrl_xfer_done
   --     and trip ctrl_decode's early-termination escape, abandoning staging
   --     to S_IDLE so the response never completes (the PIE then NAKs every
-  --     retry -> host reads zeros).  Gating on tx_resp_ready_r lets staging
-  --     finish across the NAK retries; a later IN then delivers the full
-  --     response.  tx_resp_ready_r stays high through the STATUS stage.
-  --   * OUT transfers (xfer_dir_in_r='0'): the RX buffer drains to ctrl_decode
+  --     retry -> host reads zeros). Gating on tx_launch_ready_c lets staging
+  --     reach the required two-beat or final-beat condition before the decoder
+  --     observes transfer completion.
+  --   * OUT transfers (xfer_dir_in_r='0'): the RX queue drains to ctrl_decode
   --     AFTER the DATA-stage pie_endtransfer (the PIE delivers all beats then
   --     ends the stage).  Sourcing ctrl_xfer_done from the pie_endtransfer
   --     edge would abort ctrl_decode mid-drain.  Instead pulse from
@@ -608,22 +619,25 @@ begin
   -- ======================================================================
   ctrl_xfer_done <= rx_drain_done_r when (xfer_dir_in_r = '0')
                     else (pie_endtransfer and not pie_endtransfer_q and
-                          tx_resp_ready_r)
-                         when (claim_state_r = S_DATA) or
-                              (claim_state_r = S_STATUS)
-                    else '0';
+                          tx_launch_ready_c)
+                           when (claim_state_r = S_DATA) or
+                                (claim_state_r = S_STATUS)
+                     else '0';
 
   -- ======================================================================
-  -- Control-OUT store-and-forward buffer (PIE 64b beats -> SV 32b words).
-  --
-  -- ctrl_out_* presents the word currently addressed by rx_rd_widx_r while a
-  -- drain is in flight.  Word0 = beat[31:0], word1 = beat[63:32] (little-
-  -- endian, lowest OCP offset byte in the lowest lane).  The final word's
-  -- ctrl_out_be reflects the partial byte count and ctrl_out_last marks it.
+  -- Control-OUT elastic queue (PIE 64b beats -> SV 32b words).
   -- ======================================================================
-  rxstream_comb_proc : process (rx_drain_active_r, rx_rd_widx_r, rx_total_r,
-                                rx_buf_r)
-    variable beat_v : integer range 0 to RX_NBEATS-1;
+  rx_expected_beats_c <= resize(shift_right(nbytes_r +
+                                            to_unsigned(BYTES_PER_BEAT-1,
+                                                        nbytes_r'length), 3), 4);
+  rx_drain_enable_c <= '1' when (rx_count_r /= to_unsigned(0, rx_count_r'length))
+                                and ((rx_count_r > to_unsigned(1, rx_count_r'length))
+                                     or (rx_end_seen_r = '1'))
+                       else '0';
+
+  rxstream_comb_proc : process (rx_drain_enable_c, rx_rd_beat_r, rx_rd_word_r,
+                                 rx_word_index_r, rx_total_r, rx_end_seen_r, rx_buf_r)
+    variable beat_v : integer range 0 to RX_ELASTIC_BEATS-1;
     variable word_v : std_logic_vector(31 downto 0);
     variable rem_v  : unsigned(11 downto 0);
   begin
@@ -633,9 +647,9 @@ begin
     ctrl_out_last_c <= '0';
     rx_last_word_c  <= '0';
 
-    if rx_drain_active_r = '1' then
-      beat_v := to_integer(rx_rd_widx_r(3 downto 1));   -- 0..7 (widx / 2)
-      if rx_rd_widx_r(0) = '0' then
+    if rx_drain_enable_c = '1' then
+      beat_v := to_integer(rx_rd_beat_r);
+      if rx_rd_word_r = '0' then
         word_v := rx_buf_r(beat_v)(31 downto 0);
       else
         word_v := rx_buf_r(beat_v)(63 downto 32);
@@ -643,94 +657,120 @@ begin
       ctrl_out_data_c <= word_v;
       ctrl_out_vld_c  <= '1';
 
-      -- Bytes still to drain from this word onward (rx_total_r - widx*4).
-      rem_v := rx_total_r -
-               to_unsigned(to_integer(rx_rd_widx_r) * 4, rem_v'length);
-
-      -- Valid-byte mask for this word (final word may be partial).
-      if rem_v >= to_unsigned(4, rem_v'length) then
+      if rx_end_seen_r = '0' then
         ctrl_out_be_c <= "1111";
       else
-        case to_integer(rem_v(1 downto 0)) is
-          when 1      => ctrl_out_be_c <= "0001";
-          when 2      => ctrl_out_be_c <= "0011";
-          when 3      => ctrl_out_be_c <= "0111";
-          when others => ctrl_out_be_c <= "1111";
-        end case;
-      end if;
+        rem_v := rx_total_r -
+                 to_unsigned(to_integer(rx_word_index_r) * 4, rem_v'length);
+        if rem_v >= to_unsigned(4, rem_v'length) then
+          ctrl_out_be_c <= "1111";
+        else
+          case to_integer(rem_v(1 downto 0)) is
+            when 1      => ctrl_out_be_c <= "0001";
+            when 2      => ctrl_out_be_c <= "0011";
+            when 3      => ctrl_out_be_c <= "0111";
+            when others => ctrl_out_be_c <= "1111";
+          end case;
+        end if;
 
-      if rem_v <= to_unsigned(4, rem_v'length) then
-        ctrl_out_last_c <= '1';
-        rx_last_word_c  <= '1';
+        if rem_v <= to_unsigned(4, rem_v'length) then
+          ctrl_out_last_c <= '1';
+          rx_last_word_c  <= '1';
+        end if;
       end if;
     end if;
   end process rxstream_comb_proc;
 
-  -- Single clocked process for the OUT byte buffer: capture beats from the
-  -- PIE, latch the total at the DATA-stage end, then advance the drain read
-  -- index at ctrl_out_rdy pace.  Async active-low reset (IP convention).
   rxbuf_clk_proc : process (clk, reset_n)
+    variable capture_v : boolean;
+    variable pop_v     : boolean;
   begin
     if reset_n = '0' then
-      for i in 0 to RX_NBEATS-1 loop
+      for i in 0 to RX_ELASTIC_BEATS-1 loop
         rx_buf_r(i) <= (others => '0');
       end loop;
-      rx_wr_beat_r      <= (others => '0');
-      rx_rd_widx_r      <= (others => '0');
-      rx_total_r        <= (others => '0');
-      rx_drain_active_r <= '0';
-      rx_drain_done_r   <= '0';
+      rx_wr_beat_r        <= (others => '0');
+      rx_rd_beat_r        <= (others => '0');
+      rx_count_r          <= (others => '0');
+      rx_captured_beats_r <= (others => '0');
+      rx_rd_word_r        <= '0';
+      rx_word_index_r     <= (others => '0');
+      rx_total_r          <= (others => '0');
+      rx_end_seen_r       <= '0';
+      rx_drain_done_r     <= '0';
     elsif rising_edge(clk) then
-      rx_drain_done_r <= '0';   -- default: single-cycle finalize pulse low
+      rx_drain_done_r <= '0';
 
       if (claim_q = '0') or (setup_capture_c = '1') then
-        -- Flush at transfer boundary / fresh SETUP: no OUT word leaks across
-        -- transfers and each new packet starts from an empty buffer.
-        for i in 0 to RX_NBEATS-1 loop
+        for i in 0 to RX_ELASTIC_BEATS-1 loop
           rx_buf_r(i) <= (others => '0');
         end loop;
-        rx_wr_beat_r      <= (others => '0');
-        rx_rd_widx_r      <= (others => '0');
-        rx_total_r        <= (others => '0');
-        rx_drain_active_r <= '0';
+        rx_wr_beat_r        <= (others => '0');
+        rx_rd_beat_r        <= (others => '0');
+        rx_count_r          <= (others => '0');
+        rx_captured_beats_r <= (others => '0');
+        rx_rd_word_r        <= '0';
+        rx_word_index_r     <= (others => '0');
+        rx_total_r          <= (others => '0');
+        rx_end_seen_r       <= '0';
       else
-        -- CAPTURE: latch each incoming OUT data beat (claim held, NOT a SETUP
-        -- beat, not yet draining).  The write index is guarded against the
-        -- buffer depth so the trailing PIE CRC pulse (an extra pie_rxdatavalid
-        -- that the PIE emits past the last data beat for multiple-of-8
-        -- payloads) cannot write past the 8-beat buffer.
-        if (pie_rxdatavalid = '1') and (pie_epinfo_setup = '0') and
-           (rx_drain_active_r = '0') and
-           (rx_wr_beat_r < to_unsigned(RX_NBEATS, rx_wr_beat_r'length)) then
-          rx_buf_r(to_integer(rx_wr_beat_r(2 downto 0))) <= pie_rxdata;
-          rx_wr_beat_r <= rx_wr_beat_r + 1;
+        -- A normal 64-bit beat retires after its high word. A partial final
+        -- beat may end on its low word, so rx_last_word_c also retires it and
+        -- emits ctrl_xfer_done without waiting for a non-existent high word.
+        pop_v := (rx_drain_enable_c = '1') and
+                 (ctrl_out_rdy = '1') and
+                 ((rx_rd_word_r = '1') or (ctrl_out_last_c = '1'));
+        capture_v := (pie_rxdatavalid = '1') and
+                     (pie_epinfo_setup = '0') and
+                     (rx_captured_beats_r < rx_expected_beats_c) and
+                     ((rx_count_r < to_unsigned(RX_ELASTIC_BEATS,
+                                                 rx_count_r'length)) or pop_v);
+
+        if capture_v then
+          rx_buf_r(to_integer(rx_wr_beat_r)) <= pie_rxdata;
+          if rx_wr_beat_r = to_unsigned(RX_ELASTIC_BEATS-1,
+                                        rx_wr_beat_r'length) then
+            rx_wr_beat_r <= (others => '0');
+          else
+            rx_wr_beat_r <= rx_wr_beat_r + 1;
+          end if;
+          rx_captured_beats_r <= rx_captured_beats_r + 1;
         end if;
 
-        -- CAPTURE COMPLETE: at the DATA-stage end (OUT direction) pie_rx_nbytes
-        -- authoritatively holds the whole-packet byte count (the PIE registers
-        -- it at crc16-valid, coincident with this pie_endtransfer).  Latch the
-        -- total and start the drain.  A zero-byte data stage cannot occur (the
-        -- FSM only enters S_DATA for wLength>0); guard it anyway by finalizing
-        -- ctrl_decode without draining.
-        if (pie_endtransfer_pulse_c = '1') and (claim_state_r = S_DATA) and
-           (xfer_dir_in_r = '0') and (rx_drain_active_r = '0') then
-          if unsigned(pie_rx_nbytes) /= 0 then
-            rx_total_r        <= unsigned(pie_rx_nbytes);
-            rx_drain_active_r <= '1';
-            rx_rd_widx_r      <= (others => '0');
-          else
+        if pop_v then
+          if ctrl_out_last_c = '1' then
             rx_drain_done_r <= '1';
+          end if;
+          if rx_rd_beat_r = to_unsigned(RX_ELASTIC_BEATS-1,
+                                        rx_rd_beat_r'length) then
+            rx_rd_beat_r <= (others => '0');
+          else
+            rx_rd_beat_r <= rx_rd_beat_r + 1;
           end if;
         end if;
 
-        -- DRAIN: advance one 32-bit word per ctrl_out_rdy.  On the last word
-        -- drop active and emit the single-cycle finalize pulse.
-        if (rx_drain_active_r = '1') and (ctrl_out_rdy = '1') then
-          if rx_last_word_c = '1' then
-            rx_drain_active_r <= '0';
-            rx_drain_done_r   <= '1';
+        if capture_v and not pop_v then
+          rx_count_r <= rx_count_r + 1;
+        elsif pop_v and not capture_v then
+          rx_count_r <= rx_count_r - 1;
+        end if;
+
+        if (rx_drain_enable_c = '1') and (ctrl_out_rdy = '1') then
+          if rx_rd_word_r = '0' then
+            rx_rd_word_r    <= '1';
+            rx_word_index_r <= rx_word_index_r + 1;
           else
-            rx_rd_widx_r <= rx_rd_widx_r + 1;
+            rx_rd_word_r    <= '0';
+            rx_word_index_r <= rx_word_index_r + 1;
+          end if;
+        end if;
+
+        if (pie_endtransfer_pulse_c = '1') and (claim_state_r = S_DATA) and
+           (xfer_dir_in_r = '0') then
+          rx_total_r    <= unsigned(pie_rx_nbytes);
+          rx_end_seen_r <= '1';
+          if unsigned(pie_rx_nbytes) = 0 then
+            rx_drain_done_r <= '1';
           end if;
         end if;
       end if;
@@ -743,113 +783,158 @@ begin
   ctrl_out_last <= ctrl_out_last_c;
 
   -- ======================================================================
-  -- Control-IN store-and-forward buffer (SV 32b words -> PIE 64b beats).
-  --
-  -- ctrl_in_rdy accepts a new 32-bit word while the arbiter holds claim, the
-  -- response is not yet fully staged (tx_resp_ready_r='0'), and the 64-byte
-  -- buffer is not full (tx_wr_widx_r < TX_NWORDS).  Unused byte lanes of a
-  -- partial final word are masked to 0 for X-hygiene; the actual staged byte
-  -- count (tx_nbytes_r) is what the PIE is told via epinfo_to_pie_nbytes, so
-  -- those padding lanes are never placed on the wire.
+  -- Control-IN elastic queue (SV 32b words -> PIE 64b beats).
   -- ======================================================================
-  ctrl_in_rdy_c <= '1' when (claim_q = '1') and (tx_resp_ready_r = '0') and
-                            (tx_wr_widx_r < to_unsigned(TX_NWORDS, 5))
-                   else '0';
-  ctrl_in_rdy   <= ctrl_in_rdy_c;
-
-  -- Number of resident 64-bit beats = ceil(tx_nbytes_r / 8).
-  tx_staged_beats_c <= resize(shift_right(tx_nbytes_r +
-                                          to_unsigned(BYTES_PER_BEAT-1, 7), 3),
-                              4);
-
-  -- A claimed IN DATA stage that is still draining staged beats to the PIE.
-  -- Excludes the terminating-ZLP phase so the data-path muxes (nbytes) select
-  -- the zero-length values for that packet rather than the 64-byte data values.
   tx_in_data_c <= '1' when (claim_q = '1') and
                            (claim_state_r = S_DATA) and
                            (xfer_dir_in_r = '1') and
                            (zlp_phase_r = '0')
-                  else '0';
-
-  -- Terminating-ZLP owed: an IN read (xfer_dir_in_r) whose whole response is
-  -- staged (tx_resp_ready_r) and exactly fills one EP0 MaxPacket
-  -- (tx_nbytes_r = TX_MAXBYTES).  Such an exact-multiple data stage cannot be
-  -- terminated by a short packet, so it requires a zero-length terminator
-  -- carrying the alternated toggle (USB 2.0 Sec 5.5.3 / 8.5.3.2 / 8.6).
-  zlp_owed_c <= '1' when (xfer_dir_in_r = '1') and
-                         (tx_resp_ready_r = '1') and
-                         (tx_nbytes_r = to_unsigned(TX_MAXBYTES, tx_nbytes_r'length))
+                   else '0';
+  tx_remaining_bytes_c <= tx_response_bytes_r - tx_bytes_sent_r
+                          when tx_response_bytes_r >= tx_bytes_sent_r
+                          else (others => '0');
+  tx_shift_c <= '1' when (tx_in_data_c = '1') and
+                          (tx_launch_ready_c = '1') and
+                          (pie_txdata_fetched = '1') and
+                         (tx_remaining_bytes_c > to_unsigned(BYTES_PER_BEAT,
+                                                             tx_remaining_bytes_c'length)) and
+                         (tx_next_valid_r = '1')
                 else '0';
+  tx_slot_free_c <= '1' when (tx_shift_c = '1') or
+                             (tx_curr_valid_r = '0') or
+                             (tx_next_valid_r = '0')
+                    else '0';
+  ctrl_in_rdy_c <= '1' when (claim_q = '1') and (tx_slot_free_c = '1')
+                    else '0';
+  ctrl_in_rdy   <= ctrl_in_rdy_c;
 
-  -- The beat currently presented to the PIE holds valid data iff the whole
-  -- response is staged and the read index has not walked past the last beat.
-  -- The buffer is fully populated before tx_resp_ready_r asserts, so a beat
-  -- can never be requested late -> no underrun is possible by construction.
-  tx_beat_valid_c <= '1' when (tx_resp_ready_r = '1') and
-                              (tx_rd_beat_r < tx_staged_beats_c)
-                     else '0';
+  zlp_owed_c <= '1' when (xfer_dir_in_r = '1') and
+                         (tx_response_known_r = '1') and
+                         (tx_response_bytes_r = to_unsigned(TX_MAXBYTES,
+                                                            tx_response_bytes_r'length))
+                  else '0';
+  tx_launch_ready_c <= '1' when (tx_response_bytes_r = to_unsigned(0,
+                                                                    tx_response_bytes_r'length)) and
+                                  (tx_producer_done_r = '1')
+                        else '1' when (tx_response_bytes_r <= to_unsigned(BYTES_PER_BEAT,
+                                                                           tx_response_bytes_r'length)) and
+                                       (tx_curr_valid_r = '1') and
+                                       (tx_producer_done_r = '1')
+                        else '1' when (tx_curr_valid_r = '1') and
+                                       (tx_packet_started_r = '1')
+                        else '1' when (tx_curr_valid_r = '1') and
+                                        (tx_next_valid_r = '1')
+                       else '0';
+  tx_beat_valid_c <= '1' when (tx_launch_ready_c = '1') and
+                              (tx_curr_valid_r = '1') and
+                              (tx_response_bytes_r /= to_unsigned(0,
+                                                                  tx_response_bytes_r'length))
+                      else '0';
 
-  -- Single clocked process for the byte buffer (memory-style array write +
-  -- read/write pointers).  Async active-low reset, matching the IP convention.
   txbuf_clk_proc : process (clk, reset_n)
-    variable word_v : std_logic_vector(31 downto 0);
-    variable nb_v   : integer range 0 to 4;
-    variable beat_i : integer range 0 to TX_NBEATS-1;
+    variable curr_data_v  : std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    variable curr_valid_v : std_logic;
+    variable next_data_v  : std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    variable next_valid_v : std_logic;
+    variable half_word_v  : std_logic_vector(31 downto 0);
+    variable half_valid_v : std_logic;
+    variable producer_done_v : std_logic;
+    variable bytes_sent_v : unsigned(6 downto 0);
+    variable beat_v       : std_logic_vector(USB_DATAWIDTH-1 downto 0);
   begin
     if reset_n = '0' then
-      for i in 0 to TX_NBEATS-1 loop
-        tx_buf_r(i) <= (others => '0');
-      end loop;
-      tx_wr_widx_r    <= (others => '0');
-      tx_nbytes_r     <= (others => '0');
-      tx_resp_ready_r <= '0';
-      tx_rd_beat_r    <= (others => '0');
+      tx_curr_data_r       <= (others => '0');
+      tx_curr_valid_r      <= '0';
+      tx_next_data_r       <= (others => '0');
+      tx_next_valid_r      <= '0';
+      tx_half_word_r       <= (others => '0');
+      tx_half_word_valid_r <= '0';
+      tx_producer_done_r   <= '0';
+      tx_bytes_sent_r      <= (others => '0');
+      tx_packet_started_r  <= '0';
     elsif rising_edge(clk) then
       if (claim_q = '0') or (setup_capture_c = '1') then
-        -- Flush at transfer boundary / fresh SETUP: nothing leaks across
-        -- transfers and each new response starts from an empty buffer.
-        for i in 0 to TX_NBEATS-1 loop
-          tx_buf_r(i) <= (others => '0');
-        end loop;
-        tx_wr_widx_r    <= (others => '0');
-        tx_nbytes_r     <= (others => '0');
-        tx_resp_ready_r <= '0';
-        tx_rd_beat_r    <= (others => '0');
+        tx_curr_data_r       <= (others => '0');
+        tx_curr_valid_r      <= '0';
+        tx_next_data_r       <= (others => '0');
+        tx_next_valid_r      <= '0';
+        tx_half_word_r       <= (others => '0');
+        tx_half_word_valid_r <= '0';
+        tx_producer_done_r   <= '0';
+        tx_bytes_sent_r      <= (others => '0');
+        tx_packet_started_r  <= '0';
       else
-        -- Accept one 32-bit word from the SV side; mask invalid byte lanes
-        -- and count the valid (contiguous, LSB-first) bytes it contributes.
+        curr_data_v     := tx_curr_data_r;
+        curr_valid_v    := tx_curr_valid_r;
+        next_data_v     := tx_next_data_r;
+        next_valid_v    := tx_next_valid_r;
+        half_word_v     := tx_half_word_r;
+        half_valid_v    := tx_half_word_valid_r;
+        producer_done_v := tx_producer_done_r;
+        bytes_sent_v    := tx_bytes_sent_r;
+
+        if tx_shift_c = '1' then
+          curr_data_v  := tx_next_data_r;
+          curr_valid_v := '1';
+          next_data_v  := (others => '0');
+          next_valid_v := '0';
+          bytes_sent_v := tx_bytes_sent_r +
+                          to_unsigned(BYTES_PER_BEAT, tx_bytes_sent_r'length);
+        end if;
+
+        if (tx_in_data_c = '1') and (tx_launch_ready_c = '1') and
+           (pie_txdata_fetched = '1') then
+          tx_packet_started_r <= '1';
+        end if;
+
         if (ctrl_in_vld = '1') and (ctrl_in_rdy_c = '1') then
-          nb_v := 0;
-          for b in 0 to 3 loop
-            if ctrl_in_be(b) = '1' then
-              word_v(b*8 + 7 downto b*8) := ctrl_in_data(b*8 + 7 downto b*8);
-              nb_v := nb_v + 1;
-            else
-              word_v(b*8 + 7 downto b*8) := (others => '0');
-            end if;
-          end loop;
-
-          beat_i := to_integer(tx_wr_widx_r(4 downto 1));
-          if tx_wr_widx_r(0) = '0' then
-            tx_buf_r(beat_i)(31 downto 0)  <= word_v;
-          else
-            tx_buf_r(beat_i)(63 downto 32) <= word_v;
-          end if;
-
-          tx_nbytes_r  <= tx_nbytes_r + to_unsigned(nb_v, 7);
-          tx_wr_widx_r <= tx_wr_widx_r + 1;
-
-          -- ctrl_in_last marks true end-of-data (incl. the SV short-packet
-          -- terminating beat); the whole response is now resident.
           if ctrl_in_last = '1' then
-            tx_resp_ready_r <= '1';
+            beat_v := (others => '0');
+            if half_valid_v = '1' then
+              beat_v(31 downto 0)  := half_word_v;
+              beat_v(63 downto 32) := mask_word32(ctrl_in_data, ctrl_in_be);
+              half_word_v  := (others => '0');
+              half_valid_v := '0';
+            else
+              beat_v(31 downto 0) := mask_word32(ctrl_in_data, ctrl_in_be);
+            end if;
+            if curr_valid_v = '0' then
+              curr_data_v  := beat_v;
+              curr_valid_v := '1';
+            elsif next_valid_v = '0' then
+              next_data_v  := beat_v;
+              next_valid_v := '1';
+            end if;
+            producer_done_v := '1';
+          else
+            if half_valid_v = '1' then
+              beat_v := (others => '0');
+              beat_v(31 downto 0)  := half_word_v;
+              beat_v(63 downto 32) := mask_word32(ctrl_in_data, ctrl_in_be);
+              half_word_v  := (others => '0');
+              half_valid_v := '0';
+              if curr_valid_v = '0' then
+                curr_data_v  := beat_v;
+                curr_valid_v := '1';
+              elsif next_valid_v = '0' then
+                next_data_v  := beat_v;
+                next_valid_v := '1';
+              end if;
+            else
+              half_word_v  := mask_word32(ctrl_in_data, ctrl_in_be);
+              half_valid_v := '1';
+            end if;
           end if;
         end if;
 
-        -- Advance the read pointer as the PIE consumes staged beats.
-        if (pie_txdata_fetched = '1') and (tx_resp_ready_r = '1') then
-          tx_rd_beat_r <= tx_rd_beat_r + 1;
-        end if;
+        tx_curr_data_r       <= curr_data_v;
+        tx_curr_valid_r      <= curr_valid_v;
+        tx_next_data_r       <= next_data_v;
+        tx_next_valid_r      <= next_valid_v;
+        tx_half_word_r       <= half_word_v;
+        tx_half_word_valid_r <= half_valid_v;
+        tx_producer_done_r   <= producer_done_v;
+        tx_bytes_sent_r      <= bytes_sent_v;
       end if;
     end if;
   end process txbuf_clk_proc;
@@ -863,23 +948,22 @@ begin
   --                 they would see in the un-arbitered IP.
   -- claim_q = '1' : arbiter substitutes its own response for the
   --                 claimed OCP class transfer: valid/active high,
-  --                 toggle/disabled/iso 0, nbytes = latched wLength,
-  --                 maxpacket = "11" (HS EP0 = 64 B), txdata from the
-  --                 IN serializer slot.
+  --                 toggle/disabled/iso 0, nbytes = captured exact response
+  --                 metadata for IN or latched wLength for OUT, maxpacket =
+  --                 "00" (HS EP0 control = 64 B), txdata from the current slot.
   -- STALL OR-combine: legacy stall OR the SV-driven ctrl_set_stall (while
   --   claim_q) OR a collision-decline pulse (decline_pend_q).
   -- ======================================================================
   epinfo_to_pie_valid    <= legacy_epinfo_valid    when claim_q = '0' else '1';
-  -- TX-staging active gate: for a claimed IN DATA stage the
-  -- PIE data phase is held INACTIVE until the store-and-forward buffer holds
-  -- the WHOLE response (tx_resp_ready_r='1').  While inactive the PIE NAKs any
-  -- early host IN token (USB 2.0 Sec 8.5.3.2 / 8.4.5: NAK when not yet able to
-  -- return the data), winning the SETUP->IN race for multi-beat responses.
-  -- SETUP, OUT-DATA and STATUS stages keep the plain claimed-active semantics.
+  -- For a claimed IN DATA stage, NAK until the exact-byte launch rule is met:
+  -- current+producer_done for <=8 B, current+next for >8 B, or producer_done
+  -- for a zero-byte short packet. After activation, tx_shift_c only advances
+  -- the queue on non-final fetches, so the current beat stays stable through
+  -- the final pie_endtransfer.
   epinfo_to_pie_active   <= legacy_epinfo_active when claim_q = '0'
-                            else '0' when (tx_in_data_c = '1') and
-                                          (tx_resp_ready_r = '0')
-                            else '1';
+                             else '0' when (tx_in_data_c = '1') and
+                                          (tx_launch_ready_c = '0')
+                             else '1';
   epinfo_to_pie_disabled <= legacy_epinfo_disabled when claim_q = '0' else '0';
   -- USB 2.0 Sec 5.5.3 / 8.6 control-transfer data toggle.  The DATA stage
   -- starts at DATA1 and alternates per packet; an exact-MaxPacket IN read
@@ -892,8 +976,9 @@ begin
                             else '0';
   epinfo_to_pie_iso      <= legacy_epinfo_iso      when claim_q = '0' else '0';
   -- Claimed byte-count budget driven to the PIE:
-  --   * IN DATA stage  -> ACTUAL staged byte count (tx_nbytes_r), NOT wLength,
-  --     so short commands emit a correct short packet.
+  --   * IN DATA stage  -> command-defined response length captured at SETUP,
+  --     so a short command emits a correct short packet before its final word
+  --     is assembled.
   --   * STATUS stage   -> 0, so the status packet is a zero-length DATA1 (an
   --     IN STATUS ZLP for an OUT transfer, or the OUT STATUS ACK for an IN
   --     transfer).  A non-zero STATUS nbytes makes the PIE try to transmit data
@@ -906,7 +991,7 @@ begin
                               when claim_q = '0'
                               else (others => '0')
                               when (claim_state_r = S_STATUS) or (zlp_phase_r = '1')
-                              else std_logic_vector(resize(tx_nbytes_r, 15))
+                              else std_logic_vector(resize(tx_response_bytes_r, 15))
                               when tx_in_data_c = '1'
                               else std_logic_vector(nbytes_r);
   -- HS EP0 is a control endpoint with MaxPacketSize 64: encoding "00"
@@ -914,9 +999,9 @@ begin
   -- "11" would select the HS iso/interrupt 1024 budget and also mis-set the
   -- epinfo_maxpacket(1) iso/interrupt classifier used by the OUT handshake.
   epinfo_to_pie_maxpacket<= legacy_epinfo_maxpacket when claim_q = '0' else "00";
-  epinfo_to_pie_txdata   <= legacy_epinfo_txdata
-                              when claim_q = '0'
-                              else tx_buf_r(to_integer(tx_rd_beat_r(2 downto 0)));
+   epinfo_to_pie_txdata   <= legacy_epinfo_txdata
+                               when claim_q = '0'
+                               else tx_curr_data_r;
   epinfo_to_pie_txdata_valid <= legacy_epinfo_txdata_valid
                               when claim_q = '0' else tx_beat_valid_c;
 
@@ -933,24 +1018,84 @@ begin
   assertions_proc : process (clk)
   begin
     if rising_edge(clk) and reset_n = '1' then
-      -- True overflow check: an OUT data stage whose latched byte count
-      -- exceeds the 64-byte buffer is unsupported (a >64 B single packet
-      -- cannot occur on EP0 HS MaxPacket=64; multi-packet OUT is future
-      -- work).  Analogous to the TX "word accepted while buffer full" check:
-      -- it flags a genuine out-of-scope condition rather than the (now legal)
-      -- back-to-back beat arrival that the store-and-forward buffer absorbs.
-      assert not ((rx_drain_active_r = '1') and
-                  (rx_total_r > to_unsigned(RX_MAXBYTES, rx_total_r'length)))
-        report "usb_pie_recovery_arb: OUT byte count exceeds 64B buffer (>MaxPacket OUT unsupported)"
+      -- Single EP0 MaxPacket remains the supported OUT scope. The elastic
+      -- queue bounds resident beats rather than buffering the whole packet.
+      assert not ((rx_end_seen_r = '1') and
+                  (rx_total_r > to_unsigned(64, rx_total_r'length)))
+        report "usb_pie_recovery_arb: OUT byte count exceeds EP0 MaxPacket"
         severity failure;
 
-      -- True overflow check: ctrl_in_vld accepted while the staging buffer
-      -- is already full (must be unreachable by construction since
-      -- ctrl_in_rdy_c de-asserts once tx_wr_widx_r reaches TX_NWORDS).
-      assert not ((ctrl_in_vld = '1') and (ctrl_in_rdy_c = '1') and
-                  (tx_wr_widx_r >= to_unsigned(TX_NWORDS, 5)))
-        report "usb_pie_recovery_arb: word accepted while buffer full -- arbiter bug"
+      assert rx_count_r <= to_unsigned(RX_ELASTIC_BEATS, rx_count_r'length)
+        report "usb_pie_recovery_arb: RX elastic queue overflow"
         severity failure;
+
+      assert not ((ctrl_in_vld = '1') and (ctrl_in_rdy_c = '1') and
+                  (tx_slot_free_c = '0'))
+        report "usb_pie_recovery_arb: TX queue accepted a word without free capacity"
+        severity failure;
+
+      assert (tx_response_bytes_r <= to_unsigned(TX_MAXBYTES, tx_response_bytes_r'length))
+        report "usb_pie_recovery_arb: response metadata exceeds the single-packet bound"
+        severity failure;
+
+      if (tx_in_data_c = '1') and (tx_launch_ready_c = '1') then
+        if tx_response_bytes_r = to_unsigned(0, tx_response_bytes_r'length) then
+          assert tx_producer_done_r = '1'
+            report "usb_pie_recovery_arb: zero-byte launch occurred before producer end"
+            severity failure;
+        elsif tx_response_bytes_r <= to_unsigned(BYTES_PER_BEAT, tx_response_bytes_r'length) then
+          assert (tx_curr_valid_r = '1') and (tx_producer_done_r = '1')
+            report "usb_pie_recovery_arb: <=8B launch requires current beat and producer end"
+            severity failure;
+        elsif tx_packet_started_r = '1' then
+          assert tx_curr_valid_r = '1'
+            report "usb_pie_recovery_arb: started packet lost its current beat"
+            severity failure;
+        else
+          assert (tx_curr_valid_r = '1') and (tx_next_valid_r = '1')
+            report "usb_pie_recovery_arb: >8B launch requires current and next beats"
+            severity failure;
+        end if;
+      end if;
+
+      if (pie_txdata_fetched = '1') and (tx_in_data_c = '1') and
+         (tx_launch_ready_c = '1') then
+        assert (tx_in_data_c = '1') and
+                (tx_remaining_bytes_c > to_unsigned(BYTES_PER_BEAT,
+                                                    tx_remaining_bytes_c'length)) and
+                (tx_next_valid_r = '1')
+          report "usb_pie_recovery_arb: fetched beat lacked a non-final successor"
+          severity failure;
+      end if;
+
+      if (tx_in_data_c = '1') and
+         (tx_remaining_bytes_c <= to_unsigned(BYTES_PER_BEAT,
+                                              tx_remaining_bytes_c'length)) and
+         (pie_endtransfer_pulse_c = '0') then
+        assert (tx_shift_c = '0') and tx_curr_data_r'stable and
+               tx_curr_valid_r'stable
+          report "usb_pie_recovery_arb: final beat changed before pie_endtransfer"
+          severity failure;
+      end if;
+
+      if (ctrl_in_vld = '1') and (ctrl_in_rdy_c = '0') then
+        assert ctrl_in_data'stable and ctrl_in_be'stable and
+               ctrl_in_last'stable
+          report "usb_pie_recovery_arb: ctrl_in source changed while backpressured"
+          severity failure;
+      end if;
+
+      if (ctrl_in_vld = '1') and (ctrl_in_last = '0') then
+        assert ctrl_in_be = "1111"
+          report "usb_pie_recovery_arb: non-final ctrl_in word was not full-width"
+          severity failure;
+      end if;
+
+      if (tx_half_word_valid_r = '1') and (tx_producer_done_r = '1') then
+        assert false
+          report "usb_pie_recovery_arb: producer ended with an uncommitted half word"
+          severity failure;
+      end if;
 
       -- pie_error during a claimed transfer is logged but does not
       -- stop simulation; the FSM still walks to S_IDLE via pie_endtransfer.

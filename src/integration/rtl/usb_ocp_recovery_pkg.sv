@@ -94,6 +94,72 @@ localparam int OCP_LEN_VENDOR              = 1;  // stub - reduced from spec max
 // Caliptra-specific (non-OCP) register payload lengths (bytes).
 localparam int OCP_LEN_CALIPTRA_CTRL       = 4;
 localparam int OCP_LEN_CALIPTRA_STATUS     = 4;
+localparam int OCP_LEN_UNSUPPORTED_READ_STUB = OCP_LEN_INDIRECT_FIFO_DATA;
+localparam int OCP_MAX_IMPLEMENTED_RESPONSE_BYTES = OCP_LEN_DEVICE_STATUS;
+
+typedef struct packed {
+  logic       known;
+  logic [6:0] bytes;
+} ocp_response_meta_t;
+
+function automatic logic ocp_response_bytes_known(input logic [7:0] cmd);
+  logic known;
+  begin
+    known = 1'b1;
+    unique case (cmd)
+      OCP_CMD_PROT_CAP,
+      OCP_CMD_DEVICE_ID,
+      OCP_CMD_DEVICE_STATUS,
+      OCP_CMD_DEVICE_RESET,
+      OCP_CMD_RECOVERY_CTRL,
+      OCP_CMD_RECOVERY_STATUS,
+      OCP_CMD_HW_STATUS,
+      OCP_CMD_INDIRECT_CTRL,
+      OCP_CMD_INDIRECT_STATUS,
+      OCP_CMD_INDIRECT_DATA,
+      OCP_CMD_VENDOR,
+      OCP_CMD_INDIRECT_FIFO_CTRL,
+      OCP_CMD_INDIRECT_FIFO_STATUS,
+      OCP_CMD_INDIRECT_FIFO_DATA: known = 1'b1;
+      default:                   known = 1'b0;
+    endcase
+    return known;
+  end
+endfunction
+
+function automatic logic [6:0] ocp_response_bytes(input logic [7:0] cmd);
+  logic [6:0] bytes;
+  begin
+    bytes = '0;
+    unique case (cmd)
+      OCP_CMD_PROT_CAP:             bytes = 7'(OCP_LEN_PROT_CAP);
+      OCP_CMD_DEVICE_ID:            bytes = 7'(OCP_LEN_DEVICE_ID);
+      OCP_CMD_DEVICE_STATUS:        bytes = 7'(OCP_LEN_DEVICE_STATUS);
+      OCP_CMD_DEVICE_RESET:         bytes = 7'(OCP_LEN_DEVICE_RESET);
+      OCP_CMD_RECOVERY_CTRL:        bytes = 7'(OCP_LEN_RECOVERY_CTRL);
+      OCP_CMD_RECOVERY_STATUS:      bytes = 7'(OCP_LEN_RECOVERY_STATUS);
+      OCP_CMD_HW_STATUS:            bytes = 7'(OCP_LEN_HW_STATUS);
+      OCP_CMD_INDIRECT_CTRL:        bytes = 7'(OCP_LEN_UNSUPPORTED_READ_STUB);
+      OCP_CMD_INDIRECT_STATUS:      bytes = 7'(OCP_LEN_UNSUPPORTED_READ_STUB);
+      OCP_CMD_INDIRECT_DATA:        bytes = 7'(OCP_LEN_UNSUPPORTED_READ_STUB);
+      OCP_CMD_VENDOR:               bytes = 7'(OCP_LEN_VENDOR);
+      OCP_CMD_INDIRECT_FIFO_CTRL:   bytes = 7'(OCP_LEN_INDIRECT_FIFO_CTRL);
+      OCP_CMD_INDIRECT_FIFO_STATUS: bytes = 7'(OCP_LEN_INDIRECT_FIFO_STATUS);
+      OCP_CMD_INDIRECT_FIFO_DATA:   bytes = 7'(OCP_LEN_INDIRECT_FIFO_DATA);
+      default:                      bytes = '0;
+    endcase
+    return bytes;
+  end
+endfunction
+
+function automatic ocp_response_meta_t ocp_response_meta(input logic [7:0] cmd);
+  ocp_response_meta_t meta;
+  begin
+    meta.known = ocp_response_bytes_known(cmd);
+    meta.bytes = ocp_response_bytes(cmd);
+    return meta;
+  end
+endfunction
 
 // ----------------------------------------------------------------------------
 // Specification payload bounds. These constants describe the Recovery Agent
