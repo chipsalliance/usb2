@@ -27,10 +27,9 @@ module usb_ocp_recovery_top #(
   input  logic                    rst,
 
   //----------------------------------------------------------------------------
-  // Async FIFO READ port.  Plumbed straight through to the A4
-  // cms_fifo so the dev_axi_aclk-domain wrapper can pop INDIRECT_FIFO_DATA
-  // reads natively, bypassing the utmi-clk CDC bridge.  clk_rd is
-  // dev_axi_aclk; rst_rd_n is dev_axi_aresetn (active-low).
+  // Legacy fifo_rd_* compatibility ports. The native dev_axi pop bypass was
+  // removed in favor of cpuif-mediated EXT INDIRECT_FIFO_DATA reads, so these
+  // ports are retained only to avoid churn in the surrounding wrapper.
   //----------------------------------------------------------------------------
   input  logic                    clk_rd,
   input  logic                    rst_rd_n,
@@ -162,9 +161,8 @@ module usb_ocp_recovery_top #(
   logic                       rb_ack;
   logic                       rb_err;
 
-  // --- A3 <-> A4 FIFO-routed reg-bus (32-bit word + byte strobe) ---
+  // --- USB direct FIFO command path into A4 (32-bit word + byte strobe) ---
   logic                       fifo_rb_sel;
-  logic                       fifo_rb_from_usb;
   logic [7:0]                 fifo_rb_cmd;
   logic [15:0]                fifo_rb_offset;
   logic                       fifo_rb_wr;
@@ -174,24 +172,18 @@ module usb_ocp_recovery_top #(
   logic [31:0]                fifo_rb_rdata;
   logic                       fifo_rb_ack;
   logic                       fifo_rb_err;
-
-  // EXT/Firmware producer side of the cms_fifo command port. The cms_fifo
-  // inputs above are a USB-priority mux of this side and the direct USB FIFO
-  // command side below.
-  logic                       ext_fifo_rb_sel;
-  logic [7:0]                 ext_fifo_rb_cmd;
-  logic [15:0]                ext_fifo_rb_offset;
-  logic                       ext_fifo_rb_wr;
-  logic                       ext_fifo_rb_rd;
-  logic [31:0]                ext_fifo_rb_wdata;
-  logic [3:0]                 ext_fifo_rb_wstrb;
-  logic [31:0]                ext_fifo_rb_rdata;
-  logic                       ext_fifo_rb_ack;
-  logic                       ext_fifo_rb_err;
   logic                       usb_fifo_req;
   logic                       usb_fifo_packet_active_q;
-  logic                       ext_fifo_config_blocked;
-  logic                       ext_fifo_data_write_reject;
+  logic                       cpuif_req_block;
+  logic [3:0]                 cpuif_wr_strb;
+  logic                       ext_fifo_ctrl_0_access;
+  logic                       ext_fifo_ctrl_1_access;
+  logic                       ext_fifo_status_0_access;
+  logic                       ext_fifo_status_1_access;
+  logic                       ext_fifo_status_2_access;
+  logic                       ext_fifo_status_3_access;
+  logic                       ext_fifo_status_4_access;
+  logic                       ext_fifo_data_access;
 
   // --- A3 <-> A5 sideband ---
   logic                       device_reset_wr;
@@ -206,8 +198,6 @@ module usb_ocp_recovery_top #(
   logic [7:0]                 recovery_ctrl_img_sel;
   logic [7:0]                 recovery_ctrl_activate;
   logic                       firmware_activate_clear_q;
-  logic                       hw_status_wr;
-  logic [7:0]                 hw_status_wdata;
   // OCP Recovery v1.1 Sec 9.2 defines PROTOCOL_ERROR clear-on-read for the
   // Recovery Agent USB command. The control decoder pulses this only after a
   // completed USB DEVICE_STATUS read; firmware cpuif reads are non-destructive.
@@ -233,12 +223,18 @@ module usb_ocp_recovery_top #(
   logic [31:0]                image_size;
   logic [31:0]                bytes_pushed;
 
-  // --- INDIRECT_FIFO_CTRL read-back drive from A4 (cms_fifo) into the A3
-  //     regblock (hw=w).  cms_fifo is the single live owner; the regblock holds
-  //     the read-back copy (sw=r) read through the INDIRECT_FIFO_CTRL window. ---
+  // --- INDIRECT_FIFO_* mirror drive from A4 (cms_fifo) into the A3 regblock.
+  //     cms_fifo is the single live owner; the regblock stores only the
+  //     cpuif-visible mirror used by EXT accesses and USB shared read-back. ---
   logic [7:0]                 fifo_ctrl_cms;
   logic                       fifo_ctrl_reset;
   logic [31:0]                fifo_ctrl_image_size;
+  logic [31:0]                fifo_status_word_0;
+  logic [31:0]                fifo_status_word_1;
+  logic [31:0]                fifo_status_word_2;
+  logic [31:0]                fifo_status_word_3;
+  logic [31:0]                fifo_status_word_4;
+  logic [31:0]                fifo_data_peek;
 
   //////////////////////////////////////////////////////////////////////////////
   // Firmware cpuif arbiter. USB register and FIFO commands bypass this
@@ -262,10 +258,10 @@ module usb_ocp_recovery_top #(
   logic       ext_in_flight_q;
 
   always_comb begin
-    usb_req_now = 1'b0;
+    usb_req_now = usb_rb_wr | usb_rb_rd;
     ext_req_now = ext_rb_wr | ext_rb_rd;
-    grant_usb   = 1'b0;
-    grant_ext   = ext_req_now & ~ext_in_flight_q;
+    grant_usb   = usb_req_now;
+    grant_ext   = ext_req_now & ~ext_in_flight_q & ~usb_req_now;
   end
 
   always_comb begin
@@ -401,8 +397,8 @@ module usb_ocp_recovery_top #(
   //
   // The adapter (usb_ocp_recovery_rb_adapter) translates the word-wide rb_*
   // protocol into the regblock's 32-bit passthrough CPU interface and owns the
-  // FSM-facing sideband contract (DEVICE_RESET / RECOVERY_CTRL strobes,
-  // HW_STATUS write pulse, FIFO branch routing). The decoder owns the
+  // FSM-facing sideband contract (DEVICE_RESET / RECOVERY_CTRL strobes and the
+  // EXT cpuif bridge into the cms_fifo owner). The decoder owns the
   // PROTOCOL_ERROR Recovery Agent read-clear pulse because only it observes
   // USB transfer completion.
   // The regblock (usb_ocp_recovery_reg) is generated by peakrdl from
@@ -468,10 +464,13 @@ module usb_ocp_recovery_top #(
     .recovery_reason             (device_status_reason_out),
     .recovery_status             (recovery_status_out),
     .recovery_vendor_status      (recovery_vendor_status_out),
-    .hw_status                   (hw_status_out),
-    .hw_vendor_status            (hw_status_vendor_out),
-    .hw_ctemp                    (hw_status_ctemp_out),
-    .hw_vendor_status_len        (hw_status_vendor_len_out),
+     .hw_status                   ({rb_hwif_out.HW_STATUS.RESERVED_7_3.value,
+                                    rb_hwif_out.HW_STATUS.FATAL_ERR.value,
+                                    rb_hwif_out.HW_STATUS.SOFT_ERR.value,
+                                    rb_hwif_out.HW_STATUS.TEMP_CRITICAL.value}),
+     .hw_vendor_status            (rb_hwif_out.HW_STATUS.VENDOR_HW_STATUS.value),
+     .hw_ctemp                    (rb_hwif_out.HW_STATUS.CTEMP.value),
+     .hw_vendor_status_len        (rb_hwif_out.HW_STATUS.VENDOR_HW_STATUS_LEN.value),
     .fifo_ctrl_cms               (fifo_ctrl_cms),
     .fifo_ctrl_reset             (fifo_ctrl_reset),
     .fifo_ctrl_image_size        (fifo_ctrl_image_size),
@@ -528,32 +527,19 @@ module usb_ocp_recovery_top #(
     .rb_err          (rb_err),
     .rb_is_ext       (rb_is_ext),
 
-    .fifo_rb_sel     (ext_fifo_rb_sel),
-    .fifo_rb_cmd     (ext_fifo_rb_cmd),
-    .fifo_rb_offset  (ext_fifo_rb_offset),
-    .fifo_rb_wr      (ext_fifo_rb_wr),
-    .fifo_rb_rd      (ext_fifo_rb_rd),
-    .fifo_rb_wdata   (ext_fifo_rb_wdata),
-    .fifo_rb_wstrb   (ext_fifo_rb_wstrb),
-    .fifo_rb_rdata   (ext_fifo_rb_rdata),
-    .fifo_rb_ack     (ext_fifo_rb_ack),
-    .fifo_rb_err     (ext_fifo_rb_err),
-
-    .cpuif_req       (cpuif_req),
-    .cpuif_req_is_wr (cpuif_req_is_wr),
-    .cpuif_addr      (cpuif_addr),
-    .cpuif_wr_data   (cpuif_wr_data),
-    .cpuif_wr_biten  (cpuif_wr_biten),
-    .cpuif_rd_ack    (cpuif_rd_ack),
-    .cpuif_rd_err    (cpuif_rd_err),
-    .cpuif_rd_data   (cpuif_rd_data),
-    .cpuif_wr_ack    (cpuif_wr_ack),
-    .cpuif_wr_err    (cpuif_wr_err),
-
-    .hw_status_wr                     (hw_status_wr),
-    .hw_status_wdata                  (hw_status_wdata),
-    .unsupported_cmd_pulse            (unsupported_cmd_pulse)
-  );
+     .cpuif_req       (cpuif_req),
+     .cpuif_req_is_wr (cpuif_req_is_wr),
+     .cpuif_addr      (cpuif_addr),
+     .cpuif_wr_data   (cpuif_wr_data),
+     .cpuif_wr_biten  (cpuif_wr_biten),
+     .cpuif_req_block (cpuif_req_block),
+     .cpuif_rd_ack    (cpuif_rd_ack),
+     .cpuif_rd_err    (cpuif_rd_err),
+     .cpuif_rd_data   (cpuif_rd_data),
+     .cpuif_wr_ack    (cpuif_wr_ack),
+     .cpuif_wr_err    (cpuif_wr_err),
+     .unsupported_cmd_pulse            (unsupported_cmd_pulse)
+   );
 
   // Firmware writes zero to the standard RECOVERY_CTRL activation field after
   // verifying the drained image. Delay cpuif swmod one cycle so the updated
@@ -580,6 +566,29 @@ module usb_ocp_recovery_top #(
                           | recovery_ctrl_wr_img_sel
                           | recovery_ctrl_wr_activate;
 
+  assign cpuif_wr_strb = { |cpuif_wr_biten[31:24],
+                           |cpuif_wr_biten[23:16],
+                           |cpuif_wr_biten[15:8],
+                           |cpuif_wr_biten[7:0] };
+
+  assign ext_fifo_ctrl_0_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_CTRL_0.CMS.swacc;
+  assign ext_fifo_ctrl_1_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.swacc;
+  assign ext_fifo_status_0_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_0.EMPTY.swacc;
+  assign ext_fifo_status_1_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_1.WRITE_INDEX.swacc;
+  assign ext_fifo_status_2_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_2.READ_INDEX.swacc;
+  assign ext_fifo_status_3_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_3.FIFO_SIZE.swacc;
+  assign ext_fifo_status_4_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_4.MAX_TRANSFER_SIZE.swacc;
+  assign ext_fifo_data_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_DATA.DATA.swacc;
+
+  // A USB FIFO command owns the complete claimed control transfer. Defer every
+  // EXT FIFO CPUif request until that transfer retires so a ctrl_decode skid
+  // bubble cannot let firmware interleave FIFO control, status, or data access.
+  assign cpuif_req_block = rb_is_ext
+                          && ((rb_cmd == OCP_CMD_INDIRECT_FIFO_CTRL)
+                              || (rb_cmd == OCP_CMD_INDIRECT_FIFO_STATUS)
+                              || (rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA))
+                         && (usb_fifo_req || usb_fifo_packet_active_q);
+
   // --------------------------------------------------------------------------
   // hwif_in wiring.
   //
@@ -598,20 +607,18 @@ module usb_ocp_recovery_top #(
   //
   // RECOVERY_STATUS (Sec 9.2) byte 0 splits low nibble =
   // DEV_REC_STATUS, high nibble = REC_IMG_INDEX; byte 1 = vendor.
-  // HW_STATUS byte 0 (Sec 9.2) splits bit 0 = TEMP_CRITICAL,
-  // bit 1 = SOFT_ERR, bit 2 = FATAL_ERR, bits 7:3 = reserved.
+  // HW_STATUS is firmware-owned cpuif storage. The USB Recovery Agent direct
+  // read path consumes the same regblock storage via rb_hwif_out above, keeping
+  // host reads and EXT reads coherent.
   //
-  // INDIRECT_STATUS / INDIRECT_DATA / INDIRECT_FIFO_STATUS / INDIRECT_FIFO_DATA
-  // (Sec 9.2) are routed by usb_ocp_recovery_rb_adapter.sv (is_fifo_cmd) to the
-  // cms_fifo A4 block for both read and write; their regblock copies are not
-  // read out on the host control bus and remain at 0 (A4 owns the live values).
-  // INDIRECT_FIFO_CTRL is the exception: cms_fifo captures the WRITE but DRIVES
-  // the regblock CTRL_0/_1 fields (hw=w) below, and the host READS them through
-  // the regblock command window, so the regblock is the single read-back source
-  // (no duplicated self-synthesized read-back in cms_fifo).
+  // INDIRECT_FIFO_CTRL / INDIRECT_FIFO_STATUS / INDIRECT_FIFO_DATA are EXT-cpuif
+  // visible through the generated regblock, but usb_ocp_recovery_cms_fifo.sv
+  // remains the live owner of control, status, payload, and indices. The
+  // regblock hwif bridge below mirrors the committed FIFO state back into the
+  // generated window.
   //
-  // The adapter also intercepts cpuif_rd_err (rb_adapter only ORs fifo_rb_err
-  // into rb_err), so a regblock-side decode miss cannot surface as an rb_err /
+  // The adapter only forwards regblock cpuif errors for in-window accesses, so
+  // a regblock-side decode miss cannot surface as an rb_err /
   // AXI error response.  Every regblock byte in the address window is backed by
   // a declared field per the generated package (usb_ocp_recovery_reg_pkg.sv).
   // --------------------------------------------------------------------------
@@ -681,22 +688,30 @@ module usb_ocp_recovery_top #(
     rb_hwif_in.RECOVERY_STATUS.REC_IMG_INDEX.next          = recovery_status_out[7:4];
     rb_hwif_in.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.next = recovery_vendor_status_out;
 
-    // HW_STATUS byte 0 bits 0..2 + reserved 7:3.
-    rb_hwif_in.HW_STATUS.TEMP_CRITICAL.next        = hw_status_out[0];
-    rb_hwif_in.HW_STATUS.SOFT_ERR.next             = hw_status_out[1];
-    rb_hwif_in.HW_STATUS.FATAL_ERR.next            = hw_status_out[2];
-    rb_hwif_in.HW_STATUS.RESERVED_7_3.next         = hw_status_out[7:3];
-    rb_hwif_in.HW_STATUS.VENDOR_HW_STATUS.next     = hw_status_vendor_out;
-    rb_hwif_in.HW_STATUS.CTEMP.next                = hw_status_ctemp_out;
-    rb_hwif_in.HW_STATUS.VENDOR_HW_STATUS_LEN.next = hw_status_vendor_len_out;
-
-    // INDIRECT_FIFO_CTRL read-back (sw=r/hw=w): cms_fifo is the live owner and
-    // drives the regblock copy.  CTRL_0 byte0 = CMS, byte1 bit0 = region-reset
-    // (sticky until INDIRECT_FIFO_STATUS write-1-to-clear); CTRL_1 = IMAGE_SIZE
-    // in DWORD units.  RESET is zero-extended into byte 1 to match the field.
+    // INDIRECT_FIFO_CTRL read-back: cms_fifo is the live owner and drives the
+    // mirrored regblock copy. CTRL_0 byte0 = CMS, byte1 bit0 = region-reset
+    // (sticky). CTRL_1 = IMAGE_SIZE in DWORD units. RESET is zero-extended into
+    // byte 1 to match the field.
     rb_hwif_in.INDIRECT_FIFO_CTRL_0.CMS.next        = fifo_ctrl_cms;
     rb_hwif_in.INDIRECT_FIFO_CTRL_0.RESET.next      = {7'b0, fifo_ctrl_reset};
     rb_hwif_in.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next = fifo_ctrl_image_size;
+
+    // INDIRECT_FIFO_STATUS live words from cms_fifo. OCP Recovery v1.1 Sec 9.2
+    // defines the five DWORD status record at 0x18C..0x19C.
+    rb_hwif_in.INDIRECT_FIFO_STATUS_0.EMPTY.next             = fifo_status_word_0[0];
+    rb_hwif_in.INDIRECT_FIFO_STATUS_0.FULL.next              = fifo_status_word_0[1];
+    rb_hwif_in.INDIRECT_FIFO_STATUS_0.RESERVED_7_2.next      = fifo_status_word_0[7:2];
+    rb_hwif_in.INDIRECT_FIFO_STATUS_0.REGION_TYPE.next       = fifo_status_word_0[15:8];
+    rb_hwif_in.INDIRECT_FIFO_STATUS_0.RESERVED_31_16.next    = fifo_status_word_0[31:16];
+    rb_hwif_in.INDIRECT_FIFO_STATUS_1.WRITE_INDEX.next       = fifo_status_word_1;
+    rb_hwif_in.INDIRECT_FIFO_STATUS_2.READ_INDEX.next        = fifo_status_word_2;
+    rb_hwif_in.INDIRECT_FIFO_STATUS_3.FIFO_SIZE.next         = fifo_status_word_3;
+    rb_hwif_in.INDIRECT_FIFO_STATUS_4.MAX_TRANSFER_SIZE.next = fifo_status_word_4;
+
+    // INDIRECT_FIFO_DATA read-back mirrors the current FIFO head word so an EXT
+    // cpuif read can complete in one cycle and the corresponding swacc pulse can
+    // trigger exactly one pop after the same returned word.
+    rb_hwif_in.INDIRECT_FIFO_DATA.DATA.next = fifo_data_peek;
   end
 
   usb_ocp_recovery_reg u_a3_regblock (
@@ -723,68 +738,31 @@ module usb_ocp_recovery_top #(
     .hwif_out             (rb_hwif_out)
   );
 
-  // USB FIFO traffic owns the cms_fifo command port whenever it presents a
-  // command. Firmware DATA writes are unsupported by the use model and receive
-  // an immediate error; firmware FIFO_CTRL writes that can reconfigure/reset
-  // the FIFO wait until the current USB FIFO packet retires.
+  // USB FIFO traffic owns the direct cms_fifo command port. EXT fifo accesses
+  // are mediated through the regblock cpuif and the cms_fifo hwif-event bridge
+  // below, so they never share this direct port and therefore cannot inject
+  // backpressure into the Recovery Agent data stream.
   always_ff @(posedge clk) begin
     if (rst) begin
       usb_fifo_packet_active_q <= 1'b0;
     end else begin
       if (rec_ctrl_xfer_done) begin
         usb_fifo_packet_active_q <= 1'b0;
-      end else if (usb_fifo_req && usb_rb_wr
-                   && (usb_rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA)) begin
+      end else if (usb_fifo_req) begin
         usb_fifo_packet_active_q <= 1'b1;
       end
     end
   end
 
-  assign ext_fifo_data_write_reject = ext_fifo_rb_sel && ext_fifo_rb_wr
-                                    && (ext_fifo_rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA);
-  assign ext_fifo_config_blocked = usb_fifo_packet_active_q && ext_fifo_rb_sel
-                                && ext_fifo_rb_wr
-                                && (ext_fifo_rb_cmd == OCP_CMD_INDIRECT_FIFO_CTRL);
-
   always_comb begin
-    fifo_rb_sel    = 1'b0;
-    fifo_rb_from_usb = 1'b0;
-    fifo_rb_cmd    = '0;
-    fifo_rb_offset = '0;
-    fifo_rb_wr     = 1'b0;
-    fifo_rb_rd     = 1'b0;
-    fifo_rb_wdata  = '0;
-    fifo_rb_wstrb  = '0;
-
-    if (usb_fifo_req) begin
-      fifo_rb_sel    = 1'b1;
-      fifo_rb_from_usb = 1'b1;
-      fifo_rb_cmd    = usb_rb_cmd;
-      fifo_rb_offset = usb_rb_offset;
-      fifo_rb_wr     = usb_rb_wr;
-      fifo_rb_rd     = usb_rb_rd;
-      fifo_rb_wdata  = usb_rb_wdata;
-      fifo_rb_wstrb  = usb_rb_wstrb;
-    end else if (ext_fifo_rb_sel && !ext_fifo_data_write_reject
-                 && !ext_fifo_config_blocked) begin
-      fifo_rb_sel    = ext_fifo_rb_sel;
-      fifo_rb_from_usb = 1'b0;
-      fifo_rb_cmd    = ext_fifo_rb_cmd;
-      fifo_rb_offset = ext_fifo_rb_offset;
-      fifo_rb_wr     = ext_fifo_rb_wr;
-      fifo_rb_rd     = ext_fifo_rb_rd;
-      fifo_rb_wdata  = ext_fifo_rb_wdata;
-      fifo_rb_wstrb  = ext_fifo_rb_wstrb;
-    end
+    fifo_rb_sel    = usb_fifo_req;
+    fifo_rb_cmd    = usb_rb_cmd;
+    fifo_rb_offset = usb_rb_offset;
+    fifo_rb_wr     = usb_rb_wr;
+    fifo_rb_rd     = usb_rb_rd;
+    fifo_rb_wdata  = usb_rb_wdata;
+    fifo_rb_wstrb  = usb_rb_wstrb;
   end
-
-  assign ext_fifo_rb_rdata = fifo_rb_rdata;
-  assign ext_fifo_rb_ack   = ext_fifo_data_write_reject ? 1'b1
-                           : (usb_fifo_req || ext_fifo_config_blocked) ? 1'b0
-                           : fifo_rb_ack;
-  assign ext_fifo_rb_err   = ext_fifo_data_write_reject ? 1'b1
-                           : (usb_fifo_req || ext_fifo_config_blocked) ? 1'b0
-                           : fifo_rb_err;
 
   //////////////////////////////////////////////////////////////////////////////
   // A4 : CMS indirect-memory FIFO + window (EP0-only; bulk ports removed)
@@ -798,35 +776,52 @@ module usb_ocp_recovery_top #(
     .clk             (clk),
     .rst             (rst),
 
-    // Async FIFO read port (dev_axi_aclk domain) -- native pop.
+    // Legacy compatibility ports. EXT data no longer pops in clk_rd.
     .clk_rd          (clk_rd),
     .rst_rd_n        (rst_rd_n),
     .fifo_rd_valid   (fifo_rd_valid),
-    .fifo_rd_ready   (fifo_rd_ready),
-    .fifo_rd_data    (fifo_rd_data),
-    .fifo_rd_depth   (fifo_rd_depth),
+     .fifo_rd_ready   (fifo_rd_ready),
+     .fifo_rd_data    (fifo_rd_data),
+     .fifo_rd_depth   (fifo_rd_depth),
 
-    .fifo_rb_sel     (fifo_rb_sel),
-    .fifo_rb_from_usb(fifo_rb_from_usb),
-    .fifo_rb_cmd     (fifo_rb_cmd),
-    .fifo_rb_offset  (fifo_rb_offset),
-    .fifo_rb_wr      (fifo_rb_wr),
-    .fifo_rb_rd      (fifo_rb_rd),
-    .fifo_rb_wdata   (fifo_rb_wdata),
-    .fifo_rb_wstrb   (fifo_rb_wstrb),
-    .fifo_rb_rdata   (fifo_rb_rdata),
-    .fifo_rb_ack     (fifo_rb_ack),
-    .fifo_rb_err     (fifo_rb_err),
+     .fifo_rb_sel     (fifo_rb_sel),
+     .fifo_rb_cmd     (fifo_rb_cmd),
+     .fifo_rb_offset  (fifo_rb_offset),
+     .fifo_rb_wr      (fifo_rb_wr),
+     .fifo_rb_rd      (fifo_rb_rd),
+     .fifo_rb_wdata   (fifo_rb_wdata),
+     .fifo_rb_wstrb   (fifo_rb_wstrb),
+     .fifo_rb_rdata   (fifo_rb_rdata),
+     .fifo_rb_ack     (fifo_rb_ack),
+     .fifo_rb_err     (fifo_rb_err),
 
-    .image_push_active (image_push_active),
-    .image_push_done   (image_push_done),
-    .fifo_overflow     (fifo_overflow),
-    .image_size        (image_size),
-    .bytes_pushed      (bytes_pushed),
-    .fifo_ctrl_cms        (fifo_ctrl_cms),
-    .fifo_ctrl_reset      (fifo_ctrl_reset),
-    .fifo_ctrl_image_size (fifo_ctrl_image_size)
-  );
+     .ext_fifo_ctrl_0_access (ext_fifo_ctrl_0_access),
+     .ext_fifo_ctrl_1_access (ext_fifo_ctrl_1_access),
+     .ext_fifo_status_0_access (ext_fifo_status_0_access),
+     .ext_fifo_status_1_access (ext_fifo_status_1_access),
+     .ext_fifo_status_2_access (ext_fifo_status_2_access),
+     .ext_fifo_status_3_access (ext_fifo_status_3_access),
+     .ext_fifo_status_4_access (ext_fifo_status_4_access),
+     .ext_fifo_data_access (ext_fifo_data_access),
+     .ext_cpuif_req_is_wr (cpuif_req_is_wr),
+     .ext_cpuif_wr_data   (cpuif_wr_data),
+     .ext_cpuif_wr_strb   (cpuif_wr_strb),
+
+     .image_push_active (image_push_active),
+     .image_push_done   (image_push_done),
+     .fifo_overflow     (fifo_overflow),
+     .image_size        (image_size),
+     .bytes_pushed      (bytes_pushed),
+     .fifo_ctrl_cms        (fifo_ctrl_cms),
+     .fifo_ctrl_reset      (fifo_ctrl_reset),
+     .fifo_ctrl_image_size (fifo_ctrl_image_size),
+     .fifo_status_word_0   (fifo_status_word_0),
+     .fifo_status_word_1   (fifo_status_word_1),
+     .fifo_status_word_2   (fifo_status_word_2),
+     .fifo_status_word_3   (fifo_status_word_3),
+     .fifo_status_word_4   (fifo_status_word_4),
+     .fifo_data_peek       (fifo_data_peek)
+   );
 
   //////////////////////////////////////////////////////////////////////////////
   // A5 : recovery state machine
@@ -895,13 +890,9 @@ module usb_ocp_recovery_top #(
         assert (usb_rb_ack)
           else $error("usb_ocp_recovery_top: USB FIFO command stalled");
       end
-      if (ext_fifo_data_write_reject) begin
-        assert (ext_fifo_rb_ack && ext_fifo_rb_err)
-          else $error("usb_ocp_recovery_top: firmware FIFO DATA write was not rejected");
-      end
-      if (ext_fifo_config_blocked) begin
-        assert (!fifo_rb_sel)
-          else $error("usb_ocp_recovery_top: firmware FIFO config committed during USB packet");
+      if (cpuif_req_block) begin
+        assert (!cpuif_req)
+          else $error("usb_ocp_recovery_top: blocked EXT fifo access still fired cpuif");
       end
     end
   end

@@ -268,6 +268,52 @@ module usb_ocp_recovery_reg (
         } RECOVERY_CTRL;
         struct packed{
             struct packed{
+                logic next;
+                logic load_next;
+            } TEMP_CRITICAL;
+            struct packed{
+                logic next;
+                logic load_next;
+            } SOFT_ERR;
+            struct packed{
+                logic next;
+                logic load_next;
+            } FATAL_ERR;
+            struct packed{
+                logic [4:0] next;
+                logic load_next;
+            } RESERVED_7_3;
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
+            } VENDOR_HW_STATUS;
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
+            } CTEMP;
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
+            } VENDOR_HW_STATUS_LEN;
+        } HW_STATUS;
+        struct packed{
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
+            } CMS;
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
+            } RESET;
+        } INDIRECT_FIFO_CTRL_0;
+        struct packed{
+            struct packed{
+                logic [31:0] next;
+                logic load_next;
+            } IMAGE_SIZE;
+        } INDIRECT_FIFO_CTRL_1;
+        struct packed{
+            struct packed{
                 logic [31:0] next;
                 logic load_next;
             } DATA;
@@ -362,6 +408,42 @@ module usb_ocp_recovery_reg (
                 logic [7:0] value;
             } ACTIVATE_REC_IMG;
         } RECOVERY_CTRL;
+        struct packed{
+            struct packed{
+                logic value;
+            } TEMP_CRITICAL;
+            struct packed{
+                logic value;
+            } SOFT_ERR;
+            struct packed{
+                logic value;
+            } FATAL_ERR;
+            struct packed{
+                logic [4:0] value;
+            } RESERVED_7_3;
+            struct packed{
+                logic [7:0] value;
+            } VENDOR_HW_STATUS;
+            struct packed{
+                logic [7:0] value;
+            } CTEMP;
+            struct packed{
+                logic [7:0] value;
+            } VENDOR_HW_STATUS_LEN;
+        } HW_STATUS;
+        struct packed{
+            struct packed{
+                logic [7:0] value;
+            } CMS;
+            struct packed{
+                logic [7:0] value;
+            } RESET;
+        } INDIRECT_FIFO_CTRL_0;
+        struct packed{
+            struct packed{
+                logic [31:0] value;
+            } IMAGE_SIZE;
+        } INDIRECT_FIFO_CTRL_1;
         struct packed{
             struct packed{
                 logic [31:0] value;
@@ -866,6 +948,229 @@ module usb_ocp_recovery_reg (
     end
     assign hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.value = field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value;
     assign hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.swmod = decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr;
+    // Field: usb_ocp_recovery_reg.HW_STATUS.TEMP_CRITICAL
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.HW_STATUS.TEMP_CRITICAL.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.HW_STATUS && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.HW_STATUS.TEMP_CRITICAL.value & ~decoded_wr_biten[0:0]) | (decoded_wr_data[0:0] & decoded_wr_biten[0:0]);
+            load_next_c = '1;
+        end
+        field_combo.HW_STATUS.TEMP_CRITICAL.next = next_c;
+        field_combo.HW_STATUS.TEMP_CRITICAL.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.HW_STATUS.TEMP_CRITICAL.value <= 1'h0;
+        end else if(field_combo.HW_STATUS.TEMP_CRITICAL.load_next) begin
+            field_storage.HW_STATUS.TEMP_CRITICAL.value <= field_combo.HW_STATUS.TEMP_CRITICAL.next;
+        end
+    end
+    assign hwif_out.HW_STATUS.TEMP_CRITICAL.value = field_storage.HW_STATUS.TEMP_CRITICAL.value;
+    // Field: usb_ocp_recovery_reg.HW_STATUS.SOFT_ERR
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.HW_STATUS.SOFT_ERR.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.HW_STATUS && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.HW_STATUS.SOFT_ERR.value & ~decoded_wr_biten[1:1]) | (decoded_wr_data[1:1] & decoded_wr_biten[1:1]);
+            load_next_c = '1;
+        end
+        field_combo.HW_STATUS.SOFT_ERR.next = next_c;
+        field_combo.HW_STATUS.SOFT_ERR.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.HW_STATUS.SOFT_ERR.value <= 1'h0;
+        end else if(field_combo.HW_STATUS.SOFT_ERR.load_next) begin
+            field_storage.HW_STATUS.SOFT_ERR.value <= field_combo.HW_STATUS.SOFT_ERR.next;
+        end
+    end
+    assign hwif_out.HW_STATUS.SOFT_ERR.value = field_storage.HW_STATUS.SOFT_ERR.value;
+    // Field: usb_ocp_recovery_reg.HW_STATUS.FATAL_ERR
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.HW_STATUS.FATAL_ERR.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.HW_STATUS && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.HW_STATUS.FATAL_ERR.value & ~decoded_wr_biten[2:2]) | (decoded_wr_data[2:2] & decoded_wr_biten[2:2]);
+            load_next_c = '1;
+        end
+        field_combo.HW_STATUS.FATAL_ERR.next = next_c;
+        field_combo.HW_STATUS.FATAL_ERR.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.HW_STATUS.FATAL_ERR.value <= 1'h0;
+        end else if(field_combo.HW_STATUS.FATAL_ERR.load_next) begin
+            field_storage.HW_STATUS.FATAL_ERR.value <= field_combo.HW_STATUS.FATAL_ERR.next;
+        end
+    end
+    assign hwif_out.HW_STATUS.FATAL_ERR.value = field_storage.HW_STATUS.FATAL_ERR.value;
+    // Field: usb_ocp_recovery_reg.HW_STATUS.RESERVED_7_3
+    always_comb begin
+        automatic logic [4:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.HW_STATUS.RESERVED_7_3.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.HW_STATUS && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.HW_STATUS.RESERVED_7_3.value & ~decoded_wr_biten[7:3]) | (decoded_wr_data[7:3] & decoded_wr_biten[7:3]);
+            load_next_c = '1;
+        end
+        field_combo.HW_STATUS.RESERVED_7_3.next = next_c;
+        field_combo.HW_STATUS.RESERVED_7_3.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.HW_STATUS.RESERVED_7_3.value <= 5'h0;
+        end else if(field_combo.HW_STATUS.RESERVED_7_3.load_next) begin
+            field_storage.HW_STATUS.RESERVED_7_3.value <= field_combo.HW_STATUS.RESERVED_7_3.next;
+        end
+    end
+    assign hwif_out.HW_STATUS.RESERVED_7_3.value = field_storage.HW_STATUS.RESERVED_7_3.value;
+    // Field: usb_ocp_recovery_reg.HW_STATUS.VENDOR_HW_STATUS
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.HW_STATUS.VENDOR_HW_STATUS.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.HW_STATUS && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.HW_STATUS.VENDOR_HW_STATUS.value & ~decoded_wr_biten[15:8]) | (decoded_wr_data[15:8] & decoded_wr_biten[15:8]);
+            load_next_c = '1;
+        end
+        field_combo.HW_STATUS.VENDOR_HW_STATUS.next = next_c;
+        field_combo.HW_STATUS.VENDOR_HW_STATUS.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.HW_STATUS.VENDOR_HW_STATUS.value <= 8'h0;
+        end else if(field_combo.HW_STATUS.VENDOR_HW_STATUS.load_next) begin
+            field_storage.HW_STATUS.VENDOR_HW_STATUS.value <= field_combo.HW_STATUS.VENDOR_HW_STATUS.next;
+        end
+    end
+    assign hwif_out.HW_STATUS.VENDOR_HW_STATUS.value = field_storage.HW_STATUS.VENDOR_HW_STATUS.value;
+    // Field: usb_ocp_recovery_reg.HW_STATUS.CTEMP
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.HW_STATUS.CTEMP.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.HW_STATUS && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.HW_STATUS.CTEMP.value & ~decoded_wr_biten[23:16]) | (decoded_wr_data[23:16] & decoded_wr_biten[23:16]);
+            load_next_c = '1;
+        end
+        field_combo.HW_STATUS.CTEMP.next = next_c;
+        field_combo.HW_STATUS.CTEMP.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.HW_STATUS.CTEMP.value <= 8'h0;
+        end else if(field_combo.HW_STATUS.CTEMP.load_next) begin
+            field_storage.HW_STATUS.CTEMP.value <= field_combo.HW_STATUS.CTEMP.next;
+        end
+    end
+    assign hwif_out.HW_STATUS.CTEMP.value = field_storage.HW_STATUS.CTEMP.value;
+    // Field: usb_ocp_recovery_reg.HW_STATUS.VENDOR_HW_STATUS_LEN
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.HW_STATUS.VENDOR_HW_STATUS_LEN.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.HW_STATUS && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.HW_STATUS.VENDOR_HW_STATUS_LEN.value & ~decoded_wr_biten[31:24]) | (decoded_wr_data[31:24] & decoded_wr_biten[31:24]);
+            load_next_c = '1;
+        end
+        field_combo.HW_STATUS.VENDOR_HW_STATUS_LEN.next = next_c;
+        field_combo.HW_STATUS.VENDOR_HW_STATUS_LEN.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.HW_STATUS.VENDOR_HW_STATUS_LEN.value <= 8'h0;
+        end else if(field_combo.HW_STATUS.VENDOR_HW_STATUS_LEN.load_next) begin
+            field_storage.HW_STATUS.VENDOR_HW_STATUS_LEN.value <= field_combo.HW_STATUS.VENDOR_HW_STATUS_LEN.next;
+        end
+    end
+    assign hwif_out.HW_STATUS.VENDOR_HW_STATUS_LEN.value = field_storage.HW_STATUS.VENDOR_HW_STATUS_LEN.value;
+    // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_CTRL_0.CMS
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.INDIRECT_FIFO_CTRL_0.CMS.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.INDIRECT_FIFO_CTRL_0.CMS.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
+            load_next_c = '1;
+        end else begin // HW Write
+            next_c = hwif_in.INDIRECT_FIFO_CTRL_0.CMS.next;
+            load_next_c = '1;
+        end
+        field_combo.INDIRECT_FIFO_CTRL_0.CMS.next = next_c;
+        field_combo.INDIRECT_FIFO_CTRL_0.CMS.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.INDIRECT_FIFO_CTRL_0.CMS.value <= 8'h0;
+        end else if(field_combo.INDIRECT_FIFO_CTRL_0.CMS.load_next) begin
+            field_storage.INDIRECT_FIFO_CTRL_0.CMS.value <= field_combo.INDIRECT_FIFO_CTRL_0.CMS.next;
+        end
+    end
+    assign hwif_out.INDIRECT_FIFO_CTRL_0.CMS.swacc = decoded_reg_strb.INDIRECT_FIFO_CTRL_0;
+    // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_CTRL_0.RESET
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.INDIRECT_FIFO_CTRL_0.RESET.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.INDIRECT_FIFO_CTRL_0.RESET.value & ~decoded_wr_biten[15:8]) | (decoded_wr_data[15:8] & decoded_wr_biten[15:8]);
+            load_next_c = '1;
+        end else begin // HW Write
+            next_c = hwif_in.INDIRECT_FIFO_CTRL_0.RESET.next;
+            load_next_c = '1;
+        end
+        field_combo.INDIRECT_FIFO_CTRL_0.RESET.next = next_c;
+        field_combo.INDIRECT_FIFO_CTRL_0.RESET.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.INDIRECT_FIFO_CTRL_0.RESET.value <= 8'h0;
+        end else if(field_combo.INDIRECT_FIFO_CTRL_0.RESET.load_next) begin
+            field_storage.INDIRECT_FIFO_CTRL_0.RESET.value <= field_combo.INDIRECT_FIFO_CTRL_0.RESET.next;
+        end
+    end
+    // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE
+    always_comb begin
+        automatic logic [31:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
+            load_next_c = '1;
+        end else begin // HW Write
+            next_c = hwif_in.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next;
+            load_next_c = '1;
+        end
+        field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next = next_c;
+        field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value <= 32'h0;
+        end else if(field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.load_next) begin
+            field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value <= field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next;
+        end
+    end
+    assign hwif_out.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.swacc = decoded_reg_strb.INDIRECT_FIFO_CTRL_1;
+    assign hwif_out.INDIRECT_FIFO_STATUS_0.EMPTY.swacc = decoded_reg_strb.INDIRECT_FIFO_STATUS_0;
+    assign hwif_out.INDIRECT_FIFO_STATUS_1.WRITE_INDEX.swacc = decoded_reg_strb.INDIRECT_FIFO_STATUS_1;
+    assign hwif_out.INDIRECT_FIFO_STATUS_2.READ_INDEX.swacc = decoded_reg_strb.INDIRECT_FIFO_STATUS_2;
+    assign hwif_out.INDIRECT_FIFO_STATUS_3.FIFO_SIZE.swacc = decoded_reg_strb.INDIRECT_FIFO_STATUS_3;
+    assign hwif_out.INDIRECT_FIFO_STATUS_4.MAX_TRANSFER_SIZE.swacc = decoded_reg_strb.INDIRECT_FIFO_STATUS_4;
     // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_DATA.DATA
     always_comb begin
         automatic logic [31:0] next_c;
@@ -875,7 +1180,7 @@ module usb_ocp_recovery_reg (
         if(decoded_reg_strb.INDIRECT_FIFO_DATA && decoded_req_is_wr) begin // SW write
             next_c = (field_storage.INDIRECT_FIFO_DATA.DATA.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
             load_next_c = '1;
-        end else if(hwif_in.INDIRECT_FIFO_DATA.DATA.we) begin // HW Write - we
+        end else begin // HW Write
             next_c = hwif_in.INDIRECT_FIFO_DATA.DATA.next;
             load_next_c = '1;
         end
@@ -889,7 +1194,7 @@ module usb_ocp_recovery_reg (
             field_storage.INDIRECT_FIFO_DATA.DATA.value <= field_combo.INDIRECT_FIFO_DATA.DATA.next;
         end
     end
-    assign hwif_out.INDIRECT_FIFO_DATA.DATA.value = field_storage.INDIRECT_FIFO_DATA.DATA.value;
+    assign hwif_out.INDIRECT_FIFO_DATA.DATA.swacc = decoded_reg_strb.INDIRECT_FIFO_DATA;
     // Field: usb_ocp_recovery_reg.VENDOR.VENDOR_DATA
     always_comb begin
         automatic logic [7:0] next_c;
@@ -1014,17 +1319,17 @@ module usb_ocp_recovery_reg (
     assign readback_array[28][7:4] = (decoded_reg_strb.RECOVERY_STATUS && !decoded_req_is_wr) ? hwif_in.RECOVERY_STATUS.REC_IMG_INDEX.next : '0;
     assign readback_array[28][15:8] = (decoded_reg_strb.RECOVERY_STATUS && !decoded_req_is_wr) ? hwif_in.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.next : '0;
     assign readback_array[28][31:16] = (decoded_reg_strb.RECOVERY_STATUS && !decoded_req_is_wr) ? 16'h0 : '0;
-    assign readback_array[29][0:0] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? hwif_in.HW_STATUS.TEMP_CRITICAL.next : '0;
-    assign readback_array[29][1:1] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? hwif_in.HW_STATUS.SOFT_ERR.next : '0;
-    assign readback_array[29][2:2] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? hwif_in.HW_STATUS.FATAL_ERR.next : '0;
-    assign readback_array[29][7:3] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? hwif_in.HW_STATUS.RESERVED_7_3.next : '0;
-    assign readback_array[29][15:8] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? hwif_in.HW_STATUS.VENDOR_HW_STATUS.next : '0;
-    assign readback_array[29][23:16] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? hwif_in.HW_STATUS.CTEMP.next : '0;
-    assign readback_array[29][31:24] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? hwif_in.HW_STATUS.VENDOR_HW_STATUS_LEN.next : '0;
-    assign readback_array[30][7:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_CTRL_0.CMS.next : '0;
-    assign readback_array[30][15:8] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_CTRL_0.RESET.next : '0;
+    assign readback_array[29][0:0] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? field_storage.HW_STATUS.TEMP_CRITICAL.value : '0;
+    assign readback_array[29][1:1] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? field_storage.HW_STATUS.SOFT_ERR.value : '0;
+    assign readback_array[29][2:2] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? field_storage.HW_STATUS.FATAL_ERR.value : '0;
+    assign readback_array[29][7:3] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? field_storage.HW_STATUS.RESERVED_7_3.value : '0;
+    assign readback_array[29][15:8] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? field_storage.HW_STATUS.VENDOR_HW_STATUS.value : '0;
+    assign readback_array[29][23:16] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? field_storage.HW_STATUS.CTEMP.value : '0;
+    assign readback_array[29][31:24] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? field_storage.HW_STATUS.VENDOR_HW_STATUS_LEN.value : '0;
+    assign readback_array[30][7:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_CTRL_0.CMS.value : '0;
+    assign readback_array[30][15:8] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_CTRL_0.RESET.value : '0;
     assign readback_array[30][31:16] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_0 && !decoded_req_is_wr) ? 16'h0 : '0;
-    assign readback_array[31][31:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next : '0;
+    assign readback_array[31][31:0] = (decoded_reg_strb.INDIRECT_FIFO_CTRL_1 && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value : '0;
     assign readback_array[32][0:0] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.EMPTY.next : '0;
     assign readback_array[32][1:1] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.FULL.next : '0;
     assign readback_array[32][7:2] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_0 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_0.RESERVED_7_2.next : '0;
