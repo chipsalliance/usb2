@@ -21,15 +21,15 @@
 module usb_ocp_recovery_top #(
   parameter int           CMS_ADDR_W     = 16,
   parameter int           NUM_CMS        = 2,
-  parameter int           FIFO_DEPTH_DWORDS = 32
+  parameter int           FIFO_DEPTH_DWORDS = usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS
 )(
   input  logic                    clk,
   input  logic                    rst,
 
   //----------------------------------------------------------------------------
   // Legacy fifo_rd_* compatibility ports. The native dev_axi pop bypass was
-  // removed in favor of cpuif-mediated EXT INDIRECT_FIFO_DATA reads, so these
-  // ports are retained only to avoid churn in the surrounding wrapper.
+  // removed in favor of cpuif-mediated EXT INDIRECT_FIFO_DATA reads, but the
+  // async FIFO surface is retained to preserve the S4d-compatible hierarchy.
   //----------------------------------------------------------------------------
   input  logic                    clk_rd,
   input  logic                    rst_rd_n,
@@ -235,6 +235,7 @@ module usb_ocp_recovery_top #(
   logic [31:0]                fifo_status_word_3;
   logic [31:0]                fifo_status_word_4;
   logic [31:0]                fifo_data_peek;
+  logic                       ext_data_mirror_ready;
 
   //////////////////////////////////////////////////////////////////////////////
   // Firmware cpuif arbiter. USB register and FIFO commands bypass this
@@ -583,11 +584,21 @@ module usb_ocp_recovery_top #(
   // A USB FIFO command owns the complete claimed control transfer. Defer every
   // EXT FIFO CPUif request until that transfer retires so a ctrl_decode skid
   // bubble cannot let firmware interleave FIFO control, status, or data access.
+  // EXT INDIRECT_FIFO_DATA reads are also deferred while cms_fifo re-arms the
+  // regblock-backed DATA mirror after a head-changing event:
+  //  (1) a completed pop or push-into-empty clears ext_data_mirror_ready,
+  //  (2) a later cycle with fifo_rvalid_int=1 and no new head change lets the
+  //      generated regblock sample hwif next = current fifo_data_peek,
+  //  (3) ext_data_mirror_ready rises after that edge, so the FOLLOWING cycle is
+  //      the first safe EXT cpuif read and swacc/pop point.
   assign cpuif_req_block = rb_is_ext
-                          && ((rb_cmd == OCP_CMD_INDIRECT_FIFO_CTRL)
-                              || (rb_cmd == OCP_CMD_INDIRECT_FIFO_STATUS)
-                              || (rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA))
-                         && (usb_fifo_req || usb_fifo_packet_active_q);
+                          && ((((rb_cmd == OCP_CMD_INDIRECT_FIFO_CTRL)
+                                || (rb_cmd == OCP_CMD_INDIRECT_FIFO_STATUS)
+                                || (rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA))
+                               && (usb_fifo_req || usb_fifo_packet_active_q))
+                              || ((rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA)
+                                  && rb_rd
+                                  && !ext_data_mirror_ready));
 
   // --------------------------------------------------------------------------
   // hwif_in wiring.
@@ -708,9 +719,10 @@ module usb_ocp_recovery_top #(
     rb_hwif_in.INDIRECT_FIFO_STATUS_3.FIFO_SIZE.next         = fifo_status_word_3;
     rb_hwif_in.INDIRECT_FIFO_STATUS_4.MAX_TRANSFER_SIZE.next = fifo_status_word_4;
 
-    // INDIRECT_FIFO_DATA read-back mirrors the current FIFO head word so an EXT
-    // cpuif read can complete in one cycle and the corresponding swacc pulse can
-    // trigger exactly one pop after the same returned word.
+    // INDIRECT_FIFO_DATA read-back uses the generated regblock field storage.
+    // cpuif_req_block above prevents a new EXT read from reaching this field
+    // until fifo_data_peek has been sampled for a full clk after any head change,
+    // so field_storage.DATA.value cannot repeat a stale word.
     rb_hwif_in.INDIRECT_FIFO_DATA.DATA.next = fifo_data_peek;
   end
 
@@ -776,13 +788,13 @@ module usb_ocp_recovery_top #(
     .clk             (clk),
     .rst             (rst),
 
-    // Legacy compatibility ports. EXT data no longer pops in clk_rd.
+    // Compatibility ports retained for the async FIFO hierarchy.
     .clk_rd          (clk_rd),
     .rst_rd_n        (rst_rd_n),
     .fifo_rd_valid   (fifo_rd_valid),
-     .fifo_rd_ready   (fifo_rd_ready),
-     .fifo_rd_data    (fifo_rd_data),
-     .fifo_rd_depth   (fifo_rd_depth),
+    .fifo_rd_ready   (fifo_rd_ready),
+    .fifo_rd_data    (fifo_rd_data),
+    .fifo_rd_depth   (fifo_rd_depth),
 
      .fifo_rb_sel     (fifo_rb_sel),
      .fifo_rb_cmd     (fifo_rb_cmd),
@@ -817,11 +829,12 @@ module usb_ocp_recovery_top #(
      .fifo_ctrl_image_size (fifo_ctrl_image_size),
      .fifo_status_word_0   (fifo_status_word_0),
      .fifo_status_word_1   (fifo_status_word_1),
-     .fifo_status_word_2   (fifo_status_word_2),
-     .fifo_status_word_3   (fifo_status_word_3),
-     .fifo_status_word_4   (fifo_status_word_4),
-     .fifo_data_peek       (fifo_data_peek)
-   );
+      .fifo_status_word_2   (fifo_status_word_2),
+      .fifo_status_word_3   (fifo_status_word_3),
+      .fifo_status_word_4   (fifo_status_word_4),
+      .fifo_data_peek       (fifo_data_peek),
+      .ext_data_mirror_ready(ext_data_mirror_ready)
+    );
 
   //////////////////////////////////////////////////////////////////////////////
   // A5 : recovery state machine

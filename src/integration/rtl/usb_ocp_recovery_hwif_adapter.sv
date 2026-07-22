@@ -198,8 +198,9 @@ module usb_ocp_recovery_hwif_adapter (
         cmd_len = OCP_LEN_INDIRECT_FIFO_CTRL;
         if (rd) begin
           unique case (word_offset)
-            16'd0: rdata = {16'h0, {7'h0, fifo_ctrl_reset}, fifo_ctrl_cms};
-            16'd1: rdata = fifo_ctrl_image_size;
+            16'd0: rdata = {fifo_ctrl_image_size[15:0],
+                            {7'h0, fifo_ctrl_reset}, fifo_ctrl_cms};
+            16'd1: rdata = {16'h0, fifo_ctrl_image_size[31:16]};
             default: err = 1'b1;
           endcase
         end

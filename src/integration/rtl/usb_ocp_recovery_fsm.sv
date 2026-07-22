@@ -268,6 +268,13 @@ module usb_ocp_recovery_fsm (
           reset_pulse_d = 1'b1;
         end else if (fifo_overflow) begin
           state_d = S_ERROR;
+        end else if (image_push_done) begin
+          if (size_mismatch) begin
+            size_err_d = 1'b1;
+            state_d    = S_ERROR;
+          end else begin
+            state_d = S_IMAGE_LOADED;
+          end
         end else if (image_push_active) begin
           state_d = S_PUSH_ACTIVE;
         end else if (recovery_ctrl_wr_img_sel) begin

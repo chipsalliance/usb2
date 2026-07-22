@@ -968,7 +968,7 @@ module ip_xxx_3516_hs_mem_wrapper
    logic        fifo_rd_valid;
    logic        fifo_rd_ready;
    logic [31:0] fifo_rd_data;
-   logic [5:0]  fifo_rd_depth;   // $clog2(32+1)=6 bits for default Depth=32
+   logic [$clog2(usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS+1)-1:0] fifo_rd_depth;
 
    // -- Captured beat metadata (dev_axi_aclk domain, stable across CDC) --
    logic [7:0]  ahb_cmd_q;
@@ -1010,14 +1010,14 @@ module ip_xxx_3516_hs_mem_wrapper
         A_COMPLETE:                                      a_state_d = A_COOLDOWN;
        A_COOLDOWN:  if (!ack_axi_sync_q)               a_state_d = A_IDLE;
        default:                                         a_state_d = A_IDLE;
-     endcase
-   end
+      endcase
+    end
 
     assign fifo_rd_ready = 1'b0;
 
-   always_ff @(posedge dev_axi_aclk or negedge dev_axi_aresetn) begin
-     if (!dev_axi_aresetn) begin
-       a_state_q   <= A_IDLE;
+    always_ff @(posedge dev_axi_aclk or negedge dev_axi_aresetn) begin
+      if (!dev_axi_aresetn) begin
+        a_state_q   <= A_IDLE;
        ahb_cmd_q   <= '0;
        ahb_off_q   <= '0;
        ahb_wr_q    <= 1'b0;
@@ -1255,23 +1255,20 @@ module ip_xxx_3516_hs_mem_wrapper
        // ports cross to the SoC and must be sync'd on the consumer side
        // (was previously dev_axi_aclk; see residual risk note in the
        // combined fixes report).
-       .clk  (utmi_clk),
-       .rst  (rec_rst),
+        .clk  (utmi_clk),
+        .rst  (rec_rst),
 
-        // Legacy fifo_rd_* ports are retained for interface compatibility but
-        // are idle in this revision. All EXT INDIRECT_FIFO_DATA reads now
-        // traverse the CDC bridge and the generated regblock cpuif before the
-        // top-level cms_fifo owner returns data.
-       .clk_rd        (dev_axi_aclk),
-       .rst_rd_n      (dev_axi_aresetn),
-       .fifo_rd_valid (fifo_rd_valid),
-       .fifo_rd_ready (fifo_rd_ready),
-       .fifo_rd_data  (fifo_rd_data),
-       .fifo_rd_depth (fifo_rd_depth),
+        // Legacy fifo_rd_* ports stay plumbed for S4d async FIFO compatibility.
+        .clk_rd        (dev_axi_aclk),
+        .rst_rd_n      (dev_axi_aresetn),
+        .fifo_rd_valid (fifo_rd_valid),
+        .fifo_rd_ready (fifo_rd_ready),
+        .fifo_rd_data  (fifo_rd_data),
+        .fifo_rd_depth (fifo_rd_depth),
 
-       // PIE byte-stream surface (driven by VHDL usb_pie_recovery_arb)
-       .rec_setup_pkt_vld  (rec_setup_pkt_vld_w),
-       .rec_setup_pkt      (rec_setup_pkt_w),
+        // PIE byte-stream surface (driven by VHDL usb_pie_recovery_arb)
+        .rec_setup_pkt_vld  (rec_setup_pkt_vld_w),
+        .rec_setup_pkt      (rec_setup_pkt_w),
        .rec_ctrl_out_data  (rec_ctrl_out_data_w),
        .rec_ctrl_out_be   (rec_ctrl_out_be_w),
        .rec_ctrl_out_vld   (rec_ctrl_out_vld_w),
