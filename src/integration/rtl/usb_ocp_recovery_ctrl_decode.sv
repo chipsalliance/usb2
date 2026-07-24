@@ -238,7 +238,7 @@ module usb_ocp_recovery_ctrl_decode (
                        && (state_q == S_WAIT)
                        && is_in_q
                         && (cmd_q == OCP_CMD_DEVICE_STATUS)
-                       && (length_q >= 16'(OCP_SPEC_LEN_RECOVERY_STATUS));
+                       && (length_q >= 16'(OCP_SPEC_MIN_LEN_DEVICE_STATUS));
 
     rb_cmd         = cmd_q;
     rb_offset      = offset_q;
@@ -452,6 +452,8 @@ module usb_ocp_recovery_ctrl_decode (
         assert (ctrl_xfer_done && (state_q == S_WAIT) && is_in_q
                 && (cmd_q == OCP_CMD_DEVICE_STATUS))
           else $error("ctrl_decode: PROTOCOL_ERROR clear was not a completed IN DEVICE_STATUS transfer");
+        assert (length_q >= 16'(OCP_SPEC_MIN_LEN_DEVICE_STATUS))
+          else $error("ctrl_decode: completed DEVICE_STATUS response was shorter than the specification minimum");
       end
       if (setup_pkt_vld) begin
         assert (is_class_s)

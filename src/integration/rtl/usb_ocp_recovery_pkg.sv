@@ -96,6 +96,12 @@ localparam int OCP_LEN_CALIPTRA_CTRL       = 4;
 localparam int OCP_LEN_CALIPTRA_STATUS     = 4;
 localparam int OCP_LEN_UNSUPPORTED_READ_STUB = OCP_LEN_INDIRECT_FIFO_DATA;
 localparam int OCP_MAX_IMPLEMENTED_RESPONSE_BYTES = OCP_LEN_DEVICE_STATUS;
+localparam int OCP_RESP_LEN_DEVICE_STATUS = 7;
+
+// Variable-length command support is deferred until a payload producer
+// exists. When DEVICE_ID, DEVICE_STATUS, or HW_STATUS gains optional
+// data, use one generic response descriptor that snapshots response length
+// and payload context at SETUP time. OCP Recovery v1.1 Sec 9.2.
 
 typedef struct packed {
   logic       known;
@@ -134,7 +140,7 @@ function automatic logic [6:0] ocp_response_bytes(input logic [7:0] cmd);
     unique case (cmd)
       OCP_CMD_PROT_CAP:             bytes = 7'(OCP_LEN_PROT_CAP);
       OCP_CMD_DEVICE_ID:            bytes = 7'(OCP_LEN_DEVICE_ID);
-      OCP_CMD_DEVICE_STATUS:        bytes = 7'(OCP_LEN_DEVICE_STATUS);
+      OCP_CMD_DEVICE_STATUS:        bytes = 7'(OCP_RESP_LEN_DEVICE_STATUS);
       OCP_CMD_DEVICE_RESET:         bytes = 7'(OCP_LEN_DEVICE_RESET);
       OCP_CMD_RECOVERY_CTRL:        bytes = 7'(OCP_LEN_RECOVERY_CTRL);
       OCP_CMD_RECOVERY_STATUS:      bytes = 7'(OCP_LEN_RECOVERY_STATUS);
