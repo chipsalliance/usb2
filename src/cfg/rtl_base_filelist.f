@@ -30,6 +30,13 @@ ${USB_ROOT}/ip_xxx_3511/RTL/usb_pie.m.vhdl
 --   for readability of compile order in the source tree.
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_pie_recovery_arb.e.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_pie_recovery_arb.m.vhdl
+-- Post-synchronizer OCP Recovery v1.1 EP0 arbiter (hclk/dev_axi_aclk domain).
+--   Replaces usb_pie_recovery_arb at the A1 structural rewire.  The entity
+--   `.e.vhdl` must be compiled into library rtl before its architecture
+--   `.m.vhdl`, and both before ip_xxx_3511_hs_structure.a.vhdl which
+--   instantiates the entity.
+${USB_ROOT}/ip_xxx_3511/RTL/usb_ocp_recovery_post_sync_arb.e.vhdl
+${USB_ROOT}/ip_xxx_3511/RTL/usb_ocp_recovery_post_sync_arb.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_reg_if.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_rgen.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_sie.m.vhdl
