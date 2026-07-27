@@ -172,6 +172,12 @@ begin
 
     signal in_data_toggle_r : std_logic;
     signal zlp_phase_r      : std_logic;
+    -- Latches a STATUS-stage end pulse that arrives while the OUT elastic queue
+    -- is still draining, so C_STATUS release waits for rx_count_r=0 even though
+    -- st_end_c is a single-cycle pulse (mirrors usb_pie_recovery_arb
+    -- status_end_pend_r).  Without it, an OUT whose RX buffer has not drained by
+    -- the STATUS endtransfer would hang C_STATUS forever.
+    signal status_end_pend_r : std_logic;
     signal zlp_owed_c       : std_logic;
 
     -- Success-qualified end-of-stage pulse (hclk pulse; no edge detect needed).
@@ -404,6 +410,7 @@ begin
         tx_response_known_r <= '0';
         in_data_toggle_r    <= '1';
         zlp_phase_r         <= '0';
+        status_end_pend_r   <= '0';
       elsif rising_edge(hclk) then
         if sync_busreset = '1' then
           st         <= T_IDLE;
@@ -415,6 +422,7 @@ begin
           pend_valid <= '0';
           in_data_toggle_r <= '1';
           zlp_phase_r      <= '0';
+          status_end_pend_r <= '0';
         else
           -- Latch a genuinely new SIE request that arrives mid trap/replay so
           -- its one-cycle pulse is not lost.  Not during a claimed transfer:
@@ -449,6 +457,17 @@ begin
             else
               zlp_phase_r <= '0';
             end if;
+          end if;
+
+          -- Latch a STATUS-stage end that arrives while the OUT elastic queue
+          -- still holds beats, so C_STATUS releases once the tail has drained.
+          if st = C_STATUS then
+            if (st_end_c = '1')
+               and (rx_count_r /= to_unsigned(0, rx_count_r'length)) then
+              status_end_pend_r <= '1';
+            end if;
+          else
+            status_end_pend_r <= '0';
           end if;
 
           case st is
@@ -568,7 +587,7 @@ begin
                 end_seen <= '0';
                 sr_sent  <= '0';
                 sp_sent  <= '0';
-              elsif (st_end_c = '1')
+              elsif ((st_end_c = '1') or (status_end_pend_r = '1'))
                     and (rx_count_r = to_unsigned(0, rx_count_r'length)) then
                 st <= T_IDLE;
               end if;
