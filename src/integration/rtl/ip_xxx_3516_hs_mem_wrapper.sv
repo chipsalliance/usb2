@@ -853,27 +853,13 @@ module ip_xxx_3516_hs_mem_wrapper
    // proper vector widths; see decls near line 387.)
 
    // ---- Recovery subsystem reset (active-high, in pie_clk domain). ----
-   // Move the recovery_top to the pie_clk (utmi_clk) domain so the PIE
-   // arbiter byte-stream surface (rec_*) is in its native clock and
-   // requires no CDC.  The AHB management surface is handled by a
-   // dedicated narrow CDC bridge below (C3).
-   // Synchronize the AXI subordinate reset (which is sourced from the
-   // dev_axi_aclk domain) into utmi_clk before deasserting.  This is a
-   // simple 2-flop synchronizer (no caliptra_prim dependency to avoid
-   // a cross-tree include).  Assertion is asynchronous.
+   // Recovery stack runs in the dev_axi_aclk domain (same as the post-sync
+   // arbiter that drives the rec_* byte-stream surface), so rec_* needs no CDC.
+   // The AHB management surface (C3 bridge below) is now also single-clock; its
+   // former 2-flop request/ack synchronizers degenerate to same-clock pipeline
+   // flops.  Reset is the dev_axi_aclk subordinate reset (active high).
    logic rec_rst;
-   logic rec_rst_pie_meta_q;
-   logic rec_rst_pie_q;
-   always_ff @(posedge utmi_clk or negedge dev_axi_aresetn) begin
-     if (!dev_axi_aresetn) begin
-       rec_rst_pie_meta_q <= 1'b1;
-       rec_rst_pie_q      <= 1'b1;
-     end else begin
-       rec_rst_pie_meta_q <= 1'b0;
-       rec_rst_pie_q      <= rec_rst_pie_meta_q;
-     end
-   end
-   assign rec_rst = rec_rst_pie_q;
+   assign rec_rst = ~dev_axi_aresetn;
 
    // ==================================================================
    // OCP Recovery AHB sub-decoder + CDC bridge (review fixes C1..C4,C7,
@@ -906,26 +892,21 @@ module ip_xxx_3516_hs_mem_wrapper
    //   sub-decoder owns beats inside it.  This prevents the two
    //   sub-decoders from both responding to the same beat.
    //
-   // CDC (C3)
-   // --------
-   //   dev_axi_aclk (caliptra_ss_clk) is asynchronous to utmi_clk
-   //   (60 MHz PHY clock).  recovery_top lives in utmi_clk to be in
-   //   the same domain as the PIE arbiter, so the AHB beat must cross
-   //   from dev_axi_aclk into utmi_clk and back.  Narrow 4-phase
-   //   level/ack handshake:
-   //     axi  : req_axi_q   --> 2-FF sync into utmi --> req_pie_sync
-   //     pie  : ack_pie_q   --> 2-FF sync into axi  --> ack_axi_sync
-   //   Payload (cmd/off/wr/wdata) is captured in axi_clk before req
-   //   goes high and remains stable for the duration of the handshake
-   //   so it can be sampled in utmi_clk without further CDC.  Read
-   //   data is captured in utmi_clk when ack rises and held until
-   //   req drops.
+   // Bridge (C3) - single dev_axi_aclk domain (A1.6)
+   // ----------------------------------------------
+   //   recovery_top now runs in dev_axi_aclk (same as this AHB decoder), so the
+   //   former dev_axi_aclk<->utmi_clk crossing is gone.  The request/ack
+   //   handshake FSMs are retained but are now same-clock: the 2-FF "sync"
+   //   flops (req_pie_meta/sync, ack_axi_meta/sync) degenerate to benign
+   //   same-clock pipeline stages.  Payload (cmd/off/wr/wdata) is captured on
+   //   the AHB address/data phase and held stable for the handshake; read data
+   //   is captured when ext_rb_ack rises and held until req drops.
    //
    // Pulse semantics (C2/C7)
    // -----------------------
-   //   The PIE-side FSM holds ext_rb_wr / ext_rb_rd high until it
-   //   observes ext_rb_ack from the arbiter.  This is safe because
-   //   usb_ocp_recovery_top now gates EXT grants behind ext_in_flight_q
+   //   The request-side FSM holds ext_rb_wr / ext_rb_rd high until it
+   //   observes ext_rb_ack from the recovery block.  This is safe because
+   //   usb_ocp_recovery_top gates EXT grants behind ext_in_flight_q
    //   so a held wr/rd does not re-fire pulse strobes.
    //
    // Response mux
@@ -986,12 +967,12 @@ module ip_xxx_3516_hs_mem_wrapper
    } a_state_e;
    a_state_e a_state_q, a_state_d;
 
-   // CDC: dev_axi_aclk -> utmi_clk request, utmi_clk -> dev_axi_aclk ack.
+   // Request/ack handshake, now single dev_axi_aclk domain (A1.6).
    logic        req_axi_q;        // level, axi clk
-   logic        req_pie_meta_q;   // 2FF sync into pie
+   logic        req_pie_meta_q;   // same-clock pipeline stage (was utmi 2FF sync)
    logic        req_pie_sync_q;
    logic        ack_pie_q;        // level, pie clk
-   logic        ack_axi_meta_q;   // 2FF sync into axi
+   logic        ack_axi_meta_q;   // same-clock pipeline stage (was axi 2FF sync)
    logic        ack_axi_sync_q;
 
    // Read data captured in pie clk, sampled in axi clk after ack handshake.
@@ -1028,7 +1009,7 @@ module ip_xxx_3516_hs_mem_wrapper
        rdata_axi_q <= '0;
        err_axi_q   <= 1'b0;
      end else begin
-       // 2FF sync for ack returning from pie clk
+       // registered ack (same-clock pipeline; was pie->axi 2FF sync)
        ack_axi_meta_q <= ack_pie_q;
        ack_axi_sync_q <= ack_axi_meta_q;
 
@@ -1157,7 +1138,7 @@ module ip_xxx_3516_hs_mem_wrapper
       end
     end
 
-   // -- PIE clk: 2FF sync for req, PIE FSM that drives ext_rb_* --
+   // -- Request-side FSM (dev_axi_aclk) that drives ext_rb_* --
    logic        rec_ext_rb_wr;
    logic        rec_ext_rb_rd;
    logic [31:0] rec_ext_rb_rdata;
@@ -1181,7 +1162,7 @@ module ip_xxx_3516_hs_mem_wrapper
      endcase
    end
 
-   always_ff @(posedge utmi_clk or posedge rec_rst) begin
+   always_ff @(posedge dev_axi_aclk or posedge rec_rst) begin
      if (rec_rst) begin
        p_state_q      <= P_IDLE;
        req_pie_meta_q <= 1'b0;
@@ -1190,7 +1171,7 @@ module ip_xxx_3516_hs_mem_wrapper
        rdata_pie_q    <= '0;
        err_pie_q      <= 1'b0;
      end else begin
-       // 2FF sync for req coming from axi clk
+       // registered req (same-clock pipeline; was axi->pie 2FF sync)
        req_pie_meta_q <= req_axi_q;
        req_pie_sync_q <= req_pie_meta_q;
 
@@ -1255,7 +1236,7 @@ module ip_xxx_3516_hs_mem_wrapper
        // ports cross to the SoC and must be sync'd on the consumer side
        // (was previously dev_axi_aclk; see residual risk note in the
        // combined fixes report).
-        .clk  (utmi_clk),
+        .clk  (dev_axi_aclk),
         .rst  (rec_rst),
 
         // Legacy fifo_rd_* ports stay plumbed for S4d async FIFO compatibility.

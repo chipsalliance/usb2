@@ -1642,7 +1642,7 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     RXNBYTES_BITS   => 12,
     TXNBYTES_BITS   => 15,
     C_REC_IFACE_NUM => 0,
-    G_BRINGUP_MODE  => 1
+    G_BRINGUP_MODE  => 3
   )
   port map (
     hclk          => hclk,
