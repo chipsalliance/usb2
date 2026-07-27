@@ -416,11 +416,13 @@ begin
           in_data_toggle_r <= '1';
           zlp_phase_r      <= '0';
         else
-          -- Latch a genuinely new SIE request arriving mid trap/replay/claim.
+          -- Latch a genuinely new SIE request that arrives mid trap/replay so
+          -- its one-cycle pulse is not lost.  Not during a claimed transfer:
+          -- the claim FSM owns every EP0 transaction (SETUP/DATA/STATUS) of the
+          -- transfer, and a host-abandon SETUP is handled explicitly below.
           if (st /= T_IDLE) and (st /= T_PASS)
-             and (sync_sieint_epinfo_req_i = '1') and (pend_valid = '0')
-             and not ((st = C_DATA or st = C_STATUS)
-                      and (sync_sieint_epinfo_setup_i = '1')) then
+             and (st /= C_DATA) and (st /= C_STATUS)
+             and (sync_sieint_epinfo_req_i = '1') and (pend_valid = '0') then
             pend_valid <= '1';
             pend_setup <= sync_sieint_epinfo_setup_i;
             pend_epnr  <= sync_sieint_epinfo_epnr_i;
