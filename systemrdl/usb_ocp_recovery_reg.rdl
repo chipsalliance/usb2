@@ -908,7 +908,7 @@ addrmap usb_ocp_recovery_reg {
         desc = "Caliptra/vendor-specific control bits outside the OCP Recovery command set. Firmware (EXT/AXI) writable only.";
         field {
             name = "OCP Recovery Path Disable";
-            desc = "Emergency-fallback control bit. When set, forces the VHDL PIE arbiter (usb_pie_recovery_arb.m.vhdl, ocp_path_disable_i port) to never claim an OCP-class SETUP, so every EP0 transfer falls through to the legacy SIE / MCU EPCS path bit-identically to the un-arbitered IP. Firmware/EXT write-only (swwe gated by rb_is_ext in usb_ocp_recovery_top.sv), so a USB-host write is ignored. Reset default 0 (OCP recovery path active).";
+            desc = "Emergency-fallback control bit. When set, forces the VHDL post-synchronizer OCP recovery arbiter (usb_ocp_recovery_post_sync_arb.m.vhdl, ocp_path_disable_i port) to never claim an OCP-class SETUP, so every EP0 transfer falls through to the legacy SIE / MCU EPCS path bit-identically to the un-arbitered IP. Firmware/EXT write-only (swwe gated by rb_is_ext in usb_ocp_recovery_top.sv), so a USB-host write is ignored. Reset default 0 (OCP recovery path active).";
             sw = rw;
             hw = r;
             swwe = true;

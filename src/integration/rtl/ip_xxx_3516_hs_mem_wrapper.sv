@@ -810,7 +810,7 @@ module ip_xxx_3516_hs_mem_wrapper
 
                // OCP Recovery v1.1 Section 8.5 arbiter byte-stream surface.
                // Drives / driven by usb_ocp_recovery_top via the VHDL
-               // usb_pie_recovery_arb spliced inside ip_xxx_3511_hs.
+               // usb_ocp_recovery_post_sync_arb spliced inside ip_xxx_3511_hs.
                .rec_setup_pkt_vld   (rec_setup_pkt_vld_w),
                .rec_setup_pkt       (rec_setup_pkt_w),
                .rec_ctrl_out_data   (rec_ctrl_out_data_w),
@@ -839,8 +839,8 @@ module ip_xxx_3516_hs_mem_wrapper
    // OCP Recovery v1.1 subsystem (A6: usb_ocp_recovery_top)
    // ----------------------------------------------------------------
    // Phase 1c integration:
-   //   - PIE side: byte-stream surface (rec_*) flows out of the VHDL
-   //     arbiter (usb_pie_recovery_arb) inside ip_xxx_3511_hs.
+   //   - Control-transfer byte-stream surface (rec_*) flows out of the VHDL
+   //     arbiter (usb_ocp_recovery_post_sync_arb) inside ip_xxx_3511_hs.
    //   - Management side: AHB sub-decoder below taps the existing
    //     dev_ahb_* output of axilite_to_ahb.sv and converts AHB beats
    //     addressed to SOC_USB_OCP_RECOVERY_REG_BASE_ADDR into single-byte
@@ -1247,7 +1247,7 @@ module ip_xxx_3516_hs_mem_wrapper
         .fifo_rd_data  (fifo_rd_data),
         .fifo_rd_depth (fifo_rd_depth),
 
-        // PIE byte-stream surface (driven by VHDL usb_pie_recovery_arb)
+        // Control-transfer byte-stream surface (driven by VHDL usb_ocp_recovery_post_sync_arb)
         .rec_setup_pkt_vld  (rec_setup_pkt_vld_w),
         .rec_setup_pkt      (rec_setup_pkt_w),
        .rec_ctrl_out_data  (rec_ctrl_out_data_w),

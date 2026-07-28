@@ -5,16 +5,12 @@
 --  Architecture: rtl
 --
 --  Post-synchronizer OCP Recovery v1.1 EP0 arbiter (see the entity header in
---  usb_ocp_recovery_post_sync_arb.e.vhdl for the full routing model and the
---  G_BRINGUP_MODE staging description).
+--  usb_ocp_recovery_post_sync_arb.e.vhdl for the full routing model).
 --
---  This file currently implements MODE_A (transparent pass-through) only.
---  Higher modes (trap/replay, classify, claim, full transfer engine) are added
---  in later milestones behind the G_BRINGUP_MODE selection.  In MODE_A every
---  synchronized SIE signal reaches usb_dma / usb_reg_if unmodified and the
---  response bundle is a bit-for-bit copy of usb_dma's, so legacy USB behaviour
---  is identical to the un-arbitered IP.  The SV recovery-stack outputs are held
---  at benign inactive values because no transfer is ever claimed in MODE_A.
+--  Every EP0 SETUP is trapped in the hclk domain, classified, and either
+--  replayed to the legacy usb_dma path (non-OCP SETUP) or routed to the SV
+--  recovery stack (OCP-recovery-class SETUP), with the OCP DATA/STATUS stages
+--  handled by the transfer engine below.
 --  ----------------------------------------------------------------------------
 
 library IEEE;
@@ -23,87 +19,21 @@ use IEEE.numeric_std.all;
 
 architecture rtl of usb_ocp_recovery_post_sync_arb is
 
-  -- Bring-up mode encodings (see entity header).
-  constant MODE_A : integer := 0;
-  constant MODE_B : integer := 1;
-  constant MODE_C : integer := 2;
-  constant MODE_D : integer := 3;
-  constant MODE_E : integer := 4;
-
 begin
 
   -- ======================================================================
-  -- MODE_A: transparent pass-through.
-  --
-  -- Toward usb_dma: forward the synchronized request/RX/completion/fetch
-  -- signals unchanged.
-  -- Toward usb_reg_if: forward setup_received and the error path unchanged.
-  -- Response bundle: return usb_dma's epinfo_sync_* response unchanged.
-  -- The pass-through is unconditional in MODE_A; the mode guard is retained so
-  -- higher modes can override these assignments with trap/mux logic.
-  -- ======================================================================
-  gen_mode_a : if G_BRINGUP_MODE = MODE_A generate
-
-    -- Forward toward usb_dma.
-    sync_sieint_epinfo_req_o    <= sync_sieint_epinfo_req_i;
-    sync_sieint_epinfo_epnr_o   <= sync_sieint_epinfo_epnr_i;
-    sync_sieint_epinfo_epdir_o  <= sync_sieint_epinfo_epdir_i;
-    sync_sieint_epinfo_setup_o  <= sync_sieint_epinfo_setup_i;
-    sync_sieint_rx_nbytes_o     <= sync_sieint_rx_nbytes_i;
-    sync_sieint_rxdata_o        <= sync_sieint_rxdata_i;
-    sync_sieint_rxdatavalid_o   <= sync_sieint_rxdatavalid_i;
-    sync_sieint_endtransfer_o   <= sync_sieint_endtransfer_i;
-    sync_sieint_success_o       <= sync_sieint_success_i;
-    sync_sieint_sentNAK_o       <= sync_sieint_sentNAK_i;
-    sync_sieint_txdatafetched_o <= sync_sieint_txdatafetched_i;
-
-    -- Forward toward usb_reg_if.
-    sync_sieint_setup_received_o <= sync_sieint_setup_received_i;
-    sync_sieint_error_o          <= sync_sieint_error_i;
-    sync_sieint_errortype_o      <= sync_sieint_errortype_i;
-
-    -- Return usb_dma's response bundle unchanged.
-    epinfo_sync_valid_o            <= epinfo_sync_valid_dma;
-    epinfo_sync_active_o           <= epinfo_sync_active_dma;
-    epinfo_sync_disabled_o         <= epinfo_sync_disabled_dma;
-    epinfo_sync_toggle_o           <= epinfo_sync_toggle_dma;
-    epinfo_sync_stall_o            <= epinfo_sync_stall_dma;
-    epinfo_sync_iso_o              <= epinfo_sync_iso_dma;
-    epinfo_sync_ratefeedbackmode_o <= epinfo_sync_ratefeedbackmode_dma;
-    epinfo_sync_nbytes_o           <= epinfo_sync_nbytes_dma;
-    epinfo_sync_maxpacket_o        <= epinfo_sync_maxpacket_dma;
-    epinfo_sync_txdata_o           <= epinfo_sync_txdata_dma;
-    epinfo_sync_txdata_valid_o     <= epinfo_sync_txdata_valid_dma;
-
-    -- SV recovery stack: no transfer is claimed in MODE_A.  Hold the upper-side
-    -- surface at benign inactive values so ctrl_decode sees no request.
-    setup_pkt_vld   <= '0';
-    setup_pkt       <= (others => '0');
-    ctrl_out_data   <= (others => '0');
-    ctrl_out_be     <= (others => '0');
-    ctrl_out_vld    <= '0';
-    ctrl_out_last   <= '0';
-    ctrl_in_rdy     <= '0';
-    ctrl_xfer_done  <= '0';
-    rec_claim_status <= '0';
-
-  end generate gen_mode_a;
-
-  -- ======================================================================
-  -- MODE_B and higher: SETUP trap + replay.
+  -- SETUP trap + replay + claimed OCP transfer engine.
   --
   -- Every EP0 SETUP is withheld from usb_dma; the arbiter fabricates the
   -- bit-accurate EP0-SETUP epinfo response toward the SIE (so the SIE accepts
   -- the 8 payload bytes - USB 2.0 Sec 8.4.6.4 requires the SETUP stage to be
-  -- ACKed), captures the payload, then (MODE_B: always; higher modes: only if
-  -- unclaimed) replays the SETUP to usb_dma so the legacy SRAM write + EP0
-  -- interrupt occur exactly as in the un-trapped flow.  usb_dma's own late
-  -- response during replay is absorbed (never forwarded to the SIE) because the
-  -- SIE-facing response bundle is 2-FF level-synchronized with no back-ack.
-  --
-  -- This block currently implements MODE_B behaviour (replay every SETUP as
-  -- unclaimed; no classification/claim).  Classification (MODE_C), the claimed
-  -- OCP path (MODE_D) and the full transfer engine (MODE_E) are added later.
+  -- ACKed) and captures the payload.  A non-OCP (unclaimed) SETUP is replayed to
+  -- usb_dma so the legacy SRAM write + EP0 interrupt occur exactly as in the
+  -- un-trapped flow; usb_dma's own late response during replay is absorbed
+  -- (never forwarded to the SIE) because the SIE-facing response bundle is 2-FF
+  -- level-synchronized with no back-ack.  An OCP-recovery-class SETUP is routed
+  -- to the SV recovery stack and never replayed, so it produces no legacy side
+  -- effects.
   --
   -- Fabricated EP0-SETUP response (matches usb_dma.m.vhdl READ_EPINFO for
   -- epinfo_setup='1'): valid=1, active=1, disabled=0, toggle=0, stall=0, iso=0,
@@ -124,11 +54,7 @@ begin
   -- A new SIE epinfo_req pulse arriving during trap/replay is latched (pending)
   -- and serviced after completion so no request pulse is dropped.
   -- ======================================================================
-  gen_trap : if G_BRINGUP_MODE >= MODE_B generate
-
-    -- MODE_D and above route OCP-recovery-class SETUPs to the SV stack;
-    -- MODE_B/MODE_C replay every SETUP as unclaimed (claimed path disabled).
-    constant CLAIM_EN : boolean := (G_BRINGUP_MODE >= MODE_D);
+  gen_trap : block
 
     constant BYTES_PER_BEAT   : integer := USB_DATAWIDTH / 8;   -- 8 for 64b
     constant RX_ELASTIC_BEATS : integer := 3;
@@ -174,8 +100,8 @@ begin
     signal zlp_phase_r      : std_logic;
     -- Latches a STATUS-stage end pulse that arrives while the OUT elastic queue
     -- is still draining, so C_STATUS release waits for rx_count_r=0 even though
-    -- st_end_c is a single-cycle pulse (mirrors usb_pie_recovery_arb
-    -- status_end_pend_r).  Without it, an OUT whose RX buffer has not drained by
+    -- st_end_c is a single-cycle pulse.  Without it, an OUT whose RX buffer has
+    -- not drained by
     -- the STATUS endtransfer would hang C_STATUS forever.
     signal status_end_pend_r : std_logic;
     signal zlp_owed_c       : std_logic;
@@ -273,7 +199,7 @@ begin
 
     -- setup_pkt to the SV recovery stack: pulse once per claimed SETUP.
     setup_pkt_vld_c <= '1' when (st = T_TRAP) and (cap_done = '1')
-                            and (is_ocp = '1') and CLAIM_EN and (sp_sent = '0')
+                            and (is_ocp = '1') and (sp_sent = '0')
                         else '0';
     setup_pkt     <= cap_rxdata;
     setup_pkt_vld <= setup_pkt_vld_c;
@@ -512,7 +438,7 @@ begin
               if sync_sieint_endtransfer_i = '1' then end_seen  <= '1'; end if;
               if sync_sieint_success_i     = '1' then succ_seen <= '1'; end if;
               if (end_seen = '1') or (sync_sieint_endtransfer_i = '1') then
-                if (is_ocp = '1') and CLAIM_EN then
+                if (is_ocp = '1') then
                   if nbytes_r = to_unsigned(0, nbytes_r'length) then
                     st <= C_STATUS;
                   else
@@ -933,6 +859,54 @@ begin
         tx_beat_valid_c              when (claim_q = '1') else
         epinfo_sync_txdata_valid_dma when (fwd = '1')     else '0';
 
-  end generate gen_trap;
+    -- ------------------------------------------------------------------
+    -- Safety properties (simulation-only).
+    -- ------------------------------------------------------------------
+    -- pragma translate_off
+    assertions_proc : process (hclk)
+    begin
+      if rising_edge(hclk) and (hresetn = '1') then
+        -- Response-mux ownership is exclusive: the fabricated SETUP response and
+        -- usb_dma's forwarded response are never selected together, and neither
+        -- coincides with a claimed-transfer response.
+        assert not ((fab = '1') and (fwd = '1'))
+          report "post_sync_arb: fabricated and forwarded response both selected"
+          severity error;
+        assert not ((claim_q = '1') and (fab = '1'))
+          report "post_sync_arb: claimed and fabricated response both selected"
+          severity error;
+
+        -- A claim is never owned before the full 8-byte SETUP has been captured.
+        assert not (((st = C_DATA) or (st = C_STATUS)) and (cap_done = '0'))
+          report "post_sync_arb: claim asserted before SETUP capture complete"
+          severity error;
+
+        -- Full legacy isolation for a claimed OCP transfer is structural: the
+        -- sync_sieint_*_o request/RX/setup_received outputs are forced to '0'
+        -- by the output muxes whenever claim_q='1' (see their conditional
+        -- assignments above), so usb_dma / usb_reg_if see no SRAM write,
+        -- interrupt, toggle, or firmware dispatch for a claimed SETUP.
+
+        -- RX elastic queue never overflows its physical depth.
+        assert rx_count_r <= to_unsigned(RX_ELASTIC_BEATS, rx_count_r'length)
+          report "post_sync_arb: RX elastic queue overflow"
+          severity failure;
+
+        -- Single-MaxPacket scope (advertised wMaxRd/WrTransferSize = 64, OCP
+        -- Recovery v1.1 Sec 8.5): the captured IN response length and the OUT
+        -- byte total never exceed one EP0 HS MaxPacket (64 bytes).
+        assert tx_response_bytes_r <=
+               to_unsigned(TX_MAXBYTES, tx_response_bytes_r'length)
+          report "post_sync_arb: IN response exceeds single MaxPacket (64B)"
+          severity failure;
+        assert not ((rx_end_seen_r = '1')
+                    and (rx_total_r > to_unsigned(64, rx_total_r'length)))
+          report "post_sync_arb: OUT byte count exceeds single MaxPacket (64B)"
+          severity failure;
+      end if;
+    end process assertions_proc;
+    -- pragma translate_on
+
+  end block gen_trap;
 
 end architecture rtl;

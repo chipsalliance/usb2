@@ -20,21 +20,10 @@ ${USB_ROOT}/ip_xxx_3511/RTL/usb_host_reg_if.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_host_sof_timer.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_host_synchronizer.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_pie.m.vhdl
--- Order requirement (OCP Recovery v1.1 splice, Phase 1c plan D0.B):
---   usb_pie_recovery_arb.e.vhdl declares the entity referenced by the
---   structure splice in ip_xxx_3511_hs_structure.a.vhdl.  The architecture
---   `.m.vhdl` must be compiled into the same library as the entity, AFTER
---   the entity.  Neither file is referenced by usb_pie.m.vhdl, so they
---   could appear anywhere before ip_xxx_3511_hs_structure.a.vhdl
---   (compiled by usb_ip_3511_filelist.f).  Kept directly after usb_pie
---   for readability of compile order in the source tree.
-${USB_ROOT}/ip_xxx_3511/RTL/usb_pie_recovery_arb.e.vhdl
-${USB_ROOT}/ip_xxx_3511/RTL/usb_pie_recovery_arb.m.vhdl
 -- Post-synchronizer OCP Recovery v1.1 EP0 arbiter (hclk/dev_axi_aclk domain).
---   Replaces usb_pie_recovery_arb at the A1 structural rewire.  The entity
---   `.e.vhdl` must be compiled into library rtl before its architecture
---   `.m.vhdl`, and both before ip_xxx_3511_hs_structure.a.vhdl which
---   instantiates the entity.
+--   The entity `.e.vhdl` must be compiled into library rtl before its
+--   architecture `.m.vhdl`, and both before ip_xxx_3511_hs_structure.a.vhdl
+--   which instantiates the entity.
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_ocp_recovery_post_sync_arb.e.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_ocp_recovery_post_sync_arb.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_reg_if.m.vhdl

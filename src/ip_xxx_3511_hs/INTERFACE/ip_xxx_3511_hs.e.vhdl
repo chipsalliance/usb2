@@ -227,8 +227,9 @@ entity ip_xxx_3511_hs is
        usb_pie_PACKET_EVENT_TIMEOUT_HS_param : in  std_logic_vector(8 downto 0);
 
        -- ------------------------------------------------------------------
-       -- OCP Recovery v1.1 Section 8.5 - PIE arbiter upper-side byte-stream
-       -- surface (see usb_pie_recovery_arb.{e,m}.vhdl).  These are routed
+       -- OCP Recovery v1.1 Section 8.5 - post-synchronizer OCP recovery arbiter
+       -- upper-side byte-stream surface (see
+       -- usb_ocp_recovery_post_sync_arb.{e,m}.vhdl).  These are routed
        -- through ip_xxx_3516_hs_mem.e.vhdl up to the SV wrapper.
        -- ------------------------------------------------------------------
        rec_setup_pkt_vld   : out std_logic;
@@ -248,7 +249,7 @@ entity ip_xxx_3511_hs is
        rec_ctrl_set_stall  : in  std_logic;
        rec_ctrl_xfer_done  : out std_logic;
        rec_ctrl_claim      : out std_logic;
-       -- Emergency-fallback path-disable control (see usb_pie_recovery_arb.e.vhdl
+       -- Emergency-fallback path-disable control (see usb_ocp_recovery_post_sync_arb.e.vhdl
        -- ocp_path_disable_i): firmware-writable via CALIPTRA_CTRL.
        -- OCP_PATH_DISABLE, EXT/firmware write-only. Reset default '0'.
        rec_ocp_path_disable : in  std_logic;

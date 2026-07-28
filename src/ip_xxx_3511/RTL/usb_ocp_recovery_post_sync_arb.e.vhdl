@@ -11,7 +11,7 @@
 --                     boundary, RX data, completion status).
 --    - usb_reg_if   : the register/interrupt block (setup_received, error).
 --
---  It replaces the legacy PIE-domain usb_pie_recovery_arb.  Arbitrating on the
+--  Arbitrating on the
 --  hclk side (after usb_synchronizer) removes the OCP-specific control CDC and
 --  lets the SystemVerilog OCP recovery stack (usb_ocp_recovery_top) run in the
 --  same dev_axi_aclk domain, so the rec_*/ctrl_* interface is single-domain.
@@ -43,26 +43,6 @@
 --  - USB 2.0 Section 9.3 Table 9-2   -- SETUP packet byte layout (little
 --                                       endian on the wire).
 --
---  Bring-up mode generic
---  ---------------------
---  G_BRINGUP_MODE selects how much of the datapath is active.  It exists ONLY
---  to stage functional bring-up along a single structural path (there is no
---  second compile path or second instance).  Modes are strictly additive:
---    MODE_A (0) : transparent pass-through (no trap).  Every legacy-visible
---                 output is a bit-for-bit copy of usb_dma's response and every
---                 synchronized input reaches usb_dma / usb_reg_if unmodified.
---    MODE_B (1) : trap every EP0 SETUP, fabricate the SETUP response, replay
---                 ALL SETUPs to the legacy path as unclaimed.
---    MODE_C (2) : additionally classify SETUPs (still force no claim).
---    MODE_D (3) : additionally enable the claimed OCP path (SETUP discard +
---                 routing to the SV recovery stack).
---    MODE_E (4) : additionally enable the full OCP transfer engine (TX
---                 cut-through, exact-MaxPacket ZLP, DATA toggle, STALL,
---                 early-IN NAK/retry, OUT elastic drain).  Default and shipped
---                 behaviour.
---  The generic is a bring-up scaffold and is removed at milestone completion;
---  the shipped RTL has no mode selection and always implements MODE_E.
---
 --  Coding conventions
 --  ------------------
 --  - library IEEE; numeric_std; no std_logic_unsigned / std_logic_arith.
@@ -83,13 +63,7 @@ entity usb_ocp_recovery_post_sync_arb is
     TXNBYTES_BITS    : integer := 15;
     -- USB Interface Number selecting the recovery interface for class-specific
     -- SETUPs (OCP Recovery v1.1 Sec 8.5; USB 2.0 Sec 9.3 Tbl 9-2 wIndex).
-    C_REC_IFACE_NUM  : integer range 0 to 255 := 0;
-    -- Bring-up staging mode (see header).  The default tracks the highest mode
-    -- currently implemented and advances as later milestones add modes; each
-    -- structural instantiation selects its mode explicitly.  At milestone
-    -- completion (A1.10) the generic is removed and the datapath is
-    -- unconditionally full-function (MODE_E).
-    G_BRINGUP_MODE   : integer range 0 to 4 := 0
+    C_REC_IFACE_NUM  : integer range 0 to 255 := 0
   );
   port (
     -- ------------------------------------------------------------------
@@ -179,8 +153,8 @@ entity usb_ocp_recovery_post_sync_arb is
     -- Upper side: 32-bit control-transfer surface to the SV recovery stack.
     -- setup_pkt_vld is pre-filtered: only OCP-recovery class SETUPs reach the
     -- SV side, so ctrl_decode treats every SETUP pulse as a recovery request.
-    -- This interface matches the legacy usb_pie_recovery_arb SV boundary so
-    -- usb_ocp_recovery_top needs no interface change.
+    -- This interface matches the SV recovery stack (usb_ocp_recovery_top)
+    -- boundary so usb_ocp_recovery_top needs no interface change.
     -- ==================================================================
     setup_pkt_vld   : out std_logic;
     setup_pkt       : out std_logic_vector(63 downto 0);

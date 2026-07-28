@@ -263,94 +263,17 @@ constant C_NBDEV          : integer := 1;
 --++++++++++++++++++++++++++++++++++++++++++++++
 
 -- ----------------------------------------------------------------------------
--- usb_pie_recovery_arb: OCP Recovery v1.1 (Section 8.5) EP0 arbiter.
--- Splices between the legacy EP-info bundle (from usb_synchronizer) and
--- the usb_pie EP-info input bundle, exposing a byte-stream upper side to
--- the SV recovery stack at the top-level wrapper boundary.
--- See third_party/usb2/src/ip_xxx_3511/RTL/usb_pie_recovery_arb.{e,m}.vhdl.
--- ----------------------------------------------------------------------------
-component usb_pie_recovery_arb
-  generic (
-    USB_DATAWIDTH    : integer := 64;
-    C_REC_IFACE_NUM  : integer range 0 to 255 := 0
-  );
-  port (
-    clk      : in  std_logic;
-    reset_n  : in  std_logic;
-
-    pie_epinfo_setup          : in  std_logic;
-    pie_epinfo_setup_received : in  std_logic;
-    pie_rxdata                : in  std_logic_vector(USB_DATAWIDTH-1 downto 0);
-    pie_rxdatavalid           : in  std_logic;
-    pie_rx_nbytes             : in  std_logic_vector(11 downto 0);
-    pie_endtransfer           : in  std_logic;
-    pie_success               : in  std_logic;
-    pie_error                 : in  std_logic;
-    pie_txdata_fetched        : in  std_logic;
-
-    legacy_epinfo_valid        : in std_logic;
-    legacy_epinfo_active       : in std_logic;
-    legacy_epinfo_disabled     : in std_logic;
-    legacy_epinfo_toggle       : in std_logic;
-    legacy_epinfo_stall        : in std_logic;
-    legacy_epinfo_iso          : in std_logic;
-    legacy_epinfo_nbytes       : in std_logic_vector(14 downto 0);
-    legacy_epinfo_maxpacket    : in std_logic_vector(1 downto 0);
-    legacy_epinfo_txdata       : in std_logic_vector(USB_DATAWIDTH-1 downto 0);
-    legacy_epinfo_txdata_valid : in std_logic;
-
-    epinfo_to_pie_valid        : out std_logic;
-    epinfo_to_pie_active       : out std_logic;
-    epinfo_to_pie_disabled     : out std_logic;
-    epinfo_to_pie_toggle       : out std_logic;
-    epinfo_to_pie_stall        : out std_logic;
-    epinfo_to_pie_iso          : out std_logic;
-    epinfo_to_pie_nbytes       : out std_logic_vector(14 downto 0);
-    epinfo_to_pie_maxpacket    : out std_logic_vector(1 downto 0);
-    epinfo_to_pie_txdata       : out std_logic_vector(USB_DATAWIDTH-1 downto 0);
-    epinfo_to_pie_txdata_valid : out std_logic;
-
-    setup_pkt_vld   : out std_logic;
-    setup_pkt       : out std_logic_vector(63 downto 0);
-
-    ctrl_out_data   : out std_logic_vector(31 downto 0);
-    ctrl_out_be   : out std_logic_vector(3 downto 0);
-    ctrl_out_vld    : out std_logic;
-    ctrl_out_last   : out std_logic;
-    ctrl_out_rdy    : in  std_logic;
-
-    ctrl_in_data    : in std_logic_vector(31 downto 0);
-    ctrl_in_be    : in std_logic_vector(3 downto 0);
-    ctrl_in_vld     : in  std_logic;
-    ctrl_in_last    : in  std_logic;
-    ctrl_in_rdy     : out std_logic;
-    ctrl_in_resp_bytes : in std_logic_vector(6 downto 0);
-    ctrl_in_resp_known : in std_logic;
-
-    ctrl_set_stall  : in  std_logic;
-    ctrl_xfer_done  : out std_logic;
-
-    ocp_path_disable_i : in  std_logic;
-
-    rec_claim_status            : out std_logic;
-    legacy_setup_received_gated : out std_logic
-  );
-end component;
-
-
--- ----------------------------------------------------------------------------
 -- Post-synchronizer OCP Recovery v1.1 EP0 arbiter (hclk / dev_axi_aclk domain).
 -- Interposes on the synchronized SIE interface between usb_synchronizer and the
--- downstream consumers usb_dma and usb_reg_if.  Replaces the PIE-domain
--- usb_pie_recovery_arb.  See usb_ocp_recovery_post_sync_arb.{e,m}.vhdl.
+-- downstream consumers usb_dma and usb_reg_if.
+-- See usb_ocp_recovery_post_sync_arb.{e,m}.vhdl.
 -- ----------------------------------------------------------------------------
 component usb_ocp_recovery_post_sync_arb
   generic (
     USB_DATAWIDTH    : integer := 64;
     RXNBYTES_BITS    : integer := 12;
     TXNBYTES_BITS    : integer := 15;
-    C_REC_IFACE_NUM  : integer range 0 to 255 := 0;
-    G_BRINGUP_MODE   : integer range 0 to 4 := 0
+    C_REC_IFACE_NUM  : integer range 0 to 255 := 0
   );
   port (
     hclk     : in  std_logic;
@@ -965,12 +888,6 @@ signal sieint_epinfo_epnr:     std_logic_vector(3 downto 0);
 signal sieint_epinfo_epdir:    std_logic;
 signal sieint_epinfo_setup:    std_logic;
 signal sieint_epinfo_setup_received:    std_logic;
--- Gated copy emitted by usb_pie_recovery_arb (low while the arbiter has
--- claimed an EP0 OCP recovery class transfer). Routed to the legacy SIE
--- usb_synchronizer in place of the raw signal so the MCU EPCS does not
--- see SETUP-received notifications for recovery-class transfers.  See
--- research/usb_ocp_p7_claim_debug.md and usb_pie_recovery_arb.{e,m}.vhdl.
-signal sieint_epinfo_setup_received_gated: std_logic;
 signal epinfo_valid:	       std_logic;
 signal epinfo_active:	       std_logic;
 signal epinfo_disabled:        std_logic;
@@ -1049,18 +966,7 @@ signal usbreg_epinfo_toggle  : std_logic_vector(C_NBPHYSEP+1 downto 0);
 
 -- ----------------------------------------------------------------------------
 -- OCP Recovery v1.1 (Section 8.5) arbiter internal nets.
--- epinfo_to_pie_* are the muxed bundle going into usb_pie's epinfo_* inputs.
 -- ----------------------------------------------------------------------------
-signal epinfo_to_pie_valid        : std_logic;
-signal epinfo_to_pie_active       : std_logic;
-signal epinfo_to_pie_disabled     : std_logic;
-signal epinfo_to_pie_toggle       : std_logic;
-signal epinfo_to_pie_stall        : std_logic;
-signal epinfo_to_pie_iso          : std_logic;
-signal epinfo_to_pie_nbytes       : std_logic_vector(14 downto 0);
-signal epinfo_to_pie_maxpacket    : std_logic_vector(1 downto 0);
-signal epinfo_to_pie_txdata       : std_logic_vector(USBPIE_DATAWIDTH-1 downto 0);
-signal epinfo_to_pie_txdata_valid : std_logic;
 
 -- ----------------------------------------------------------------------------
 -- Post-synchronizer arbiter interposition nets (hclk domain).
@@ -1632,17 +1538,16 @@ usb_dma_1 : usb_dma
 -- ----------------------------------------------------------------------------
 -- OCP Recovery v1.1 Section 8.5 - post-synchronizer EP0 arbiter (hclk domain).
 -- Interposes on the synchronized SIE interface between usb_synchronizer and the
--- downstream consumers usb_dma and usb_reg_if.  Replaces the PIE-domain
--- usb_pie_recovery_arb.  Currently instantiated in MODE_A (transparent
--- pass-through); higher bring-up modes add trap/replay, classify, and claim.
+-- downstream consumers usb_dma and usb_reg_if.  Traps every EP0 SETUP; replays
+-- non-OCP SETUPs to legacy usb_dma and routes OCP-recovery-class transfers to
+-- the SV recovery stack.
 -- ----------------------------------------------------------------------------
 usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
   generic map (
     USB_DATAWIDTH   => USBPIE_DATAWIDTH,
     RXNBYTES_BITS   => 12,
     TXNBYTES_BITS   => 15,
-    C_REC_IFACE_NUM => 0,
-    G_BRINGUP_MODE  => 3
+    C_REC_IFACE_NUM => 0
   )
   port map (
     hclk          => hclk,

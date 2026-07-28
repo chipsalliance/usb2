@@ -3,7 +3,7 @@
 // usb_ocp_recovery_top.sv
 //
 // OCP Recovery v1.1 USB transport integration wrapper.  This module accepts
-// the pre-filtered EP0 recovery stream from usb_pie_recovery_arb, decodes the
+// the pre-filtered EP0 recovery stream from usb_ocp_recovery_post_sync_arb, decodes the
 // class request, arbitrates USB-vs-external register access, and connects the
 // regblock, CMS FIFO backing store, and recovery FSM.
 //
@@ -40,7 +40,7 @@ module usb_ocp_recovery_top #(
 
   //----------------------------------------------------------------------------
   // Upper-side 32-bit control-transfer surface driven by VHDL
-  // usb_pie_recovery_arb.
+  // usb_ocp_recovery_post_sync_arb.
   //----------------------------------------------------------------------------
   input  logic                    rec_setup_pkt_vld,
   input  logic [63:0]             rec_setup_pkt,
@@ -64,10 +64,11 @@ module usb_ocp_recovery_top #(
 
   // Emergency-fallback path-disable control: mirrors CALIPTRA_CTRL.OCP_PATH_DISABLE
   // (regblock field, EXT/firmware write-only via rb_is_ext/swwe gating -- see
-  // rb_hwif_in assignment below) out to the VHDL arbiter (usb_pie_recovery_arb
-  // ocp_path_disable_i), which forces legacy SIE pass-through when set. Both
-  // this module and the arbiter live in utmi_clk, so no synchronizer is
-  // needed for this same-domain registered signal.
+  // rb_hwif_in assignment below) out to the VHDL arbiter
+  // (usb_ocp_recovery_post_sync_arb ocp_path_disable_i), which forces legacy
+  // SIE pass-through when set. Both this module and the arbiter live in
+  // dev_axi_aclk, so no synchronizer is needed for this same-domain
+  // registered signal.
   output logic                    rec_ocp_path_disable,
 
   //----------------------------------------------------------------------------
@@ -95,7 +96,7 @@ module usb_ocp_recovery_top #(
   // SoC trigger / ack and recovery sideband.
   //
   // CDC guardrail: this module (usb_ocp_recovery_top) lives entirely in
-  // utmi_clk. All of the sidebands below cross into the SoC-clock domain at
+  // dev_axi_aclk. All of the sidebands below cross into the SoC-clock domain at
   // the top-level integration point (caliptra_ss_top or equivalent) OUTSIDE
   // this module -- verify at integration time that any NEWLY wired consumer
   // of these signals is either synchronized (e.g. caliptra_prim_flop_2sync
@@ -341,13 +342,13 @@ module usb_ocp_recovery_top #(
   //////////////////////////////////////////////////////////////////////////////
   // EP0 SETUP routing
   //
-  // The VHDL arbiter (usb_pie_recovery_arb) performs OCP class decode inline
+  // The VHDL arbiter (usb_ocp_recovery_post_sync_arb) performs OCP class decode inline
   // on the captured SETUP beat and pre-filters rec_setup_pkt_vld so that only
   // OCP-class SETUPs ever pulse into this SV stack.  All non-OCP SETUPs flow
   // through the arbiter to the legacy SIE unmodified, so standard USB
   // enumeration (GET_DESCRIPTOR / SET_ADDRESS / SET_CONFIGURATION /
   // GET_STATUS / ...) continues to be handled by the MCU EPCS.  See
-  // usb_pie_recovery_arb.{e,m}.vhdl for the class-match definition
+  // usb_ocp_recovery_post_sync_arb.{e,m}.vhdl for the class-match definition
   // (OCP Recovery v1.1 Sec 8.5.1; USB 2.0 Sec 9.3 Tbl 9-2 SETUP byte layout).
   //
   // Because the arbiter delivers only claimed SETUPs, this module treats every
@@ -554,9 +555,9 @@ module usb_ocp_recovery_top #(
   end
 
   // Emergency-fallback OCP path-disable control: drive out to the VHDL arbiter
-  // (usb_pie_recovery_arb ocp_path_disable_i via the vendor IP wrapper
+  // (usb_ocp_recovery_post_sync_arb ocp_path_disable_i via the vendor IP wrapper
   // hierarchy) from the Caliptra-specific CALIPTRA_CTRL register (outside the
-  // OCP command aperture). Same-domain (utmi_clk) registered field value; no
+  // OCP command aperture). Same-domain (dev_axi_aclk) registered field value; no
   // synchronizer needed.
   assign rec_ocp_path_disable = rb_hwif_out.CALIPTRA_CTRL.OCP_PATH_DISABLE.value;
 
