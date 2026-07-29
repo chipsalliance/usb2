@@ -9,14 +9,14 @@
 //     - OCP Recovery v1.1 Sec 8.2.5 defines a 65-slot logical FIFO ring with
 //       one unused slot, while Sec 9.2 reports FIFO_SIZE, MAX_TRANSFER_SIZE,
 //       WRITE_INDEX, and READ_INDEX in DWORD units.
-//     - Payload storage remains caliptra_prim_fifo_async with 64 physical
-//       DWORDs. Both ports currently run in clk, but the write-domain status is
-//       authoritative so a just-freed slot is not visible until the primitive
-//       write-side depth reflects the synchronized read-pointer advance.
+//     - Payload storage is caliptra_prim_fifo_sync with 64 physical DWORDs.
+//       Producer, consumer, register block, and firmware all run in clk, so a
+//       single-clock synchronous FIFO reports occupancy exactly with no
+//       clock-domain-crossing pointer lag.
 //     - WRITE_INDEX increments only on actual primitive write acceptance.
-//       READ_INDEX is derived in the write domain as
-//       (WRITE_INDEX - wdepth) mod 65 so the logical ring never advertises a
-//       slot before the async primitive exposes it on wdepth/wready.
+//       READ_INDEX is derived as (WRITE_INDEX - depth) mod 65 from the exact
+//       synchronous depth, so occupancy advertised through INDIRECT_FIFO_STATUS
+//       reflects a just-freed slot on the cycle after the pop.
 //     - USB accesses still use the direct fifo_rb_* path. EXT accesses arrive
 //       only through cpuif/hwif swacc events from the generated regblock.
 //     - EXT INDIRECT_FIFO_DATA reads still come back through the generated
@@ -128,7 +128,6 @@ module usb_ocp_recovery_cms_fifo #(
   logic [31:0] ext_status_snapshot_q [0:4];
 
   logic                       fifo_flush;
-  logic                       fifo_rst_n;
   logic                       fifo_wvalid;
   logic                       fifo_wready;
   logic [FIFO_WIDTH-1:0]      fifo_wdata;
@@ -310,26 +309,31 @@ module usb_ocp_recovery_cms_fifo #(
     if (usb_ctrl_word0_wr || ext_ctrl_word0_wr) begin
       fifo_flush = ctrl_word0_wstrb[1] && ctrl_word0_wdata[8];
     end
-    fifo_rst_n = ~(rst | fifo_flush);
   end
 
-  caliptra_prim_fifo_async #(
-    .Width (FIFO_WIDTH),
-    .Depth (FIFO_DEPTH)
+  caliptra_prim_fifo_sync #(
+    .Width            (FIFO_WIDTH),
+    .Pass             (1'b0),
+    .Depth            (FIFO_DEPTH),
+    .OutputZeroIfEmpty(1'b0)
   ) u_indirect_fifo (
-    .clk_wr_i  (clk),
-    .rst_wr_ni (fifo_rst_n),
-    .wvalid_i  (fifo_wvalid),
-    .wready_o  (fifo_wready),
-    .wdata_i   (fifo_wdata),
-    .wdepth_o  (fifo_wdepth),
-    .clk_rd_i  (clk),
-    .rst_rd_ni (fifo_rst_n),
-    .rvalid_o  (fifo_rvalid_int),
-    .rready_i  (fifo_rready_int),
-    .rdata_o   (fifo_rdata_int),
-    .rdepth_o  (fifo_rdepth_int)
+    .clk_i    (clk),
+    .rst_ni   (~rst),
+    .clr_i    (fifo_flush),
+    .wvalid_i (fifo_wvalid),
+    .wready_o (fifo_wready),
+    .wdata_i  (fifo_wdata),
+    .rvalid_o (fifo_rvalid_int),
+    .rready_i (fifo_rready_int),
+    .rdata_o  (fifo_rdata_int),
+    .full_o   (),
+    .depth_o  (fifo_wdepth),
+    .err_o    ()
   );
+
+  // Single-clock synchronous FIFO: the read-side depth equals the write-side
+  // depth exposed on depth_o.
+  assign fifo_rdepth_int = fifo_wdepth;
 
   always_ff @(posedge clk) begin
     if (rst) begin
@@ -544,6 +548,8 @@ module usb_ocp_recovery_cms_fifo #(
       end
       assert (!(push_req && pop_req))
         else $error("usb_ocp_recovery_cms_fifo: USB and EXT sources must serialize push and pop requests");
+      assert (!(fifo_flush && (push_req || pop_req)))
+        else $error("usb_ocp_recovery_cms_fifo: FIFO flush (INDIRECT_FIFO_CTRL reset) collided with a data push/pop; clr_i and the synchronous control-plane reset assume mutual exclusivity");
       assert (!(usb_data_rd && ext_data_rd))
         else $error("usb_ocp_recovery_cms_fifo: both sources attempted DATA pop");
       assert (!ext_data_rd || ext_data_mirror_ready_q)

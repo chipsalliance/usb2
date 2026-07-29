@@ -301,7 +301,7 @@ localparam int OCP_HW_STATUS_VENDOR_LEN_MAX = 251;
 // OCP Recovery v1.1 Sec 8.2.5 defines INDIRECT_FIFO occupancy on a ring with
 // one unused slot, while Sec 9.2 reports WRITE_INDEX, READ_INDEX, FIFO_SIZE,
 // and MAX_TRANSFER_SIZE through INDIRECT_FIFO_STATUS. The implementation keeps
-// 64 physical payload DWORDs in caliptra_prim_fifo_async, exposes 65 protocol
+// 64 physical payload DWORDs in caliptra_prim_fifo_sync, exposes 65 protocol
 // index positions [0..64], and limits one transfer payload to 64 DWORDs so a
 // single accepted write never exceeds the physical payload store.
 localparam int OCP_FIFO_PHYSICAL_DEPTH_DWORDS = 64;
