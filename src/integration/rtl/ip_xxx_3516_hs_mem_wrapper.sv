@@ -236,90 +236,90 @@ module ip_xxx_3516_hs_mem_wrapper
     // Non-AXI ports (unchanged)
     // ----------------------------------------------------------------
     input [63:0]   mem_q,
-				   output [63:0]  mem_d,
-				   output 		       mem_cs,
-				   output [RAM_ADDRWIDTH-1:0]  mem_a,
-				   output 		       mem_web_out,
-				   output [63:0]  mem_bsel,
-				   output 		       dev_usb_int_req_irq,
-				   output 		       dev_usb_Int_req_fiq,
-				   output 		       dev_usbframetoggle,
-				   output 		       host_usb_int_req_irq,
-				   input 		       USB_VBus,
-				   output 		       vbuscomp_on,
-				   output 		       chrgvbus,
-				   output 		       dischrgvbus,
-				   input 		       avalid,
-				   input 		       sessend,
-				   input 		       utmi_clk,
-				   input [7:0] 		       utmi_rxdata,
-				   input 		       utmi_rxvalid,
-				   input 		       utmi_rxactive,
-				   input 		       utmi_rxerror,
-				   output [7:0] 	       utmi_txdata,
-				   output 		       utmi_txvalid,
-				   input 		       utmi_txready,
-				   output 		       utmi_reset,
-				   output 		       utmi_suspendm,
-				   output [1:0] 	       utmi_xcvrselect,
-				   output 		       utmi_termselect,
-				   output [1:0] 	       utmi_opmode,
-				   input [1:0] 		       utmi_linestate,
-				   output [3:0] 	       utmi_vcontrol,
-				   output 		       utmi_vcontrolloadm,
-				   input [7:0] 		       utmi_vstatus,
-				   input 		       utmi_hostdisconnect,
-				   output 		       utmi_id_enable,
-				   input 		       utmi_id_value,
-				   output 		       utmi_dppulldown,
-				   output 		       utmi_dmpulldown,
-				   output 		       pdcom,
-				   input 		       ulpi_clk,
-				   input [7:0] 		       ulpi_rxdata,
-				   output [7:0] 	       ulpi_txdata,
-				   output 		       ulpi_txenable,
-				   input 		       ulpi_dir,
-				   output 		       ulpi_stp,
-				   input 		       ulpi_nxt,
-				   input 		       ulpi_ddr_sel,
-				   output 		       dev_usb_needclk,
-				   output 		       host_usb_needclk,
-				   input 		       dev_sys_donotwakeup_n,
-				   input 		       host_sys_donotwakeup_n,
-				   input 		       dev_sys_wakeup_n,
-				   input 		       dev_sys_utmi_clkin_lock,
-				   input 		       host_sys_utmi_clkin_lock,
-				   input 		       host_usb_overcurrent_n,
-				   output [1:0] 	       host_usb_portindicator,
-				   output 		       host_usb_portpower,
-				   input [6:0] 		       token_length_counter,
-				   output [6:0] 	       usb_token_length,
-				   // ----------------------------------------------------------------
-				   // OCP Recovery v1.1 - A7 integration (additive, 2026)
-				   // ----------------------------------------------------------------
-				   // Note (Phase 1c): the AXI4-Lite management port (rec_axi_*)
-				   // has been removed.  The recovery register-bus is now
-				   // accessed via an AHB sub-decoder taking off the existing
-				   // dev_axi -> AHB path (see rec_ahb_subdec below; OCP
-				   // Recovery v1.1 Section 8.5).
-
-				   // Sideband inputs (SoC -> recovery FSM)
-				   input                             rec_trigger,
-				   input                             soc_boot_ack,
-
-				   // Sideband outputs (recovery FSM -> SoC)
-				   output                            rec_active,
-				   output                            image_ready,
-				   output                            boot_req,
-				   output                            device_reset_req,
-				   output                            fatal_err,
-				   // ----------------------------------------------------------------
-				   // OCP Recovery v1.1 status pins (architecture proposal 3.7)
-				   // Driven by usb_ocp_recovery_fsm via wrapper sideband nets.
-				   // ----------------------------------------------------------------
-				   output wire                 ocp_recovery_available,
-				   output wire                 ocp_firmware_activated
-				   );
+    output [63:0]  mem_d,
+    output         mem_cs,
+    output [RAM_ADDRWIDTH-1:0]  mem_a,
+    output         mem_web_out,
+    output [63:0]  mem_bsel,
+    output         dev_usb_int_req_irq,
+    output         dev_usb_Int_req_fiq,
+    output         dev_usbframetoggle,
+    output         host_usb_int_req_irq,
+    input          USB_VBus,
+    output         vbuscomp_on,
+    output         chrgvbus,
+    output         dischrgvbus,
+    input          avalid,
+    input          sessend,
+    input          utmi_clk,
+    input [7:0]    utmi_rxdata,
+    input          utmi_rxvalid,
+    input          utmi_rxactive,
+    input          utmi_rxerror,
+    output [7:0]   utmi_txdata,
+    output         utmi_txvalid,
+    input          utmi_txready,
+    output         utmi_reset,
+    output         utmi_suspendm,
+    output [1:0]   utmi_xcvrselect,
+    output         utmi_termselect,
+    output [1:0]   utmi_opmode,
+    input [1:0]    utmi_linestate,
+    output [3:0]   utmi_vcontrol,
+    output         utmi_vcontrolloadm,
+    input [7:0]    utmi_vstatus,
+    input          utmi_hostdisconnect,
+    output         utmi_id_enable,
+    input          utmi_id_value,
+    output         utmi_dppulldown,
+    output         utmi_dmpulldown,
+    output         pdcom,
+    input          ulpi_clk,
+    input [7:0]    ulpi_rxdata,
+    output [7:0]   ulpi_txdata,
+    output         ulpi_txenable,
+    input          ulpi_dir,
+    output         ulpi_stp,
+    input          ulpi_nxt,
+    input          ulpi_ddr_sel,
+    output         dev_usb_needclk,
+    output         host_usb_needclk,
+    input          dev_sys_donotwakeup_n,
+    input          host_sys_donotwakeup_n,
+    input          dev_sys_wakeup_n,
+    input          dev_sys_utmi_clkin_lock,
+    input          host_sys_utmi_clkin_lock,
+    input          host_usb_overcurrent_n,
+    output [1:0]   host_usb_portindicator,
+    output         host_usb_portpower,
+    input [6:0]    token_length_counter,
+    output [6:0]   usb_token_length,
+    // ----------------------------------------------------------------
+    // OCP Recovery v1.1 - A7 integration (additive, 2026)
+    // ----------------------------------------------------------------
+    // Note (Phase 1c): the AXI4-Lite management port (rec_axi_*)
+    // has been removed.  The recovery register-bus is now
+    // accessed via an AHB sub-decoder taking off the existing
+    // dev_axi -> AHB path (see rec_ahb_subdec below; OCP
+    // Recovery v1.1 Section 8.5).
+ 
+    // Sideband inputs (SoC -> recovery FSM)
+    input                       rec_trigger,
+    input                       soc_boot_ack,
+ 
+    // Sideband outputs (recovery FSM -> SoC)
+    output                      rec_active,
+    output                      image_ready,
+    output                      boot_req,
+    output                      device_reset_req,
+    output                      fatal_err,
+    // ----------------------------------------------------------------
+    // OCP Recovery v1.1 status pins (architecture proposal 3.7)
+    // Driven by usb_ocp_recovery_fsm via wrapper sideband nets.
+    // ----------------------------------------------------------------
+    output wire                 ocp_recovery_available,
+    output wire                 ocp_firmware_activated
+    );
 
    // ================================================================
    // Internal AHB signals from AXI-to-AHB converters
