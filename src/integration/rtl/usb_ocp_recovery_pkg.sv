@@ -96,6 +96,13 @@ localparam int OCP_LEN_CALIPTRA_CTRL       = 4;
 localparam int OCP_LEN_CALIPTRA_STATUS     = 4;
 localparam int OCP_LEN_UNSUPPORTED_READ_STUB = OCP_LEN_INDIRECT_FIFO_DATA;
 localparam int OCP_MAX_IMPLEMENTED_RESPONSE_BYTES = OCP_LEN_DEVICE_STATUS;
+// Response byte counts returned to the Recovery Agent in the IN DATA stage.
+// These are the spec command lengths (OCP Recovery v1.1 Sec 9.2) and are
+// deliberately separate from the DWORD-padded OCP_LEN_* register windows above.
+// PROT_CAP is 15 bytes (bytes 0-14) even though it occupies four DWORD
+// registers (16 bytes) of aperture; DEVICE_STATUS returns the 7-byte minimum
+// from its 64-byte window.
+localparam int OCP_RESP_LEN_PROT_CAP      = 15;
 localparam int OCP_RESP_LEN_DEVICE_STATUS = 7;
 
 // Variable-length command support is deferred until a payload producer
@@ -138,7 +145,7 @@ function automatic logic [6:0] ocp_response_bytes(input logic [7:0] cmd);
   begin
     bytes = '0;
     unique case (cmd)
-      OCP_CMD_PROT_CAP:             bytes = 7'(OCP_LEN_PROT_CAP);
+      OCP_CMD_PROT_CAP:             bytes = 7'(OCP_RESP_LEN_PROT_CAP);
       OCP_CMD_DEVICE_ID:            bytes = 7'(OCP_LEN_DEVICE_ID);
       OCP_CMD_DEVICE_STATUS:        bytes = 7'(OCP_RESP_LEN_DEVICE_STATUS);
       OCP_CMD_DEVICE_RESET:         bytes = 7'(OCP_LEN_DEVICE_RESET);
