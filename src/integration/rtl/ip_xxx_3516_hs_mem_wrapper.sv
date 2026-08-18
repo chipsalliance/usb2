@@ -309,7 +309,7 @@ module ip_xxx_3516_hs_mem_wrapper
  
     // Sideband outputs (recovery FSM -> SoC)
     output                      rec_active,
-    output                      image_ready,
+    output                      payload_available,
     output                      boot_req,
     output                      device_reset_req,
     output                      fatal_err,
@@ -1286,7 +1286,8 @@ module ip_xxx_3516_hs_mem_wrapper
        .rec_trigger      (rec_trigger),
        .soc_boot_ack     (soc_boot_ack),
        .recovery_active  (rec_active),
-       .image_ready      (image_ready),
+       .payload_available(payload_available),
+       .recovery_image_activated(ocp_firmware_activated),
        .boot_req         (boot_req),
        .device_reset_req (device_reset_req),
        .fatal_err        (fatal_err)
@@ -1294,6 +1295,4 @@ module ip_xxx_3516_hs_mem_wrapper
 
    // Legacy top-level status pins: summary view of the recovery FSM.
    assign ocp_recovery_available = rec_active;
-   assign ocp_firmware_activated = image_ready;
-
 endmodule

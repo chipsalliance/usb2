@@ -6,9 +6,9 @@
 //
 // Micro-architecture
 //   Data plane:
-//     - OCP Recovery v1.1 Sec 8.2.5 defines a 65-slot logical FIFO ring with
-//       one unused slot, while Sec 9.2 reports FIFO_SIZE, MAX_TRANSFER_SIZE,
-//       WRITE_INDEX, and READ_INDEX in DWORD units.
+//     - FIFO_SIZE and MAX_TRANSFER_SIZE report the implemented 64-DWORD depth.
+//       WRITE_INDEX and READ_INDEX are modulo-depth debug fields; FULL and EMPTY
+//       disambiguate equal indices.
 //     - Payload storage is caliptra_prim_fifo_sync with 64 physical DWORDs.
 //       Producer, consumer, register block, and firmware all run in clk, so a
 //       single-clock synchronous FIFO reports occupancy exactly with no
@@ -87,6 +87,7 @@ module usb_ocp_recovery_cms_fifo #(
   output logic        image_push_active,
   output logic        image_push_done,
   output logic        fifo_overflow,
+  output logic        payload_available,
   output logic [31:0] image_size,
   output logic [31:0] bytes_pushed,
 
@@ -119,6 +120,7 @@ module usb_ocp_recovery_cms_fifo #(
   logic        region_reset_q;
   logic        image_done_q;
   logic        image_push_active_q;
+  logic        payload_available_q;
 
   logic        usb_status_snapshot_vld_q;
   logic [2:0]  usb_status_snapshot_next_word_q;
@@ -130,6 +132,7 @@ module usb_ocp_recovery_cms_fifo #(
   logic                       fifo_flush;
   logic                       fifo_wvalid;
   logic                       fifo_wready;
+  logic                       fifo_full_int;
   logic [FIFO_WIDTH-1:0]      fifo_wdata;
   logic [FIFO_DEPTH_W-1:0]    fifo_wdepth;
   logic                       fifo_rready_int;
@@ -188,11 +191,13 @@ module usb_ocp_recovery_cms_fifo #(
   logic [7:0]  status_byte_0;
   logic [31:0] write_index_next;
   logic [31:0] read_index_derived;
-  logic [31:0] fifo_occupancy_wide;
   logic [FIFO_DEPTH_W-1:0] fifo_occupancy;
   logic        ext_data_mirror_ready_q;
   logic        ext_head_change;
   logic        push_creates_head;
+  logic        fifo_becomes_full;
+  logic        fifo_becomes_empty;
+  logic        terminal_image_push;
 
   function automatic logic [31:0] fifo_index_next(input logic [31:0] index);
     logic [31:0] next_index;
@@ -226,8 +231,8 @@ module usb_ocp_recovery_cms_fifo #(
       else $fatal(1, "FIFO_WIDTH must be 32");
     assert (FIFO_DEPTH == usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS)
       else $fatal(1, "FIFO_DEPTH must match the 64-DWORD physical payload store");
-    assert (usb_ocp_recovery_pkg::OCP_FIFO_RING_SIZE_DWORDS == (FIFO_DEPTH + 1))
-      else $fatal(1, "OCP FIFO ring size must be physical depth + 1");
+    assert (usb_ocp_recovery_pkg::OCP_FIFO_RING_SIZE_DWORDS == FIFO_DEPTH)
+      else $fatal(1, "OCP FIFO ring size must match physical depth");
     assert (usb_ocp_recovery_pkg::OCP_FIFO_MAX_TRANSFER_DWORDS == FIFO_DEPTH)
       else $fatal(1, "OCP max transfer size must match the physical FIFO depth");
   end
@@ -266,23 +271,26 @@ module usb_ocp_recovery_cms_fifo #(
 
   assign write_index_next = fifo_index_next(write_index_q);
   assign read_index_derived = fifo_index_sub_depth(write_index_q, fifo_wdepth);
-  assign fifo_occupancy_wide = (write_index_q >= read_index_derived)
-                             ? (write_index_q - read_index_derived)
-                             : (write_index_q + FIFO_RING_SIZE_DWORDS - read_index_derived);
   assign fifo_occupancy = fifo_wdepth;
   assign fifo_empty = (fifo_wdepth == FIFO_DEPTH_W'(0));
-  assign fifo_full  = !fifo_wready;
+  assign fifo_full  = fifo_full_int;
   assign image_complete = (image_size_q != '0) && (accepted_push_count_q >= image_size_q);
 
   assign push_req = usb_data_wr || ext_data_wr;
   assign push_accept = fifo_wvalid && fifo_wready;
-  assign push_drop_full = push_req && !push_accept && !image_complete;
+  assign push_drop_full = push_req && fifo_full && !image_complete;
   assign push_wdata = usb_data_wr ? fifo_rb_wdata : ext_cpuif_wr_data;
 
   assign pop_req = usb_data_rd || ext_data_rd;
   assign pop_accept = pop_req && fifo_rvalid_int;
   assign push_creates_head = push_accept && fifo_empty;
   assign ext_head_change = pop_accept || push_creates_head || fifo_flush;
+  assign fifo_becomes_full = push_accept
+                           && (fifo_wdepth == FIFO_DEPTH_W'(FIFO_DEPTH - 1));
+  assign fifo_becomes_empty = pop_accept
+                            && (fifo_wdepth == FIFO_DEPTH_W'(1));
+  assign terminal_image_push = push_accept && (image_size_q != '0)
+                            && ((accepted_push_count_q + 32'd1) >= image_size_q);
 
   always_comb begin
     fifo_wvalid = push_req && !image_complete;
@@ -326,7 +334,7 @@ module usb_ocp_recovery_cms_fifo #(
     .rvalid_o (fifo_rvalid_int),
     .rready_i (fifo_rready_int),
     .rdata_o  (fifo_rdata_int),
-    .full_o   (),
+    .full_o   (fifo_full_int),
     .depth_o  (fifo_wdepth),
     .err_o    ()
   );
@@ -345,6 +353,7 @@ module usb_ocp_recovery_cms_fifo #(
       region_reset_q      <= 1'b0;
       image_done_q        <= 1'b0;
       image_push_active_q <= 1'b0;
+      payload_available_q <= 1'b0;
       ext_data_mirror_ready_q <= 1'b0;
       usb_status_snapshot_vld_q <= 1'b0;
       usb_status_snapshot_next_word_q <= '0;
@@ -355,6 +364,12 @@ module usb_ocp_recovery_cms_fifo #(
         ext_status_snapshot_q[i] <= '0;
       end
     end else begin
+      if (fifo_flush || fifo_becomes_empty || fifo_empty) begin
+        payload_available_q <= 1'b0;
+      end else if (fifo_becomes_full || terminal_image_push) begin
+        payload_available_q <= 1'b1;
+      end
+
       if (usb_fifo_status_snapshot_start) begin
         usb_status_snapshot_vld_q <= 1'b1;
         usb_status_snapshot_next_word_q <= 3'd1;
@@ -470,7 +485,7 @@ module usb_ocp_recovery_cms_fifo #(
         write_index_q       <= write_index_next;
         accepted_push_count_q <= accepted_push_count_q + 32'd1;
         image_push_active_q <= 1'b1;
-        if ((image_size_q != '0) && ((accepted_push_count_q + 32'd1) >= image_size_q)) begin
+        if (terminal_image_push) begin
           image_done_q        <= 1'b1;
           image_push_active_q <= 1'b0;
         end
@@ -522,6 +537,7 @@ module usb_ocp_recovery_cms_fifo #(
     image_push_active = image_push_active_q;
     image_push_done   = image_done_q;
     fifo_overflow     = overflow_q;
+    payload_available = payload_available_q;
     image_size        = {image_size_q[29:0], 2'b00};
     bytes_pushed      = {accepted_push_count_q[29:0], 2'b00};
 
@@ -567,14 +583,14 @@ module usb_ocp_recovery_cms_fifo #(
         else $error("usb_ocp_recovery_cms_fifo: READ_INDEX exceeded 64");
       assert (fifo_occupancy == fifo_wdepth)
         else $error("usb_ocp_recovery_cms_fifo: protocol occupancy mismatches write-domain depth");
-      assert (fifo_occupancy_wide == 32'(fifo_wdepth))
-        else $error("usb_ocp_recovery_cms_fifo: WRITE_INDEX/READ_INDEX do not match write-domain depth");
       assert (read_index_derived == fifo_index_sub_depth(write_index_q, fifo_wdepth))
         else $error("usb_ocp_recovery_cms_fifo: READ_INDEX derivation mismatch");
       assert (fifo_empty == (fifo_wdepth == FIFO_DEPTH_W'(0)))
         else $error("usb_ocp_recovery_cms_fifo: EMPTY mismatches write-domain depth");
-      assert (fifo_full == !fifo_wready)
-        else $error("usb_ocp_recovery_cms_fifo: FULL mismatches write-domain ready");
+      assert (fifo_full == (fifo_wdepth == FIFO_DEPTH_W'(FIFO_DEPTH)))
+        else $error("usb_ocp_recovery_cms_fifo: FULL without physical depth");
+      assert (!payload_available_q || !fifo_empty)
+        else $error("usb_ocp_recovery_cms_fifo: payload available while FIFO empty");
       if (push_drop_full) begin
         assert ($stable(write_index_q))
           else $error("usb_ocp_recovery_cms_fifo: rejected push changed WRITE_INDEX");

@@ -94,21 +94,12 @@ module usb_ocp_recovery_top #(
 
   //----------------------------------------------------------------------------
   // SoC trigger / ack and recovery sideband.
-  //
-  // CDC guardrail: this module (usb_ocp_recovery_top) lives entirely in
-  // dev_axi_aclk. All of the sidebands below cross into the SoC-clock domain at
-  // the top-level integration point (caliptra_ss_top or equivalent) OUTSIDE
-  // this module -- verify at integration time that any NEWLY wired consumer
-  // of these signals is either synchronized (e.g. caliptra_prim_flop_2sync
-  // for level signals) or handshake-based (for pulses), not sampled
-  // combinationally/directly in a different clock domain. Do not add a new
-  // sideband here without documenting its consumer's clock domain and
-  // synchronization method.
   //----------------------------------------------------------------------------
   input  logic                    rec_trigger,
   input  logic                    soc_boot_ack,
   output logic                    recovery_active,
-  output logic                    image_ready,
+  output logic                    payload_available,
+  output logic                    recovery_image_activated,
   output logic                    boot_req,
   output logic                    device_reset_req,
   output logic                    fatal_err
@@ -221,6 +212,7 @@ module usb_ocp_recovery_top #(
   logic                       image_push_active;
   logic                       image_push_done;
   logic                       fifo_overflow;
+  logic                       image_ready;
   logic [31:0]                image_size;
   logic [31:0]                bytes_pushed;
 
@@ -823,6 +815,7 @@ module usb_ocp_recovery_top #(
      .image_push_active (image_push_active),
      .image_push_done   (image_push_done),
      .fifo_overflow     (fifo_overflow),
+     .payload_available (payload_available),
      .image_size        (image_size),
      .bytes_pushed      (bytes_pushed),
      .fifo_ctrl_cms        (fifo_ctrl_cms),
@@ -885,6 +878,9 @@ module usb_ocp_recovery_top #(
     .device_reset_req (device_reset_req),
     .fatal_err        (fatal_err)
   );
+
+  assign recovery_image_activated =
+      (rb_hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.value == 8'h0F);
 
   //////////////////////////////////////////////////////////////////////////////
   // Assertions
