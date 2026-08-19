@@ -369,6 +369,7 @@ module ip_xxx_3516_hs_mem_wrapper
    logic                          rec_ctrl_in_resp_known_w;
    logic                          rec_ctrl_set_stall_w;
    logic                          rec_ctrl_xfer_done_w;
+   logic                          rec_ctrl_xfer_abort_w;
    // C1 emergency-fallback chicken bit: usb_ocp_recovery_top drives this
    // (from DEVICE_RESET.OCP_PATH_DISABLE, EXT/firmware write-only) into the
    // VHDL arbiter to force legacy pass-through when set.
@@ -827,6 +828,7 @@ module ip_xxx_3516_hs_mem_wrapper
                .rec_ctrl_in_resp_known(rec_ctrl_in_resp_known_w),
                .rec_ctrl_set_stall  (rec_ctrl_set_stall_w),
                .rec_ctrl_xfer_done  (rec_ctrl_xfer_done_w),
+               .rec_ctrl_xfer_abort (rec_ctrl_xfer_abort_w),
                .rec_ctrl_claim      (),
                .rec_ocp_path_disable (rec_ocp_path_disable_w),
                .rec_fifo_payload_available (payload_available),
@@ -1265,6 +1267,7 @@ module ip_xxx_3516_hs_mem_wrapper
        .rec_ctrl_in_resp_known(rec_ctrl_in_resp_known_w),
        .rec_ctrl_set_stall (rec_ctrl_set_stall_w),
        .rec_ctrl_xfer_done (rec_ctrl_xfer_done_w),
+       .rec_ctrl_xfer_abort(rec_ctrl_xfer_abort_w),
        .rec_ocp_path_disable (rec_ocp_path_disable_w),
 
        // External reg-bus slave -- driven by the PIE-side bridge above.

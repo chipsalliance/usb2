@@ -391,14 +391,19 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__CALIPTRA_STATUS__IMAGE_DONE__in_t;
 
     typedef struct packed{
-        logic [28:0] next;
-    } usb_ocp_recovery_reg__CALIPTRA_STATUS__RESERVED_31_3__in_t;
+        logic next;
+    } usb_ocp_recovery_reg__CALIPTRA_STATUS__BATCH_ABORTED__in_t;
+
+    typedef struct packed{
+        logic [27:0] next;
+    } usb_ocp_recovery_reg__CALIPTRA_STATUS__RESERVED_31_4__in_t;
 
     typedef struct packed{
         usb_ocp_recovery_reg__CALIPTRA_STATUS__REGION_RESET__in_t REGION_RESET;
         usb_ocp_recovery_reg__CALIPTRA_STATUS__OVERFLOW__in_t OVERFLOW;
         usb_ocp_recovery_reg__CALIPTRA_STATUS__IMAGE_DONE__in_t IMAGE_DONE;
-        usb_ocp_recovery_reg__CALIPTRA_STATUS__RESERVED_31_3__in_t RESERVED_31_3;
+        usb_ocp_recovery_reg__CALIPTRA_STATUS__BATCH_ABORTED__in_t BATCH_ABORTED;
+        usb_ocp_recovery_reg__CALIPTRA_STATUS__RESERVED_31_4__in_t RESERVED_31_4;
     } usb_ocp_recovery_reg__CALIPTRA_STATUS__in_t;
 
     typedef struct packed{

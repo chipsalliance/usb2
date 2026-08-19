@@ -61,6 +61,7 @@ module usb_ocp_recovery_top #(
 
   output logic                    rec_ctrl_set_stall,
   input  logic                    rec_ctrl_xfer_done,
+  input  logic                    rec_ctrl_xfer_abort,
 
   // Emergency-fallback path-disable control: mirrors CALIPTRA_CTRL.OCP_PATH_DISABLE
   // (regblock field, EXT/firmware write-only via rb_is_ext/swwe gating -- see
@@ -213,6 +214,8 @@ module usb_ocp_recovery_top #(
   logic                       image_push_done;
   logic                       fifo_overflow;
   logic                       image_ready;
+  logic                       fifo_reset_pulse;
+  logic                       batch_aborted;
   logic [31:0]                image_size;
   logic [31:0]                bytes_pushed;
 
@@ -373,6 +376,7 @@ module usb_ocp_recovery_top #(
     .ctrl_in_resp_known(rec_ctrl_in_resp_known),
     .ctrl_set_stall  (rec_ctrl_set_stall),
     .ctrl_xfer_done  (rec_ctrl_xfer_done),
+    .ctrl_xfer_abort (rec_ctrl_xfer_abort),
     .proto_err_rd_pulse (proto_err_rd_pulse),
 
     .rb_cmd          (usb_rb_cmd),
@@ -589,9 +593,9 @@ module usb_ocp_recovery_top #(
                                 || (rb_cmd == OCP_CMD_INDIRECT_FIFO_STATUS)
                                 || (rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA))
                                && (usb_fifo_req || usb_fifo_packet_active_q))
-                              || ((rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA)
-                                  && rb_rd
-                                  && !ext_data_mirror_ready));
+                               || ((rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA)
+                                   && rb_rd
+                                   && (!ext_data_mirror_ready || !payload_available)));
 
   // --------------------------------------------------------------------------
   // hwif_in wiring.
@@ -685,6 +689,7 @@ module usb_ocp_recovery_top #(
     rb_hwif_in.CALIPTRA_STATUS.REGION_RESET.next = fifo_ctrl_reset;
     rb_hwif_in.CALIPTRA_STATUS.OVERFLOW.next     = fifo_overflow;
     rb_hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next   = image_push_done;
+    rb_hwif_in.CALIPTRA_STATUS.BATCH_ABORTED.next = batch_aborted;
 
     // RECOVERY_STATUS byte 0 (low nibble = device status, high nibble =
     // image index) + byte 1 (vendor).
@@ -751,7 +756,7 @@ module usb_ocp_recovery_top #(
     if (rst) begin
       usb_fifo_packet_active_q <= 1'b0;
     end else begin
-      if (rec_ctrl_xfer_done) begin
+      if (rec_ctrl_xfer_done || rec_ctrl_xfer_abort) begin
         usb_fifo_packet_active_q <= 1'b0;
       end else if (usb_fifo_req) begin
         usb_fifo_packet_active_q <= 1'b1;
@@ -816,8 +821,11 @@ module usb_ocp_recovery_top #(
      .image_push_done   (image_push_done),
      .fifo_overflow     (fifo_overflow),
      .payload_available (payload_available),
+     .fifo_reset_pulse  (fifo_reset_pulse),
+     .batch_aborted     (batch_aborted),
      .image_size        (image_size),
      .bytes_pushed      (bytes_pushed),
+     .fifo_abort_i      (rec_ctrl_xfer_abort),
      .fifo_ctrl_cms        (fifo_ctrl_cms),
      .fifo_ctrl_reset      (fifo_ctrl_reset),
      .fifo_ctrl_image_size (fifo_ctrl_image_size),
@@ -859,6 +867,8 @@ module usb_ocp_recovery_top #(
     .image_push_active (image_push_active),
     .image_push_done   (image_push_done),
     .fifo_overflow     (fifo_overflow),
+    .fifo_abort_i      (rec_ctrl_xfer_abort),
+    .fifo_reset_pulse_i(fifo_reset_pulse),
     .image_size        (image_size),
     .bytes_pushed      (bytes_pushed),
 

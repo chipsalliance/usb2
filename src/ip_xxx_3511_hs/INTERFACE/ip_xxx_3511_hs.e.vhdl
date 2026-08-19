@@ -248,6 +248,7 @@ entity ip_xxx_3511_hs is
        rec_ctrl_in_resp_known : in std_logic;
        rec_ctrl_set_stall  : in  std_logic;
        rec_ctrl_xfer_done  : out std_logic;
+       rec_ctrl_xfer_abort : out std_logic;
        rec_ctrl_claim      : out std_logic;
        -- Emergency-fallback path-disable control (see usb_ocp_recovery_post_sync_arb.e.vhdl
        -- ocp_path_disable_i): firmware-writable via CALIPTRA_CTRL.

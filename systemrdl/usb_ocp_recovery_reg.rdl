@@ -951,13 +951,21 @@ addrmap usb_ocp_recovery_reg {
             reset = 1'b0;
         } IMAGE_DONE[2:2];
         field {
+            name = "FIFO batch aborted sticky status";
+            desc = "Sticky: set when a new EP0 SETUP aborts a claimed INDIRECT_FIFO_DATA OUT transfer and flushes the unconsumed batch. Cleared by an INDIRECT_FIFO_CTRL reset.";
+            sw = r;
+            hw = w;
+            we = false;
+            reset = 1'b0;
+        } BATCH_ABORTED[3:3];
+        field {
             name = "Reserved";
             desc = "Reserved for future Caliptra-specific status bits.";
             sw = r;
             hw = w;
             we = false;
-            reset = 29'h0;
-        } RESERVED_31_3[31:3];
+            reset = 28'h0;
+        } RESERVED_31_4[31:4];
     } CALIPTRA_STATUS @ 0x204;
 
     reg {

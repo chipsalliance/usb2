@@ -87,6 +87,7 @@ begin
     signal pend_epdir : std_logic;
 
     signal trig    : std_logic;   -- EP0 SETUP detected in T_IDLE
+    signal new_setup_c : std_logic;
     signal fwd     : std_logic;   -- forward usb_dma response to the SIE
     signal fab     : std_logic;   -- fabricated SETUP response to the SIE
     signal is_ocp  : std_logic;   -- captured SETUP is OCP-recovery class
@@ -178,7 +179,11 @@ begin
                  and (sync_sieint_epinfo_req_i = '1')
                  and (sync_sieint_epinfo_setup_i = '1')
                  and (sync_sieint_epinfo_epnr_i = "0000")
-             else '0';
+              else '0';
+    new_setup_c <= '1' when (sync_sieint_epinfo_req_i = '1')
+                           and (sync_sieint_epinfo_setup_i = '1')
+                           and (sync_sieint_epinfo_epnr_i = "0000")
+                   else '0';
 
     fwd     <= '1' when (st = T_IDLE) or (st = T_PASS) else '0';
     fab     <= '1' when (st = T_TRAP) and (end_seen = '0') else '0';
@@ -309,6 +314,11 @@ begin
     ctrl_xfer_done <= rx_drain_done_r when (xfer_dir_in_r = '0') else
                       (sync_sieint_endtransfer_i and tx_launch_ready_c)
                         when (st = C_DATA) or (st = C_STATUS) else '0';
+    ctrl_xfer_abort <= '1' when ((st = C_DATA) or (st = C_STATUS))
+                                and (xfer_dir_in_r = '0')
+                                and ((new_setup_c = '1') or (sync_busreset = '1')
+                                     or (sync_vbus_valid_i = '0'))
+                       else '0';
 
     rec_claim_status <= claim_q;
 
@@ -502,14 +512,15 @@ begin
 
             when C_DATA =>
               -- New SETUP mid-transfer: host abandoned (USB 2.0 Sec 8.5.3).
-              if (sync_sieint_epinfo_req_i = '1')
-                 and (sync_sieint_epinfo_setup_i = '1')
-                 and (sync_sieint_epinfo_epnr_i = "0000") then
+              if (new_setup_c = '1') or (sync_vbus_valid_i = '0') then
                 st       <= T_TRAP;
                 cap_done <= '0';
                 end_seen <= '0';
                 sr_sent  <= '0';
                 sp_sent  <= '0';
+                if sync_vbus_valid_i = '0' then
+                  st <= T_IDLE;
+                end if;
               elsif st_end_c = '1' then
                 if (zlp_phase_r = '0') and (zlp_owed_c = '1') then
                   st <= C_DATA;               -- emit terminating ZLP first
@@ -519,14 +530,15 @@ begin
               end if;
 
             when C_STATUS =>
-              if (sync_sieint_epinfo_req_i = '1')
-                 and (sync_sieint_epinfo_setup_i = '1')
-                 and (sync_sieint_epinfo_epnr_i = "0000") then
+              if (new_setup_c = '1') or (sync_vbus_valid_i = '0') then
                 st       <= T_TRAP;
                 cap_done <= '0';
                 end_seen <= '0';
                 sr_sent  <= '0';
                 sp_sent  <= '0';
+                if sync_vbus_valid_i = '0' then
+                  st <= T_IDLE;
+                end if;
               elsif ((st_end_c = '1') or (status_end_pend_r = '1'))
                     and (rx_count_r = to_unsigned(0, rx_count_r'length)) then
                 st <= T_IDLE;

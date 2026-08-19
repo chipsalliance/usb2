@@ -69,6 +69,7 @@ module usb_ocp_recovery_ctrl_decode (
   output logic        ctrl_in_resp_known,
   output logic        ctrl_set_stall,
   input  logic        ctrl_xfer_done,
+  input  logic        ctrl_xfer_abort,
   output logic        proto_err_rd_pulse,
 
   // to/from regs (A3) -- word-wide reg bus, rb_offset is a WORD index
@@ -248,7 +249,19 @@ module usb_ocp_recovery_ctrl_decode (
     rb_wstrb       = word_mask;
 
     // Global early-termination escape (USB 2.0 Sec 8.5.3.2 host abort).
-    if (ctrl_xfer_done) begin
+    if (ctrl_xfer_abort) begin
+      state_d        = S_IDLE;
+      cmd_d          = '0;
+      is_in_d        = 1'b0;
+      length_d       = '0;
+      offset_d       = '0;
+      resp_bytes_d   = '0;
+      resp_known_d   = 1'b0;
+      hold_data_d    = '0;
+      hold_be_d      = '0;
+      hold_last_d    = 1'b0;
+      hold_vld_d     = 1'b0;
+    end else if (ctrl_xfer_done) begin
       state_d  = S_IDLE;
       offset_d = '0;
       resp_bytes_d = '0;
@@ -439,6 +452,10 @@ module usb_ocp_recovery_ctrl_decode (
       if (ctrl_out_vld) begin
         assert (!$isunknown(ctrl_out_data))
           else $error("ctrl_decode: ctrl_out_data X with vld high");
+      end
+      if (ctrl_xfer_abort) begin
+        assert (!rb_wr && !rb_rd)
+          else $error("ctrl_decode: abort issued a register access");
       end
       if (rb_ack) begin
         assert (!$isunknown(rb_rdata))

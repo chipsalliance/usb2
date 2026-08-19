@@ -279,6 +279,7 @@ component usb_ocp_recovery_post_sync_arb
     hclk     : in  std_logic;
     hresetn  : in  std_logic;
     sync_busreset : in std_logic;
+    sync_vbus_valid_i : in std_logic;
 
     sync_sieint_epinfo_req_i    : in  std_logic;
     sync_sieint_epinfo_epnr_i   : in  std_logic_vector(3 downto 0);
@@ -351,6 +352,7 @@ component usb_ocp_recovery_post_sync_arb
     ctrl_in_resp_known : in  std_logic;
     ctrl_set_stall  : in  std_logic;
     ctrl_xfer_done  : out std_logic;
+    ctrl_xfer_abort : out std_logic;
     ocp_path_disable_i : in  std_logic;
     fifo_payload_available_i : in std_logic;
     rec_claim_status : out std_logic
@@ -1554,6 +1556,7 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     hclk          => hclk,
     hresetn       => hresetn,
     sync_busreset => sync_busreset,
+    sync_vbus_valid_i => sync_VBusDebounced,
 
     -- Synchronizer hclk-side outputs (arbiter inputs).
     sync_sieint_epinfo_req_i    => sync_sieint_epinfo_req_s,
@@ -1632,6 +1635,7 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     ctrl_in_resp_known => rec_ctrl_in_resp_known,
     ctrl_set_stall  => rec_ctrl_set_stall,
     ctrl_xfer_done  => rec_ctrl_xfer_done,
+    ctrl_xfer_abort => rec_ctrl_xfer_abort,
     ocp_path_disable_i => rec_ocp_path_disable,
     fifo_payload_available_i => rec_fifo_payload_available,
     rec_claim_status   => rec_ctrl_claim

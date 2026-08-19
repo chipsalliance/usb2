@@ -75,6 +75,7 @@ entity usb_ocp_recovery_post_sync_arb is
     -- Bus-reset (synchronized into hclk by usb_synchronizer).  Clears all
     -- trap/claim state (USB 2.0 Sec 9.1 reset returns EP0 to Default state).
     sync_busreset : in std_logic;
+    sync_vbus_valid_i : in std_logic;
 
     -- ==================================================================
     -- Upper side: synchronized SIE interface from usb_synchronizer.
@@ -182,6 +183,7 @@ entity usb_ocp_recovery_post_sync_arb is
     -- End-of-stage pulse to SV for the DATA and STATUS stages of a claimed
     -- transfer (the SETUP-stage completion is consumed internally).
     ctrl_xfer_done  : out std_logic;
+    ctrl_xfer_abort : out std_logic;
 
     -- Emergency-fallback firmware chicken bit (DEVICE_RESET.OCP_PATH_DISABLE).
     -- When '1', the OCP class match is forced false so no recovery-class SETUP

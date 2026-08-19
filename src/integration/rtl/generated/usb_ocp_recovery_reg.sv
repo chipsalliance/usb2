@@ -1347,7 +1347,8 @@ module usb_ocp_recovery_reg (
     assign readback_array[40][0:0] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.REGION_RESET.next : '0;
     assign readback_array[40][1:1] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.OVERFLOW.next : '0;
     assign readback_array[40][2:2] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next : '0;
-    assign readback_array[40][31:3] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.RESERVED_31_3.next : '0;
+    assign readback_array[40][3:3] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.BATCH_ABORTED.next : '0;
+    assign readback_array[40][31:4] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.RESERVED_31_4.next : '0;
     assign readback_array[41][31:0] = (decoded_reg_strb.WINDOW_PAD && !decoded_req_is_wr) ? 32'h0 : '0;
 
     // Reduce the array

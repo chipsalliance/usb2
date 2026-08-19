@@ -101,6 +101,8 @@ module usb_ocp_recovery_fsm (
   input  logic        image_push_active,
   input  logic        image_push_done,
   input  logic        fifo_overflow,
+  input  logic        fifo_abort_i,
+  input  logic        fifo_reset_pulse_i,
   input  logic [31:0] image_size,
   input  logic [31:0] bytes_pushed,
 
@@ -226,6 +228,12 @@ module usb_ocp_recovery_fsm (
     // PROTOCOL_ERROR sticky latch defaults (final value set after case).
     proto_err_d = proto_err_q;
 
+    if (fifo_abort_i || fifo_reset_pulse_i) begin
+      state_d = (state_q == S_IDLE) ? S_IDLE : S_AWAIT_IMAGE;
+      activation_pending_d = 1'b0;
+      size_err_d = 1'b0;
+      auth_err_d = 1'b0;
+    end else begin
     unique case (state_q)
       S_IDLE: begin
         size_err_d = 1'b0;
@@ -361,6 +369,7 @@ module usb_ocp_recovery_fsm (
         state_d = S_IDLE;
       end
     endcase
+    end
 
     // PROTOCOL_ERROR sticky set/clear is after the state case so _d reflects
     // this cycle's state transition. Clear on a completed Recovery Agent read
