@@ -352,6 +352,7 @@ component usb_ocp_recovery_post_sync_arb
     ctrl_set_stall  : in  std_logic;
     ctrl_xfer_done  : out std_logic;
     ocp_path_disable_i : in  std_logic;
+    fifo_payload_available_i : in std_logic;
     rec_claim_status : out std_logic
   );
 end component;
@@ -1632,6 +1633,7 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     ctrl_set_stall  => rec_ctrl_set_stall,
     ctrl_xfer_done  => rec_ctrl_xfer_done,
     ocp_path_disable_i => rec_ocp_path_disable,
+    fifo_payload_available_i => rec_fifo_payload_available,
     rec_claim_status   => rec_ctrl_claim
   );
 

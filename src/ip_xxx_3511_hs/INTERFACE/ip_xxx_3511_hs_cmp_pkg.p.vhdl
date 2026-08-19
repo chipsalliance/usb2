@@ -243,11 +243,12 @@ component ip_xxx_3511_hs
        rec_ctrl_in_resp_bytes : in std_logic_vector(6 downto 0);
        rec_ctrl_in_resp_known : in std_logic;
        rec_ctrl_set_stall  : in  std_logic;
-       rec_ctrl_xfer_done  : out std_logic;
-       rec_ctrl_claim      : out std_logic;
-       rec_ocp_path_disable : in  std_logic;
+        rec_ctrl_xfer_done  : out std_logic;
+        rec_ctrl_claim      : out std_logic;
+        rec_ocp_path_disable : in  std_logic;
+        rec_fifo_payload_available : in std_logic;
 
-       -- core testability
+        -- core testability
        async_disable:        in    std_logic;
        testmode            : in    std_logic -- To be connected by integrator to a tcb test mode pin.
       );

@@ -829,6 +829,7 @@ module ip_xxx_3516_hs_mem_wrapper
                .rec_ctrl_xfer_done  (rec_ctrl_xfer_done_w),
                .rec_ctrl_claim      (),
                .rec_ocp_path_disable (rec_ocp_path_disable_w),
+               .rec_fifo_payload_available (payload_available),
 
                // DFT: must be 0 for functional operation
                .async_disable(1'b0),

@@ -223,6 +223,7 @@ component ip_xxx_3516_hs_mem
        rec_ctrl_xfer_done  : out std_logic;
        rec_ctrl_claim      : out std_logic;
        rec_ocp_path_disable : in  std_logic;
+       rec_fifo_payload_available : in std_logic;
 
        -- core testability
        async_disable:        in    std_logic;

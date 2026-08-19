@@ -253,6 +253,7 @@ entity ip_xxx_3511_hs is
        -- ocp_path_disable_i): firmware-writable via CALIPTRA_CTRL.
        -- OCP_PATH_DISABLE, EXT/firmware write-only. Reset default '0'.
        rec_ocp_path_disable : in  std_logic;
+       rec_fifo_payload_available : in std_logic;
 
        -- core testability
        async_disable:        in    std_logic;

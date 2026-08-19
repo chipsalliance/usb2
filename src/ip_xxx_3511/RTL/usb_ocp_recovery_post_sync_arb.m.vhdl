@@ -63,6 +63,7 @@ begin
              := std_logic_vector(to_unsigned(C_REC_IFACE_NUM, 8));
     -- OCP Recovery v1.1 Sec 8.5: class-specific control transfer bRequest.
     constant OCP_RECOVERY_TRANSFER : std_logic_vector(7 downto 0) := x"00";
+    constant OCP_INDIRECT_FIFO_DATA : std_logic_vector(7 downto 0) := x"2F";
 
     type t_trap_state is (T_IDLE, T_TRAP,
                           T_REPLAY_REQ, T_REPLAY_ALIGN, T_REPLAY_DATA,
@@ -90,6 +91,7 @@ begin
     signal fab     : std_logic;   -- fabricated SETUP response to the SIE
     signal is_ocp  : std_logic;   -- captured SETUP is OCP-recovery class
     signal claim_q : std_logic;   -- '1' while owning claimed DATA/STATUS
+    signal fifo_data_out_nak_r : std_logic;
 
     signal xfer_dir_in_r       : std_logic;              -- SETUP dir (1=IN)
     signal nbytes_r            : unsigned(14 downto 0);  -- OUT wLength budget
@@ -337,6 +339,7 @@ begin
         in_data_toggle_r    <= '1';
         zlp_phase_r         <= '0';
         status_end_pend_r   <= '0';
+        fifo_data_out_nak_r <= '0';
       elsif rising_edge(hclk) then
         if sync_busreset = '1' then
           st         <= T_IDLE;
@@ -349,6 +352,7 @@ begin
           in_data_toggle_r <= '1';
           zlp_phase_r      <= '0';
           status_end_pend_r <= '0';
+          fifo_data_out_nak_r <= '0';
         else
           -- Latch a genuinely new SIE request that arrives mid trap/replay so
           -- its one-cycle pulse is not lost.  Not during a claimed transfer:
@@ -370,6 +374,7 @@ begin
           if (st = T_TRAP) and (cap_done = '1') then
             tx_response_bytes_r <= unsigned(ctrl_in_resp_bytes);
             tx_response_known_r <= ctrl_in_resp_known;
+            fifo_data_out_nak_r <= '0';
           end if;
 
           -- Data-stage toggle + terminating-ZLP phase (USB 2.0 Sec 5.5.3/8.6).
@@ -383,6 +388,15 @@ begin
             else
               zlp_phase_r <= '0';
             end if;
+          end if;
+
+          -- Sample backpressure at the start of each OUT transaction and hold it
+          -- through the packet so a fill/drain edge cannot alter its handshake.
+          if (st = C_DATA) and (xfer_dir_in_r = '0')
+             and (cap_rxdata(23 downto 16) = OCP_INDIRECT_FIFO_DATA)
+             and (sync_sieint_epinfo_req_i = '1')
+             and (sync_sieint_epinfo_setup_i = '0') then
+            fifo_data_out_nak_r <= fifo_payload_available_i;
           end if;
 
           -- Latch a STATUS-stage end that arrives while the OUT elastic queue
@@ -812,7 +826,12 @@ begin
 
     epinfo_sync_active_o <=
         '0' when (claim_q = '1') and (tx_in_data_c = '1')
-                                 and (tx_launch_ready_c = '0') else
+                                  and (tx_launch_ready_c = '0') else
+        -- SETUP stays active so it can supersede a NAKed OUT transfer.
+        '0' when (claim_q = '1') and (st = C_DATA)
+                                  and (xfer_dir_in_r = '0')
+                                  and (sync_sieint_epinfo_setup_i = '0')
+                                  and (fifo_data_out_nak_r = '1') else
         '1'                    when (claim_q = '1') else
         epinfo_sync_active_dma when (fwd = '1')     else
         '1'                    when (fab = '1')     else '0';

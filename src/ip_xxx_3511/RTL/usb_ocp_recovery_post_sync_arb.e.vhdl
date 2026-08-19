@@ -187,6 +187,7 @@ entity usb_ocp_recovery_post_sync_arb is
     -- When '1', the OCP class match is forced false so no recovery-class SETUP
     -- is claimed and every EP0 transfer falls through to the legacy path.
     ocp_path_disable_i : in  std_logic;
+    fifo_payload_available_i : in std_logic;
 
     -- Claim status (visibility only): '1' while the arbiter owns an OCP
     -- recovery class transfer (SETUP / DATA / STATUS).
