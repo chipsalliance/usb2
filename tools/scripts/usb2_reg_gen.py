@@ -91,6 +91,30 @@ class SVPkgAppendingListener(RDLListener):
     def get_regfile_name(self):
         return self.regfile_name
 
+class RecoveryAddressOffsetListener(RDLListener):
+
+    def __init__(self, output_path):
+        self.file = open(output_path, "w")
+        self.file.write("// SPDX-License-Identifier: Apache-2.0\n")
+        self.file.write("//\n")
+        self.file.write("// Generated from usb_ocp_recovery_reg.rdl. Do not edit.\n")
+        self.file.write("// Aperture-relative DWORD register-window offsets.\n\n")
+
+    def enter_Reg(self, node):
+        reg_name = node.inst_name
+        numbered_reg = re.match(r"^(.*)_([0-9]+)$", reg_name)
+        if numbered_reg and numbered_reg.group(2) != "0":
+            return
+
+        base_name = numbered_reg.group(1) if numbered_reg else reg_name
+        self.file.write(
+            "localparam logic [11:0] OCP_ADDR_{} = 12'h{:03X};\n".format(
+                base_name, node.address_offset
+            )
+        )
+    def close(self):
+        self.file.close()
+
 # Create an instance of the compiler
 rdlc = RDLCompiler()
 
@@ -130,6 +154,15 @@ try:
 
     # Elaborate the design with parameters
     root = rdlc.elaborate(parameters=parameters if parameters else None)
+
+    if os.path.basename(rdl_file) == "usb_ocp_recovery_reg.rdl":
+        offset_path = os.path.join(
+            rtl_output_dir, "usb_ocp_recovery_reg_addr_defs.svh"
+        )
+        walker = RDLWalker(unroll=True)
+        offset_listener = RecoveryAddressOffsetListener(offset_path)
+        walker.walk(root, offset_listener)
+        offset_listener.close()
 
     # Export a SystemVerilog implementation
     exporter = RegblockExporter()

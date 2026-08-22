@@ -46,6 +46,11 @@ typedef logic [7:0] ocp_cmd_t;
 localparam logic [7:0] OCP_CMD_CALIPTRA_CTRL        = 8'hE0;
 localparam logic [7:0] OCP_CMD_CALIPTRA_STATUS      = 8'hE1;
 
+// Aperture-relative DWORD register-window offsets generated from the RDL.
+// Use the next base or an explicit *_END sentinel for decode ranges; do not
+// derive an aperture boundary from OCP_LEN_*.
+`include "generated/usb_ocp_recovery_reg_addr_defs.svh"
+
 // ----------------------------------------------------------------------------
 // Per-command payload lengths (bytes), per OCP Recovery v1.1 Sec 9.2 Command
 // Summary.  These bound the regblock command window in the rb_adapter (the

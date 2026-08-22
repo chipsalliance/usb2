@@ -2,10 +2,9 @@
 // ============================================================================
 // usb_ocp_recovery_rb_adapter.sv
 //
-// Word-granular OCP Recovery v1.1 reg-bus adapter.  Bridges the 32-bit
-// word-wide rb_* protocol (cmd[7:0] + word offset[15:0] + wdata[31:0] +
-// wstrb[3:0]) used by A2 (ctrl_decode) and the SoC AHB sub-decoder to the
-// DWORD-aligned passthrough CPU interface emitted by the peakrdl-generated
+// Word-granular OCP Recovery v1.1 reg-bus adapter. Bridges the USB command
+// path and raw EXT aperture offsets to the DWORD-aligned passthrough CPU
+// interface emitted by the peakrdl-generated
 // usb_ocp_recovery regblock (see
 // third_party/usb2/src/integration/rtl/generated/usb_ocp_recovery_reg.sv).
 //
@@ -47,7 +46,7 @@ module usb_ocp_recovery_rb_adapter (
   input  logic        rst,
 
   // --------------------------------------------------------------------------
-  // Word-wide reg-bus (producer: A2 ctrl_decode or top-level arbiter / AHB).
+  // Word-wide USB command path.
   // rb_offset is a word index into the command window.  rb_wstrb marks the
   // valid byte lanes (writes: byte-enable; reads: which lanes the consumer
   // will use, so the FIFO path returns exactly that many bytes).
@@ -70,6 +69,7 @@ module usb_ocp_recovery_rb_adapter (
   // Recovery v1.1 Sec 9.1 write-to-RO / capability source-qualification).
   // --------------------------------------------------------------------------
   input  logic        rb_is_ext,
+  input  logic [10:0] ext_aperture_offset,
 
   // --------------------------------------------------------------------------
   // peakrdl-regblock passthrough CPU interface (0-cycle balanced ack).
@@ -124,27 +124,30 @@ module usb_ocp_recovery_rb_adapter (
   logic [11:0] cmd_base;
   logic [15:0] cmd_len;
   always_comb begin
-    is_local_cmd = 1'b1;
-    cmd_base     = 12'h000;
+    is_local_cmd = rb_is_ext;
+    cmd_base     = OCP_ADDR_PROT_CAP;
     cmd_len      = 16'd0;
+    if (!rb_is_ext) begin
+    is_local_cmd = 1'b1;
     unique case (rb_cmd)
-      OCP_CMD_PROT_CAP:        begin cmd_base = 12'h000; cmd_len = 16'(OCP_LEN_PROT_CAP);        end
-      OCP_CMD_DEVICE_ID:       begin cmd_base = 12'h010; cmd_len = 16'(OCP_LEN_DEVICE_ID);       end
-      OCP_CMD_DEVICE_STATUS:   begin cmd_base = 12'h028; cmd_len = 16'(OCP_LEN_DEVICE_STATUS);   end
-      OCP_CMD_DEVICE_RESET:    begin cmd_base = 12'h068; cmd_len = 16'(OCP_LEN_DEVICE_RESET);    end
-      OCP_CMD_RECOVERY_CTRL:   begin cmd_base = 12'h06C; cmd_len = 16'(OCP_LEN_RECOVERY_CTRL);   end
-      OCP_CMD_RECOVERY_STATUS: begin cmd_base = 12'h070; cmd_len = 16'(OCP_LEN_RECOVERY_STATUS); end
-      OCP_CMD_HW_STATUS:       begin cmd_base = 12'h074; cmd_len = 16'(OCP_LEN_HW_STATUS);       end
-      OCP_CMD_VENDOR:          begin cmd_base = 12'h1A4; cmd_len = 16'(OCP_LEN_VENDOR);          end
-      OCP_CMD_INDIRECT_FIFO_CTRL: begin cmd_base = 12'h184; cmd_len = 16'(OCP_LEN_INDIRECT_FIFO_CTRL); end
-      OCP_CMD_INDIRECT_FIFO_STATUS: begin cmd_base = 12'h18C; cmd_len = 16'(OCP_LEN_INDIRECT_FIFO_STATUS); end
-      OCP_CMD_INDIRECT_FIFO_DATA: begin cmd_base = 12'h1A0; cmd_len = 16'(OCP_LEN_INDIRECT_FIFO_DATA); end
+      OCP_CMD_PROT_CAP:        begin cmd_base = OCP_ADDR_PROT_CAP;             cmd_len = 16'(OCP_LEN_PROT_CAP);        end
+      OCP_CMD_DEVICE_ID:       begin cmd_base = OCP_ADDR_DEVICE_ID;            cmd_len = 16'(OCP_LEN_DEVICE_ID);       end
+      OCP_CMD_DEVICE_STATUS:   begin cmd_base = OCP_ADDR_DEVICE_STATUS;        cmd_len = 16'(OCP_LEN_DEVICE_STATUS);   end
+      OCP_CMD_DEVICE_RESET:    begin cmd_base = OCP_ADDR_DEVICE_RESET;         cmd_len = 16'(OCP_LEN_DEVICE_RESET);    end
+      OCP_CMD_RECOVERY_CTRL:   begin cmd_base = OCP_ADDR_RECOVERY_CTRL;        cmd_len = 16'(OCP_LEN_RECOVERY_CTRL);   end
+      OCP_CMD_RECOVERY_STATUS: begin cmd_base = OCP_ADDR_RECOVERY_STATUS;      cmd_len = 16'(OCP_LEN_RECOVERY_STATUS); end
+      OCP_CMD_HW_STATUS:       begin cmd_base = OCP_ADDR_HW_STATUS;            cmd_len = 16'(OCP_LEN_HW_STATUS);       end
+      OCP_CMD_VENDOR:          begin cmd_base = OCP_ADDR_VENDOR;               cmd_len = 16'(OCP_LEN_VENDOR);          end
+      OCP_CMD_INDIRECT_FIFO_CTRL: begin cmd_base = OCP_ADDR_INDIRECT_FIFO_CTRL;   cmd_len = 16'(OCP_LEN_INDIRECT_FIFO_CTRL); end
+      OCP_CMD_INDIRECT_FIFO_STATUS: begin cmd_base = OCP_ADDR_INDIRECT_FIFO_STATUS; cmd_len = 16'(OCP_LEN_INDIRECT_FIFO_STATUS); end
+      OCP_CMD_INDIRECT_FIFO_DATA: begin cmd_base = OCP_ADDR_INDIRECT_FIFO_DATA;   cmd_len = 16'(OCP_LEN_INDIRECT_FIFO_DATA); end
       // Caliptra-specific (non-OCP) registers, firmware/EXT-reachable only (see
       // rb_is_ext guard below).  They live above the OCP command aperture.
-      OCP_CMD_CALIPTRA_CTRL:   begin cmd_base = 12'h200; cmd_len = 16'(OCP_LEN_CALIPTRA_CTRL);   end
-      OCP_CMD_CALIPTRA_STATUS: begin cmd_base = 12'h204; cmd_len = 16'(OCP_LEN_CALIPTRA_STATUS); end
+      OCP_CMD_CALIPTRA_CTRL:   begin cmd_base = OCP_ADDR_CALIPTRA_CTRL;   cmd_len = 16'(OCP_LEN_CALIPTRA_CTRL);   end
+      OCP_CMD_CALIPTRA_STATUS: begin cmd_base = OCP_ADDR_CALIPTRA_STATUS; cmd_len = 16'(OCP_LEN_CALIPTRA_STATUS); end
       default:             is_local_cmd = 1'b0;
     endcase
+    end
     // Defense-in-depth: the Caliptra-specific registers are addressed only by
     // the firmware/AXI (EXT) sub-decoder; the USB ctrl_decode can never emit
     // these command tags (they are outside OCP_CMD_MIN..MAX), but drop the
@@ -165,7 +168,7 @@ module usb_ocp_recovery_rb_adapter (
   logic        local_access;
   assign access         = rb_wr | rb_rd;
   assign word_base_byte = {rb_offset[11:0], 2'b00};
-  assign off_ok         = (word_base_byte < {2'b00, cmd_len[11:0]});
+  assign off_ok         = rb_is_ext || (word_base_byte < {2'b00, cmd_len[11:0]});
   assign local_access   = access & is_local_cmd;
 
   // --------------------------------------------------------------------------
@@ -220,7 +223,8 @@ module usb_ocp_recovery_rb_adapter (
   assign local_read_fire = do_cpuif_rd & ~regblock_busy_q & ~cpuif_req_block;
   assign cpuif_req      = cpuif_fire;
   assign cpuif_req_is_wr= rb_wr;
-  assign cpuif_addr     = cmd_base + word_base_byte[11:0];
+  assign cpuif_addr     = rb_is_ext ? {1'b0, ext_aperture_offset}
+                                    : cmd_base + word_base_byte[11:0];
   assign cpuif_wr_data  = rb_wdata;
   // Expand the per-lane byte strobe into per-bit biten (8 biten bits / lane).
   assign cpuif_wr_biten = {{8{rb_wstrb[3]}}, {8{rb_wstrb[2]}},

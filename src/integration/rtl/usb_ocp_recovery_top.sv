@@ -74,13 +74,10 @@ module usb_ocp_recovery_top #(
 
   //----------------------------------------------------------------------------
   // External register-bus slave (driven by AHB sub-decoder upstream).
-  // Word-wide (32-bit) management path: the SoC AXI master issues word-
-  // aligned accesses, so a full 32-bit data word maps directly onto the
-  // word-native A2->A3 reg-bus.  ext_rb_offset remains a BYTE offset for
-  // compatibility with the wrapper's byte-address capture.
+  // The aperture-relative byte offset routes directly to the generated
+  // register CPU interface.
   //----------------------------------------------------------------------------
-  input  logic [7:0]              ext_rb_cmd,
-  input  logic [15:0]             ext_rb_offset,
+  input  logic [10:0]             ext_aperture_offset,
   input  logic                    ext_rb_wr,
   input  logic                    ext_rb_rd,
   input  logic [31:0]             ext_rb_wdata,
@@ -177,6 +174,8 @@ module usb_ocp_recovery_top #(
   logic                       ext_fifo_status_3_access;
   logic                       ext_fifo_status_4_access;
   logic                       ext_fifo_data_access;
+  logic                       ext_fifo_aperture_access;
+  logic                       ext_fifo_data_aperture_access;
 
   // --- A3 <-> A5 sideband ---
   logic                       device_reset_wr;
@@ -238,9 +237,9 @@ module usb_ocp_recovery_top #(
   // arbitration through their dedicated hardware paths.
   //
   // EXT in-flight gating: once EXT is granted, hold off subsequent EXT
-  // grants until its ack lands.  This protects multi-cycle cms_fifo accesses
-  // when the upstream bridge legitimately holds wr/rd high while the request
-  // round-trips across the clock domain.  Without the gate, a held-high EXT
+  // grants until its ack lands. This protects multi-cycle cms_fifo accesses
+  // while the upstream AHB transaction holds wr/rd high awaiting completion.
+  // Without the gate, a held-high EXT
   // request would be re-issued to A3/A4 each cycle and side-effecting pulses
   // such as recovery_ctrl_wr and device_reset_wr would fire repeatedly.
   // USB side already pulses rb_wr per word from ctrl_decode and is
@@ -269,17 +268,10 @@ module usb_ocp_recovery_top #(
     rb_wdata  = '0;
     rb_wstrb  = 4'h0;
     if (grant_ext | ext_in_flight_q) begin
-      // EXT (SoC AXI/AHB sub-decoder) is word-native: the SoC master issues
-      // word-aligned 32-bit accesses, so the full data word maps directly
-      // onto the word-wide A3 reg-bus.  ext_rb_offset is a BYTE offset; the
-      // low 2 bits are zero on word-aligned accesses, so the word index is
-      // ext_rb_offset[15:2].  Writes drive all four lanes (rb_wstrb=4'hF);
-      // reads also mark all four lanes so the adapter / FIFO path returns the
-      // complete word.  The bus is held for the whole in-flight window so a
-      // multi-cycle cms_fifo SRAM read keeps its command/address stable until
-      // it acks.
-      rb_cmd    = ext_rb_cmd;
-      rb_offset = {2'b00, ext_rb_offset[15:2]};
+      // The bus is held for the whole in-flight window so a multi-cycle
+      // cms_fifo read keeps its aperture offset stable until it acks.
+      rb_cmd    = '0;
+      rb_offset = '0;
       rb_wr     = ext_rb_wr;
       rb_rd     = ext_rb_rd;
       rb_wdata  = ext_rb_wdata;
@@ -312,8 +304,8 @@ module usb_ocp_recovery_top #(
   assign usb_rb_ack   = usb_is_fifo_cmd ? fifo_rb_ack   : usb_hw_ack;
   assign usb_rb_err   = usb_is_fifo_cmd ? fifo_rb_err   : usb_hw_err;
 
-  // EXT is word-native: return the full 32-bit read word.  ext_rb_offset is
-  // held stable by the AHB sub-decoder across the CDC handshake.  The ack/err
+  // EXT is word-native: return the full 32-bit read word. The aperture offset
+  // is held stable by the AHB sub-decoder across the request handshake. The ack/err
   // are qualified with ext_in_flight_q so a multi-cycle cms_fifo SRAM read,
   // which acks several cycles after the one-cycle grant_ext (owner_q==EXT only
   // lasts that one cycle), is still forwarded back to the SoC AXI master.
@@ -524,6 +516,7 @@ module usb_ocp_recovery_top #(
     .rb_ack          (rb_ack),
     .rb_err          (rb_err),
     .rb_is_ext       (rb_is_ext),
+    .ext_aperture_offset(ext_aperture_offset),
 
      .cpuif_req       (cpuif_req),
      .cpuif_req_is_wr (cpuif_req_is_wr),
@@ -588,12 +581,16 @@ module usb_ocp_recovery_top #(
   //      generated regblock sample hwif next = current fifo_data_peek,
   //  (3) ext_data_mirror_ready rises after that edge, so the FOLLOWING cycle is
   //      the first safe EXT cpuif read and swacc/pop point.
+  assign ext_fifo_aperture_access = rb_is_ext
+                                  && (ext_aperture_offset >= OCP_ADDR_INDIRECT_FIFO_CTRL[10:0])
+                                  && (ext_aperture_offset < OCP_ADDR_VENDOR[10:0]);
+  assign ext_fifo_data_aperture_access = rb_is_ext
+                                       && (ext_aperture_offset >= OCP_ADDR_INDIRECT_FIFO_DATA[10:0])
+                                       && (ext_aperture_offset < OCP_ADDR_VENDOR[10:0]);
   assign cpuif_req_block = rb_is_ext
-                          && ((((rb_cmd == OCP_CMD_INDIRECT_FIFO_CTRL)
-                                || (rb_cmd == OCP_CMD_INDIRECT_FIFO_STATUS)
-                                || (rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA))
-                               && (usb_fifo_req || usb_fifo_packet_active_q))
-                               || ((rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA)
+                           && ((ext_fifo_aperture_access
+                                && (usb_fifo_req || usb_fifo_packet_active_q))
+                               || (ext_fifo_data_aperture_access
                                    && rb_rd
                                    && (!ext_data_mirror_ready || !payload_available)));
 
