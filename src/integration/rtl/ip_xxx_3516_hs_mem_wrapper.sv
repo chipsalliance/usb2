@@ -338,14 +338,15 @@ module ip_xxx_3516_hs_mem_wrapper
    logic                           dev_ahb_hreadyout;
    logic [1:0]                     dev_ahb_hresp;
 
-    // Legacy IP (uut) sub-decoder response nets. Multiplexed with the
-    // recovery aperture response before returning to the AXI-to-AHB converter.
+   // Legacy IP (uut) sub-decoder response nets. Multiplexed with the
+   // recovery aperture response before returning to the AXI-to-AHB converter.
    logic [AXI_DATA_WIDTH-1:0]     legacy_dev_hrdata;
    logic                           legacy_dev_hreadyout;
    logic [1:0]                     legacy_dev_hresp;
+   logic                           legacy_dev_hsel;
 
-    // OCP Recovery aperture decode (combinational); used to gate the
-    // legacy uut's hsel.
+   // OCP Recovery aperture decode (combinational); used to gate the
+   // legacy uut's hsel.
    logic                           rec_addr_in_window;
 
    // ---- VHDL arbiter <-> SV recovery_top byte-stream wires ----
@@ -677,7 +678,7 @@ module ip_xxx_3516_hs_mem_wrapper
                .dev_ahbs_htrans   (dev_ahb_htrans),
                .dev_ahbs_hwrite   (dev_ahb_hwrite),
                .dev_ahbs_hwdata   (dev_ahb_hwdata),
-               .dev_ahbs_hsel     (dev_ahb_hsel & ~rec_addr_in_window),
+               .dev_ahbs_hsel     (legacy_dev_hsel),
                .dev_ahbs_hreadyin (dev_ahb_hreadymux),
                .dev_ahbs_hrdata   (legacy_dev_hrdata),
                .dev_ahbs_hreadyout(legacy_dev_hreadyout),
@@ -836,19 +837,19 @@ module ip_xxx_3516_hs_mem_wrapper
                .testmode(1'b0)
    );
 
-   // ================================================================
+    // ================================================================
     // OCP Recovery subsystem
     // ================================================================
 
-   // ---- VHDL arbiter <-> SV recovery_top byte-stream wires ----
-   // (Declared at the top of the module so the uut port-map sees the
-   // proper vector widths; see decls near line 387.)
+    // ---- VHDL arbiter <-> SV recovery_top byte-stream wires ----
+    // (Declared at the top of the module so the uut port-map sees the
+    // proper vector widths; see decls near line 387.)
 
     // ---- Recovery subsystem reset. ----
     // Recovery stack and AHB management surface share dev_axi_aclk with the
     // post-sync arbiter. Reset is the active-high subordinate reset.
-   logic rec_rst;
-   assign rec_rst = ~dev_axi_aresetn;
+    logic rec_rst;
+    assign rec_rst = ~dev_axi_aresetn;
 
     // ==================================================================
     // Recovery aperture bridge
@@ -857,31 +858,32 @@ module ip_xxx_3516_hs_mem_wrapper
     // the lower 2 KiB remains owned by the legacy controller.
     // ==================================================================
 
-   // -- Aperture decode (combinational, dev_axi_aclk domain) --
+    // -- Aperture decode (combinational, dev_axi_aclk domain) --
     // Address bit [11] selects the recovery half of the local USB window.
-   assign rec_addr_in_window = dev_ahb_haddr[11];
+    assign rec_addr_in_window = dev_ahb_haddr[11];
+    assign legacy_dev_hsel = dev_ahb_hsel & ~rec_addr_in_window;
 
     // Recovery-relative byte offset within the upper 2 KiB aperture.
-   logic [11:0] rec_offset;
-   assign rec_offset = {1'b0, dev_ahb_haddr[10:0]};
+    logic [11:0] rec_offset;
+    assign rec_offset = {1'b0, dev_ahb_haddr[10:0]};
 
-   // -- AHB address-phase strobe to capture in IDLE --
-   logic rec_ahb_addr_phase;
-   assign rec_ahb_addr_phase = dev_ahb_hsel
-                             & dev_ahb_htrans[1]
-                             & dev_ahb_hreadymux
-                             & rec_addr_in_window;
+    // -- AHB address-phase strobe to capture in IDLE --
+    logic rec_ahb_addr_phase;
+    assign rec_ahb_addr_phase = dev_ahb_hsel
+                              & dev_ahb_htrans[1]
+                              & dev_ahb_hreadymux
+                              & rec_addr_in_window;
 
-   // -- Exposed async FIFO read-port nets (dev_axi_aclk domain) --
-   logic        fifo_rd_valid;
-   logic        fifo_rd_ready;
-   logic [31:0] fifo_rd_data;
-   logic [$clog2(usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS+1)-1:0] fifo_rd_depth;
+    // -- Exposed async FIFO read-port nets (dev_axi_aclk domain) --
+    logic        fifo_rd_valid;
+    logic        fifo_rd_ready;
+    logic [31:0] fifo_rd_data;
+    logic [$clog2(usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS+1)-1:0] fifo_rd_depth;
 
     // -- Captured AHB transaction metadata --
     logic [10:0] ahb_aperture_offset_q;
-   logic        ahb_wr_q;
-   logic [31:0] ahb_wdata_q;
+    logic        ahb_wr_q;
+    logic [31:0] ahb_wdata_q;
 
     // -- AHB transaction FSM --
     typedef enum logic [1:0] {
@@ -952,32 +954,32 @@ module ip_xxx_3516_hs_mem_wrapper
     assign rec_ext_rb_wr = (a_state_q == A_AWAIT_ACK) &&  ahb_wr_q;
     assign rec_ext_rb_rd = (a_state_q == A_AWAIT_ACK) && !ahb_wr_q;
 
-   // -- AHB response mux --
+    // -- AHB response mux --
     // rec_ahb_owns_now follows a_state_q != A_IDLE so the AHB master sees
     // a stalled hreadyout during the recovery transaction and a one-cycle
     // hreadyout=1 completion response.
-   logic rec_ahb_owns_now;
-   assign rec_ahb_owns_now = (a_state_q != A_IDLE);
+    logic rec_ahb_owns_now;
+    assign rec_ahb_owns_now = (a_state_q != A_IDLE);
 
-   // hreadyout: 1 in A_COMPLETE (final beat completes), 0 otherwise
-   // when we own the beat.  Outside our window, pass legacy through.
-   assign dev_ahb_hreadyout = rec_ahb_owns_now
-                            ? (a_state_q == A_COMPLETE)
-                            : legacy_dev_hreadyout;
-   assign dev_ahb_hrdata    = rec_ahb_owns_now
-                            ? rdata_axi_q[31:0]
-                            : legacy_dev_hrdata;
-   assign dev_ahb_hresp     = rec_ahb_owns_now
-                            ? { 1'b0, err_axi_q }
-                            : legacy_dev_hresp;
+    // hreadyout: 1 in A_COMPLETE (final beat completes), 0 otherwise
+    // when we own the beat.  Outside our window, pass legacy through.
+    assign dev_ahb_hreadyout = rec_ahb_owns_now
+                             ? (a_state_q == A_COMPLETE)
+                             : legacy_dev_hreadyout;
+    assign dev_ahb_hrdata    = rec_ahb_owns_now
+                             ? rdata_axi_q[31:0]
+                             : legacy_dev_hrdata;
+    assign dev_ahb_hresp     = rec_ahb_owns_now
+                             ? { 1'b0, err_axi_q }
+                             : legacy_dev_hresp;
 
-   // SVA: legacy IP must NOT respond when we own the beat.
-   // pragma translate_off
-   property p_legacy_silent_when_rec_owns;
-     @(posedge dev_axi_aclk) disable iff (!dev_axi_aresetn)
-       rec_ahb_owns_now |-> (legacy_dev_hreadyout === 1'b1);
-   endproperty
-   // (legacy_dev_hreadyout stays high when uut's hsel is gated off.)
+    // SVA: legacy IP must NOT respond when we own the beat.
+    // pragma translate_off
+    property p_legacy_silent_when_rec_owns;
+      @(posedge dev_axi_aclk) disable iff (!dev_axi_aresetn)
+        rec_ahb_owns_now |-> (legacy_dev_hreadyout === 1'b1);
+    endproperty
+    // (legacy_dev_hreadyout stays high when uut's hsel is gated off.)
     assert property (p_legacy_silent_when_rec_owns)
       else $error("rec/legacy AHB sub-decoder collision");
 
@@ -994,13 +996,14 @@ module ip_xxx_3516_hs_mem_wrapper
     endproperty
     assert property (p_ext_ack_matches_active_request)
       else $error("recovery EXT acknowledgement without an active request");
+
     // pragma translate_on
 
 
-   usb_ocp_recovery_top #(
-       .CMS_ADDR_W        (REC_CMS_ADDR_W),
-       .NUM_CMS           (REC_NUM_CMS)
-   ) u_ocp_recovery (
+    usb_ocp_recovery_top #(
+        .CMS_ADDR_W        (REC_CMS_ADDR_W),
+        .NUM_CMS           (REC_NUM_CMS)
+    ) u_ocp_recovery (
         // Recovery logic shares dev_axi_aclk with its AHB management surface.
         .clk  (dev_axi_aclk),
         .rst  (rec_rst),
@@ -1016,47 +1019,47 @@ module ip_xxx_3516_hs_mem_wrapper
         // Control-transfer byte-stream surface (driven by VHDL usb_ocp_recovery_post_sync_arb)
         .rec_setup_pkt_vld  (rec_setup_pkt_vld_w),
         .rec_setup_pkt      (rec_setup_pkt_w),
-       .rec_ctrl_out_data  (rec_ctrl_out_data_w),
-       .rec_ctrl_out_be   (rec_ctrl_out_be_w),
-       .rec_ctrl_out_vld   (rec_ctrl_out_vld_w),
-       .rec_ctrl_out_last  (rec_ctrl_out_last_w),
-       .rec_ctrl_out_rdy   (rec_ctrl_out_rdy_w),
-       .rec_ctrl_in_data   (rec_ctrl_in_data_w),
-       .rec_ctrl_in_be     (rec_ctrl_in_be_w),
-       .rec_ctrl_in_vld    (rec_ctrl_in_vld_w),
-       .rec_ctrl_in_last   (rec_ctrl_in_last_w),
-       .rec_ctrl_in_rdy    (rec_ctrl_in_rdy_w),
-       .rec_ctrl_in_resp_bytes(rec_ctrl_in_resp_bytes_w),
-       .rec_ctrl_in_resp_known(rec_ctrl_in_resp_known_w),
-       .rec_ctrl_set_stall (rec_ctrl_set_stall_w),
-       .rec_ctrl_xfer_done (rec_ctrl_xfer_done_w),
-       .rec_ctrl_xfer_abort(rec_ctrl_xfer_abort_w),
-       .rec_ocp_path_disable (rec_ocp_path_disable_w),
+        .rec_ctrl_out_data  (rec_ctrl_out_data_w),
+        .rec_ctrl_out_be   (rec_ctrl_out_be_w),
+        .rec_ctrl_out_vld   (rec_ctrl_out_vld_w),
+        .rec_ctrl_out_last  (rec_ctrl_out_last_w),
+        .rec_ctrl_out_rdy   (rec_ctrl_out_rdy_w),
+        .rec_ctrl_in_data   (rec_ctrl_in_data_w),
+        .rec_ctrl_in_be     (rec_ctrl_in_be_w),
+        .rec_ctrl_in_vld    (rec_ctrl_in_vld_w),
+        .rec_ctrl_in_last   (rec_ctrl_in_last_w),
+        .rec_ctrl_in_rdy    (rec_ctrl_in_rdy_w),
+        .rec_ctrl_in_resp_bytes(rec_ctrl_in_resp_bytes_w),
+        .rec_ctrl_in_resp_known(rec_ctrl_in_resp_known_w),
+        .rec_ctrl_set_stall (rec_ctrl_set_stall_w),
+        .rec_ctrl_xfer_done (rec_ctrl_xfer_done_w),
+        .rec_ctrl_xfer_abort(rec_ctrl_xfer_abort_w),
+        .rec_ocp_path_disable (rec_ocp_path_disable_w),
 
         // External reg-bus slave driven by the local AHB transaction FSM.
-       .ext_aperture_offset(ahb_aperture_offset_q),
-       .ext_rb_wr      (rec_ext_rb_wr),
-       .ext_rb_rd      (rec_ext_rb_rd),
-       .ext_rb_wdata   (ahb_wdata_q),
-       .ext_rb_rdata   (rec_ext_rb_rdata),
-       .ext_rb_ack     (rec_ext_rb_ack),
-       .ext_rb_err     (rec_ext_rb_err),
+        .ext_aperture_offset(ahb_aperture_offset_q),
+        .ext_rb_wr      (rec_ext_rb_wr),
+        .ext_rb_rd      (rec_ext_rb_rd),
+        .ext_rb_wdata   (ahb_wdata_q),
+        .ext_rb_rdata   (rec_ext_rb_rdata),
+        .ext_rb_ack     (rec_ext_rb_ack),
+        .ext_rb_err     (rec_ext_rb_err),
 
 
-       // Static capability tie-offs (from parameters)
-       .device_id_in (REC_DEVICE_ID_DEFAULT),
+        // Static capability tie-offs (from parameters)
+        .device_id_in (REC_DEVICE_ID_DEFAULT),
 
-       // Sideband
-       .rec_trigger      (rec_trigger),
-       .soc_boot_ack     (soc_boot_ack),
-       .recovery_active  (rec_active),
-       .payload_available(payload_available),
-       .recovery_image_activated(ocp_firmware_activated),
-       .boot_req         (boot_req),
-       .device_reset_req (device_reset_req),
-       .fatal_err        (fatal_err)
-   );
+        // Sideband
+        .rec_trigger      (rec_trigger),
+        .soc_boot_ack     (soc_boot_ack),
+        .recovery_active  (rec_active),
+        .payload_available(payload_available),
+        .recovery_image_activated(ocp_firmware_activated),
+        .boot_req         (boot_req),
+        .device_reset_req (device_reset_req),
+        .fatal_err        (fatal_err)
+    );
 
-   // Legacy top-level status pins: summary view of the recovery FSM.
-   assign ocp_recovery_available = rec_active;
+    // Legacy top-level status pins: summary view of the recovery FSM.
+    assign ocp_recovery_available = rec_active;
 endmodule
