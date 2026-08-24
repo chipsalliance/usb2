@@ -2,7 +2,7 @@
 
 **Status:** Draft for review  
 **Target repository:** USB2 repository  
-**Applies to:** Janus / Caliptra Subsystem USB compound device  
+**Applies to:** Caliptra Subsystem USB compound device  
 **Intended consumers:** MCU ROM, MCU runtime firmware, SoC firmware, SoC integration, and verification teams
 
 > Register and memory base addresses are integration-defined unless an offset is explicitly stated. Firmware must use the final generated register definitions and linker/memory-map definitions.
@@ -11,12 +11,9 @@
 
 This document defines the software programming requirements for a USB 2.0 compound device containing:
 
-- one embedded USB 2.0 hub controller;
-- Device 0, a USB device-controller instance owned by the Caliptra Subsystem MCU;
-- Device 1, a USB device-controller instance owned by the SoC controller;
-- one hub register interface and one dedicated HUB RAM;
-- two independent device-controller register interfaces; and
-- two dedicated endpoint-control-list RAM regions and associated data-buffer regions, one for each device controller.
+- one embedded USB 2.0 hub controller with hub register interface and one dedicated HUB RAM;
+- USBD0, a USB device-controller instance owned by the Caliptra Subsystem MCU, featuring a dedicated register interface and dedicated RAM for the Endpoint Control List (ECL) and associated endpoint data buffers;
+- USBD1, a USB device-controller instance owned by the SoC-uC controller, featuring a dedicated register interface and dedicated RAM for the Endpoint Control List (ECL) and associated endpoint data buffers;
 
 The requirements cover cold boot, hub and device enumeration, endpoint-list initialization, controlled disconnect and reconnect, SoC reset, hitless firmware update, USB bus reset, and recovery.
 
@@ -39,13 +36,15 @@ The terms **MUST**, **MUST NOT**, **SHALL**, **SHOULD**, **SHOULD NOT**, and **M
 | Upstream host | The external BMC or platform host controlling the USB bus. |
 | Hub | The integrated USB 2.0 hub presented to the upstream host. |
 | MCU device | The USB device-controller instance owned by the Caliptra Subsystem MCU. |
-| SoC device | The USB device-controller instance owned by the non-Caliptra SoC controller. |
+| SoC-uC device | The USB device-controller instance owned by the non-Caliptra SoC-uC controller. |
 | Function reset | Reset of USB device-controller state without necessarily resetting the hub. |
 | Controller reset | Reset of the processor or controller that owns a USB device instance. |
 | Disconnect | Removal of a downstream device from the host-visible USB topology. |
 | Reconnect | Reattachment of a downstream device, followed by host-driven enumeration. |
-| DCON | Logical device-connect control. The final register and bit name is TBD. |
+| DCON | Logical device-connect control. The final register and bit name is documented in RDL. |
 | ROM | Caliptra Subsystem MCU boot ROM unless otherwise stated. |
+| EVH | Embedded Virtual USB Hub. |
+| ECL | Endpoint Control List. |
 
 ## 2. Architecture 
 
@@ -116,14 +115,17 @@ The USB module ooperate in two modes.
 
 The compound device shall enumerate in the following conceptual order:
 
-1. USB PHY and clocks are initialized.
+1. Firmware running on MCU does:
+     1. Initializes USB PHY and clocks.
+     2. Initializes HUB_RAM.
+     3. Sets HUB_EN and HUB_CONNECT control bits. 
 2. EVH presents device attach to the USB host.
 3. Host enumerates the EVH as a virtual hub.
-4. EVH reports downstream Port 0 connection.
-5. Host enumerates Port 0 device through USBDC0.
-6. EVH reports downstream Port 1 connection.
-7. Host enumerates Port 1 device through USBDC1.
-8. EVH enters all-ports-enumerated state.
+5. EVH reports downstream Port 0 connection.
+6. Host enumerates Port 0 device through USBDC0.
+7. EVH reports downstream Port 1 connection.
+8. Host enumerates Port 1 device through USBDC1.
+9. EVH enters all-ports-enumerated state.
 
 The highlighted notes define the compound device as enumerating as an embedded virtual hub with two ports, where Port 0 is connected to one USBDC instance and Port 1 is connected to a second USBDC instance.
 
@@ -143,8 +145,8 @@ sequenceDiagram
     Note over EVH,MCU_FW: Hub Enumeration
 
     MCU_FW->>SOC: Initialize USB clock & PHY
-    MCU_FW->>EVH: Enable DP+ pull-up
-
+    MCU_FW->>EVH: Initialize HUB_RAM and set HUB_EN & HUB_CONNECT control bits.
+    EVH-->>Host: Enable DP+ pull-up
     Host->>EVH: Detect USB attach
     Host->>EVH: Chirp sequence
     Host->>EVH: Enumerate Hub
@@ -198,10 +200,12 @@ sequenceDiagram
     actor Host as BMC USB Host
     participant EVH as EVH Hub FSM
     participant HUB_RAM as HUB RAM
-    participant MCU_FW as MCU FW
+    participant MCU_FW as MCU ROM
       
-    Note over Host,EVH: Hub Enumeration
+    MCU_FW->>HUB_RAM: Initialize HUB descriptors & setup-match region
+    MCU_FW->>EVH: Set HUB_EN and HUB_CONNECT
 
+    Note over Host,EVH: Hub Enumeration
     Host->>EVH: SOF tokens to initialize
     Host->>EVH: Addr 0 GET_DESC DEVICE_type
     EVH<<->>HUB_RAM: Find SETUP-match record
@@ -485,11 +489,12 @@ Firmware MUST program only operations supported by the implemented hub FSM and t
 
 |Servicer | Encoding | Meaning |
 |---------|----------|---------|
-| HUB_RAM descriptor region | Bit 7 = `1` | Return descriptor/response data. |
-|                           | Bits `[6:0]`| Select the descriptor data buffer: <br>`0` selects `Descriptor0`,<br>`2` selects `Descriptor2`, and so on. |
-| HUB_FSM Standard resp buffer| Bits `[7:6]` = `00` | Execute a standard hub request. |
-|                             | Bits `[5:0]` | MUST be zero because only one hub instance is supported. |
-| HUB_FSM Class resp buffer| Bits `[7:6]` = `01` | Execute a hub-class-specific request. |
+| HUB_RAM descriptor region | Bit 7 = `1` | Return descriptor/response data from HUB_RAM. |
+|                           | Bits `[6:0]`| Selects the descriptor data buffer: <br>`0` selects `Descriptor0`,<br>`2` selects `Descriptor2`, and so on. |
+| HUB_FSM Standard resp buffer| Bits `[7:6]` = `00` | Return dynamic response data generated by the RTL EP0 standard request handler. |
+|                             | Bits `[5:0]` | MUST be zero. |
+| HUB_FSM Class resp buffer| Bits `[7:6]` = `01` | Return dynamic response data generated by the RTL hub/class request handler|
+|                             | Bits `[5:0]` | MUST be zero. |
 
 `DataPhase_Length` MUST contain the number of bytes returned in the data phase. For no-data requests it MUST be zero.
 
@@ -545,7 +550,7 @@ This operation causes host-visible disconnection and re-enumeration of the hub t
 
 ## 4. USBDC Device Controller Programming Model
 
-USBDC0 and USBDC1 each expose an independent device register bank and dedicated shared memory containing the endpoint command/status list and endpoint data buffers.
+USBDC0 and USBDC1 each expose an independent device register bank and dedicated memory containing the endpoint command/status list and endpoint data buffers.
 
 ### 4.1 USBDC Registers Overview
 
@@ -584,9 +589,9 @@ For each device instance, the owning firmware MUST:
 8. Enable the required interrupts.
 9. Set `DCON` only after the complete register, EP-list, and buffer state is valid.
 
-### 4.2 Endpoint command/status list
+### 4.2 Endpoint Control List (ECL)
 
-The endpoint list contains fixed-order entries beginning with EP0 OUT, SETUP storage, and EP0 IN, followed by OUT and IN entries for generic endpoints. Generic endpoints may use single or double buffering according to the IP configuration.
+The endpoint control list contains fixed-order entries beginning with EP0 OUT, SETUP storage, and EP0 IN, followed by OUT and IN entries for generic endpoints. Generic endpoints may use single or double buffering according to the IP configuration.
 
 Firmware MUST obey the endpoint-entry ownership rules:
 
@@ -598,7 +603,7 @@ Firmware MUST obey the endpoint-entry ownership rules:
 
 The Endpoint Command/Status List start register points to the start of the list containing all endpoint information in memory. Endpoint ordering is fixed.
 
-#### 4.2.1 Endpoint List Layout
+#### 4.2.1 Endpoint Control List Layout
 
 | Offset | Endpoint Entry |
 |-----:|----------------|
@@ -633,7 +638,7 @@ EP0 OUT Buffer Descriptor
 |25:11| length |EP0 OUT Buffer NBytes.|
 |26   | R | Reserved |
 |27   | TV | Toggle value. For the control endpoint 0 this bit is used as the toggle value. When the toggle reset bit is set, the data toggle is updated with the value programmed in this bit. |
-|28   | TR | Toggle reset When software sets this bit to one, the HW will set the toggle value equal to the value indicated in the “toggle value” (TV) bit. For the control endpoint 0, this is not needed to be used because |
+|28   | TR | Toggle reset When software sets this bit to one, the HW will set the toggle value equal to the value indicated in the “toggle value” (TV) bit. <br>For the control endpoint 0, this is not needed to be used because the hardware resets the endpoint toggle to one for both directions when a setup token is received. <br>For the other endpoints, the toggle can only be reset to 0 when the endpoint is reset.|
 |29   | S | Stall. <br>0: The selected endpoint is not stalled. <br>1: The selected endpoint is stalled.<br>The active bit has always higher priority than the Stall bit. This means that a Stall handshake is only sent when the active bit is 0 and the stall bit is one. Software can only modify this bit when the active bit is 0. |
 |30   | R | Reserved |
 |31   | A | Active. The buffer is enabled. HW can use the buffer to store received OUT data or to transmit data on the IN endpoint. Software can only set this bit to 1. As long as this bit is set to one, software is not allowed to update any of the values in this 32-bit word. In case software wants to deactivate the buffer, it must write a one to the corresponding “skip” bit in the USB endpoint skip register. Hardware can only write this bit to 0. It will do this when it receives a short packet or when the NBytes field transitions to 0 or when software has written a one to the “skip” bit. If hardware receives a token for an endpoint that is not active, it will return the following handshake or data: <br>- Non-isochronous endpoint: NAK handshake is sent. <br>- Isochronous IN endpoint: empty data packet is sent. <br>- Isochronous OUT endpoint: received data is ignored and no handshake is sent. |
@@ -699,10 +704,10 @@ When a non-zero SetConfiguration value is accepted, firmware MUST:
 1. Only authorized masters may write the hub register, HUB RAM, device register banks, EP lists, and data buffers.
 2. HUB RAM MUST be immutable while `HUB_EN = 1`.
 3. Device 0 and Device 1 EP lists and data buffers MUST occupy non-overlapping protected regions.
-4. Firmware MUST validate all endpoint buffer addresses, offsets, lengths, and ownership before activation.
-5. Reset or disconnect of a device MUST prevent further DMA or endpoint-engine access to memory whose ownership has been revoked.
-6. Host-provided SETUP packets, lengths, indexes, and payloads are untrusted inputs.
-7. Unsupported requests MUST be rejected without exposing uninitialized or stale RAM.
+4. Reset or disconnect of a device MUST prevent further DMA or endpoint-engine access to memory whose ownership has been revoked.
+6. Firmware MUST validate all endpoint buffer addresses, offsets, lengths, and ownership before activation.
+7. Host-provided SETUP packets, lengths, indexes, and payloads are untrusted inputs.
+8. Unsupported requests MUST be rejected without exposing uninitialized or stale RAM.
 
 ## 8. Verification Requirements
 
