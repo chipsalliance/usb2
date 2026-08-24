@@ -56,28 +56,34 @@ The SoC with caliptra-ss containing USB module exposes one physical USB connecti
 2. Downstream Port 0 connected to USBDC0 managed by MCU.
 3. Downstream Port 1 connected to USBDC1 managed by SoC-uC.
 
-The external BMC host observes a topology equivalent to:
-
+The external USB host observes a topology equivalent to:
 
 ```text
-                        BMC USB Host
-                            |
-                            |
-                  Single USB Connection
-                            |
-                            v
-                   +----------------------+
-                   | Embedded Virtual Hub |
-                   |       (EVH)          |
-                   +----------------------+
-                        |             |
-                        |             |
-                        v             v
-                  +-----------+   +-------------+
-                  |   USBDC0  |   |   USBDC1    |
-                  | MCU Device|   |SoC-uC Device|
-                  +-----------+   +-------------+
+
+       PLATFORM / SYSTEM                    SoC with claiptra-ss
+┌─────────────────────────┐        ┌──────────────────────────────────────┐
+│                         │        │                                      │
+│        USB Host         │        │         USB2 compound device         │
+│                         │        │      ┌─────────────────────┐         │
+│  BMC, host processor,   │ Single │      │ Embedded Virtual USB|         │
+│  service processor, or  ├──USB───┼─────►│    Hub (EVH)        │         │
+│  validation host        │ Link   │      └──────────┬──────────┘         │
+│                         │        │                 │                    │
+└─────────────────────────┘        │         ┌───────┴───────┐            │
+                                   │         │               │            │
+                                   │         ▼               ▼            │
+                                   │ ┌──────────────┐ ┌──────────────┐    │
+                                   │ │    USBD0     │ │    USBD1     │    │
+                                   │ │              │ │              │    │
+                                   │ │ Caliptra-ss  │ │ SoC-uC       │    │
+                                   │ │ MCU-owned    │ │ owned        │    │
+                                   │ │ device       │ │ device       │    │
+                                   │ └──────────────┘ └──────────────┘    │
+                                   │                                      │
+                                   └──────────────────────────────────────┘
+                                              SoC boundary
 ```
+
 ### 2.2 Programmer View
 
 ![](module_view.png)
@@ -88,11 +94,11 @@ The external BMC host observes a topology equivalent to:
 |---|---|---|
 | Hub control registers | Selects hub bypass/enable mode and controls upstream hub connection | MCU ROM / MCU firmware |
 | HUB RAM | Stores hub descriptors, SETUP-request match entries, and response metadata | MCU ROM / MCU firmware |
-| Device 0 register bank | Controls MCU-owned USB device instance, including DCON | MCU ROM / MCU firmware |
+| Device 0 register bank | Controls MCU owned USB device instance, including DCON | MCU ROM / MCU firmware |
 | Device 0 EP-list RAM | Stores USBDC0 endpoint command/status entries | MCU ROM / MCU firmware |
 | Device 0 data-buffer RAM | Stores USBDC0 SETUP, control, interrupt, and bulk-transfer data | MCU ROM / MCU firmware |
 | Device 0 IRQ | IRQ associated with USBDC0 instance. | MCU ROM / MCU firmware |
-| Device 1 register bank | Controls SoC-owned USBDC1 instance, including DCON | SoC-uC firmware |
+| Device 1 register bank | Controls SoC-uC owned USBDC1 instance, including DCON | SoC-uC firmware |
 | Device 1 EP-list RAM | Stores USBDC1 endpoint command/status entries | SoC-uC firmware |
 | Device 1 data-buffer RAM | Stores USBDC1 SETUP, control, interrupt, and bulk-transfer data | SoC-uC firmware |
 | Device 1 IRQ | IRQ associated with USBDC1 instance. | SoC-uC firmware |
@@ -161,7 +167,7 @@ sequenceDiagram
     MCU_FW->>MCUU: USBDC initialize
     MCUU->>EVH: USBDC0 connected
 
-    EVH->>Host: Port0 Status Change
+    EVH--)Host: Port0 Status Change
     Host->>EVH: Get Port0 Status
     EVH-->>Host: Port0 Connected
 
@@ -177,7 +183,7 @@ sequenceDiagram
     CM55_FW->>CM55U: USBDC initialize
     CM55U->>EVH: Device Ready
 
-    EVH->>Host: Port1 Status Change
+    EVH--)Host: Port1 Status Change
     Host->>EVH: Get Port1 Status
     EVH-->>Host: Port1 Connected
 
@@ -188,7 +194,7 @@ sequenceDiagram
 
     Note over Host,CM55_FW: Final State
     Note over CM55_FW: SoC-uC FW can implement composite USB device<br/>with multiple interfaces and endpoints
-    EVH-->>Host: Hub Operational<br/>Port0 Enumerated<br/>Port1 Enumerated
+    EVH--)Host: Hub Operational<br/>Port0 Enumerated<br/>Port1 Enumerated
 ```
 --------------------
 ##### 2.4.1.1 HUB Enumeration
@@ -272,23 +278,23 @@ sequenceDiagram
 
     Note over Host,CM55_FW: Hitless update of SoC-uC
     Host <<->> MCU_FW : OCP hitless update of SoC-uC
-    MCU_FW <<->> CM55_FW : Reset_Req/ACK
-    MCU_FW ->> soc : Reset SoC-uC for update
-    soc ->> CM55U : Disconnect request
+    MCU_FW ->> CM55_FW : Reset_Req
+    CM55_FW ->> CM55U : Clear DCON
     CM55U ->> EVH : Device disconnected
+    CM55_FW -->>MCU_FW : Reset_ACK
+    MCU_FW ->> soc : Reset SoC-uC for update
 
-    Note over CM55U,CM55_FW: USBDC owned by SoC-uC resets
-    EVH ->> Host : Port1 Status Change
+    EVH --) Host : Port1 Status Change
     Host ->> EVH : Get Port1 Status
     EVH -->> Host : Port1 dis-connected
 
     note over soc,CM55_FW: SoC-uC boots boot the updated runtime FW.
 
     soc ->> CM55_FW : Boot updated FW
-    CM55_FW ->> CM55U : USBDC initialize
+    CM55_FW ->> CM55U : USBDC re-initialize ECL & set DCON
     CM55U ->> EVH : Device Ready
 
-    EVH ->> Host : Port1 Status Change
+    EVH --) Host : Port1 Status Change
     Host ->> EVH : Get Port1 Status
     EVH -->> Host : Port1 Connected
 
@@ -298,25 +304,6 @@ sequenceDiagram
     note over CM55U,CM55_FW: USBDC1 now operational and visible on USB.
 
 ```
-##### 2.4.2.1 SoC USB reset asserted with SoC reset
-
-If the USBDC1 AHB reset is asserted with the SoC controller reset:
-
-1. USBDC1 register state is reset and USBDC1 disconnects.
-2. Hub and USBDC0 MUST remain operational.
-3. After restart, SoC firmware MUST rebuild USBDC1's register state, EP list, and buffers before setting USBDC1 `DCON`.
-
-##### 2.4.2.2 SoC USB reset not asserted
-
-If USBDC1 is not reset automatically:
-
-1. The reset initiator or MCU firmware MUST clear USBDC1 `DCON` before SoC reset.
-2. Firmware MUST quiesce active USBDC1 endpoint buffers and revoke USBDC1 RAM ownership as required.
-3. USBDC1 MUST remain disconnected while the SoC owner is unavailable.
-4. Restarted SoC firmware MUST reinitialize USBDC1 before setting `DCON`.
-5. Firmware MUST NOT clear `HUB_CONNECT`, because that would also disconnect USBDC0.
-
-Returning STALL responses for the entire reset interval is not the required recovery model. Controlled USBDC1 disconnect and reconnect is required.
 
 #### 2.4.3 Common Cold-Boot Sequence
 
@@ -364,6 +351,8 @@ The hub has a dedicated AHB slave interface containing one 32-bit control & stat
 6. Clearing `HUB_CONNECT` disconnects the complete compound device. It MUST NOT be used for a Device 1-only reset or hitless update when Device 0 must remain available.
 
 ### 3.2 HUB RAM Programming Model
+
+HUB_RAM is a dedicated memory region used to store USB hub configuration and descriptor data used by the RTL lookup logic. While the hub configuration is largely static in nature, storing it in RAM rather than implementing it as fixed hardware registers provides flexibility for firmware to program or update the configuration prior to USB enumeration. This design choice enables late binding of hub attributes and descriptors without requiring RTL changes, while maintaining a fixed operational configuration during normal runtime.
 
 #### 3.2.1 Capacity and access window
 
