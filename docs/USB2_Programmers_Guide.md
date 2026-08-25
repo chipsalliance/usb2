@@ -366,7 +366,7 @@ Firmware MUST observe the following rules:
 4. Firmware SHOULD read back the programmed words before enabling the hub.
 5. The hub controller supports descriptors with a maximum length of 64 bytes.
 6. The first descriptor stored in HUB RAM is limited to 60 bytes. Storing the hub Device Descriptor first is recommended.
-7. The number of descriptors and request-match entries is configurable within the available 512-byte RAM.
+7. The number of descriptors and request-match entries is configurable within the available 512-byte RAM. Note, software can include multiple 64-byte descriptor data structures in RAM. The value programmed into the `ptrSetupTable` field determines the boundary between the descriptor array and the SETUP-match entry array. Descriptors are located before this address, while the SETUP-match entries begin at this address.
 
 > The offsets in the remainder of this section are HUB RAM-local offsets. If software accesses the RAM through the hub address window, it must add the HUB RAM aperture base offset of `0x200`.
 
