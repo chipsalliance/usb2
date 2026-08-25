@@ -361,10 +361,7 @@ localparam int OCP_USB_MIN_TRANSFER_SIZE           = 64;
 
 // ----------------------------------------------------------------------------
 // Within-record byte offsets used by multiple modules.
-// All offsets and units come from OCP Recovery v1.1 Sec 9.2 tables.  Where the
-// in-tree authoritative precedent at
-//   third_party/i3c-core/src/rdl/secure_firmware_recovery_interface.rdl
-// disagrees with our local RDL, the i3c-rdl wins (per plan SecD0.C).
+// All offsets and units come from OCP Recovery v1.1 Sec 9.2 tables.
 // ----------------------------------------------------------------------------
 // DEVICE_STATUS (Sec 9.2)
 localparam int OCP_OFF_DS_STATUS         = 0;  // byte 0  : DEVICE_STATUS

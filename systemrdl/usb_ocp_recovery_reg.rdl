@@ -15,10 +15,9 @@
 // USB OCP Recovery v1.1 register map
 //
 // This file is the single source of truth for the USB transport view of the
-// OCP Secure Firmware Recovery v1.1 command window. It is modeled after the
-// in-tree I3C reference RDL, but the top-level addrmap is flattened for direct
-// placement at SOC_USB_OCP_RECOVERY_BASE_ADDR and the I3C-only EXTCAP_HEADER
-// is intentionally omitted.
+// OCP Secure Firmware Recovery v1.1 command window.
+// It is designed to provide firmware parity with existing implementations of
+// OCP Recovery registers.
 
 addrmap usb_ocp_recovery_reg {
     name = "USB OCP Recovery";
@@ -64,8 +63,7 @@ addrmap usb_ocp_recovery_reg {
         // ----------------------------------------------------------------
         // AGENT_CAPS (PROT_CAP bytes 10-11) -- OCP Recovery v1.1 Sec 9.2
         // PROT_CAP "Recovery Protocol Capabilities" bitmap.
-        // Bit names taken from the spec capability list (mirrored in the
-        // I3C reference RDL secure_firmware_recovery_interface.rdl).
+        // Bit names taken from the spec capability list.
         // FIFO-only agent; bit5 direct CMS-memory access cleared.
         // Summation of set bits = 0x1E9B:
         //   bit0  IDENTIFICATION         0x0001
