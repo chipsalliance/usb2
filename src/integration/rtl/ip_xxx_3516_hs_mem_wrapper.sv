@@ -297,11 +297,9 @@ module ip_xxx_3516_hs_mem_wrapper
     // ----------------------------------------------------------------
     // OCP Recovery v1.1 - A7 integration (additive, 2026)
     // ----------------------------------------------------------------
-    // Note (Phase 1c): the AXI4-Lite management port (rec_axi_*)
-    // has been removed.  The recovery register-bus is now
+    // Note: The recovery register-bus is now
     // accessed via an AHB sub-decoder taking off the existing
-    // dev_axi -> AHB path (see rec_ahb_subdec below; OCP
-    // Recovery v1.1 Section 8.5).
+    // dev_axi -> AHB path.
  
     // Sideband inputs (SoC -> recovery FSM)
     input                       rec_trigger,

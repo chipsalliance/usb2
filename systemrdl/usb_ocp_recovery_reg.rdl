@@ -878,7 +878,7 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Vendor command placeholder";
-        desc = "One-byte VENDOR placeholder per Phase 1b D0.I.bis. OCP Recovery v1.1 Sec 9.2 VENDOR command summary. This project intentionally trims the VENDOR aperture to a single byte placeholder and leaves expansion for a later phase.";
+        desc = "One-byte VENDOR placeholder. OCP Recovery v1.1 Sec 9.2 VENDOR command summary. VENDOR aperture is a single byte placeholder pending future implementation.";
         field {
             name = "Vendor placeholder byte";
             desc = "Byte 0 placeholder for the vendor-defined command space. This project currently models only one byte, reset to 0. OCP Recovery v1.1 Sec 9.2 VENDOR command summary.";
