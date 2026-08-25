@@ -478,8 +478,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value <= 1'h1;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value <= field_combo.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.next;
@@ -499,8 +499,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value <= 1'h1;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value <= field_combo.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.next;
@@ -520,8 +520,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value <= 1'h0;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value <= field_combo.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.next;
@@ -541,8 +541,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value <= 1'h1;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value <= field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.next;
@@ -562,8 +562,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value <= 1'h1;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value <= field_combo.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.next;
@@ -583,8 +583,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value <= 1'h0;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value <= field_combo.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.next;
@@ -604,8 +604,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value <= 1'h0;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value <= field_combo.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.next;
@@ -625,8 +625,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value <= 1'h1;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value <= field_combo.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.next;
@@ -646,8 +646,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value <= 1'h0;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value <= field_combo.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.next;
@@ -667,8 +667,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value <= 1'h1;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value <= field_combo.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.next;
@@ -688,8 +688,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value <= 1'h1;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value <= field_combo.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.next;
@@ -709,8 +709,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value <= 1'h1;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value <= field_combo.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.next;
@@ -730,8 +730,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.next = next_c;
         field_combo.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value <= 1'h1;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value <= field_combo.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.next;
@@ -752,8 +752,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_3.NUM_OF_CMS_REGIONS.next = next_c;
         field_combo.PROT_CAP_3.NUM_OF_CMS_REGIONS.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_3.NUM_OF_CMS_REGIONS.value <= 8'h1;
         end else if(field_combo.PROT_CAP_3.NUM_OF_CMS_REGIONS.load_next) begin
             field_storage.PROT_CAP_3.NUM_OF_CMS_REGIONS.value <= field_combo.PROT_CAP_3.NUM_OF_CMS_REGIONS.next;
@@ -773,8 +773,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_3.MAX_RESP_TIME.next = next_c;
         field_combo.PROT_CAP_3.MAX_RESP_TIME.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_3.MAX_RESP_TIME.value <= 8'h0;
         end else if(field_combo.PROT_CAP_3.MAX_RESP_TIME.load_next) begin
             field_storage.PROT_CAP_3.MAX_RESP_TIME.value <= field_combo.PROT_CAP_3.MAX_RESP_TIME.next;
@@ -794,8 +794,8 @@ module usb_ocp_recovery_reg (
         field_combo.PROT_CAP_3.HEARTBEAT_PERIOD.next = next_c;
         field_combo.PROT_CAP_3.HEARTBEAT_PERIOD.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value <= 8'h0;
         end else if(field_combo.PROT_CAP_3.HEARTBEAT_PERIOD.load_next) begin
             field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value <= field_combo.PROT_CAP_3.HEARTBEAT_PERIOD.next;
@@ -819,8 +819,8 @@ module usb_ocp_recovery_reg (
         field_combo.DEVICE_RESET.RESET_CTRL.next = next_c;
         field_combo.DEVICE_RESET.RESET_CTRL.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.DEVICE_RESET.RESET_CTRL.value <= 8'h0;
         end else if(field_combo.DEVICE_RESET.RESET_CTRL.load_next) begin
             field_storage.DEVICE_RESET.RESET_CTRL.value <= field_combo.DEVICE_RESET.RESET_CTRL.next;
@@ -843,8 +843,8 @@ module usb_ocp_recovery_reg (
         field_combo.DEVICE_RESET.FORCED_RECOVERY.next = next_c;
         field_combo.DEVICE_RESET.FORCED_RECOVERY.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.DEVICE_RESET.FORCED_RECOVERY.value <= 8'h0;
         end else if(field_combo.DEVICE_RESET.FORCED_RECOVERY.load_next) begin
             field_storage.DEVICE_RESET.FORCED_RECOVERY.value <= field_combo.DEVICE_RESET.FORCED_RECOVERY.next;
@@ -867,8 +867,8 @@ module usb_ocp_recovery_reg (
         field_combo.DEVICE_RESET.IF_CTRL.next = next_c;
         field_combo.DEVICE_RESET.IF_CTRL.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.DEVICE_RESET.IF_CTRL.value <= 8'h0;
         end else if(field_combo.DEVICE_RESET.IF_CTRL.load_next) begin
             field_storage.DEVICE_RESET.IF_CTRL.value <= field_combo.DEVICE_RESET.IF_CTRL.next;
@@ -891,8 +891,8 @@ module usb_ocp_recovery_reg (
         field_combo.RECOVERY_CTRL.CMS.next = next_c;
         field_combo.RECOVERY_CTRL.CMS.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.RECOVERY_CTRL.CMS.value <= 8'h0;
         end else if(field_combo.RECOVERY_CTRL.CMS.load_next) begin
             field_storage.RECOVERY_CTRL.CMS.value <= field_combo.RECOVERY_CTRL.CMS.next;
@@ -915,8 +915,8 @@ module usb_ocp_recovery_reg (
         field_combo.RECOVERY_CTRL.REC_IMG_SEL.next = next_c;
         field_combo.RECOVERY_CTRL.REC_IMG_SEL.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.RECOVERY_CTRL.REC_IMG_SEL.value <= 8'h0;
         end else if(field_combo.RECOVERY_CTRL.REC_IMG_SEL.load_next) begin
             field_storage.RECOVERY_CTRL.REC_IMG_SEL.value <= field_combo.RECOVERY_CTRL.REC_IMG_SEL.next;
@@ -939,8 +939,8 @@ module usb_ocp_recovery_reg (
         field_combo.RECOVERY_CTRL.ACTIVATE_REC_IMG.next = next_c;
         field_combo.RECOVERY_CTRL.ACTIVATE_REC_IMG.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value <= 8'h0;
         end else if(field_combo.RECOVERY_CTRL.ACTIVATE_REC_IMG.load_next) begin
             field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value <= field_combo.RECOVERY_CTRL.ACTIVATE_REC_IMG.next;
@@ -961,8 +961,8 @@ module usb_ocp_recovery_reg (
         field_combo.HW_STATUS.TEMP_CRITICAL.next = next_c;
         field_combo.HW_STATUS.TEMP_CRITICAL.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.HW_STATUS.TEMP_CRITICAL.value <= 1'h0;
         end else if(field_combo.HW_STATUS.TEMP_CRITICAL.load_next) begin
             field_storage.HW_STATUS.TEMP_CRITICAL.value <= field_combo.HW_STATUS.TEMP_CRITICAL.next;
@@ -982,8 +982,8 @@ module usb_ocp_recovery_reg (
         field_combo.HW_STATUS.SOFT_ERR.next = next_c;
         field_combo.HW_STATUS.SOFT_ERR.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.HW_STATUS.SOFT_ERR.value <= 1'h0;
         end else if(field_combo.HW_STATUS.SOFT_ERR.load_next) begin
             field_storage.HW_STATUS.SOFT_ERR.value <= field_combo.HW_STATUS.SOFT_ERR.next;
@@ -1003,8 +1003,8 @@ module usb_ocp_recovery_reg (
         field_combo.HW_STATUS.FATAL_ERR.next = next_c;
         field_combo.HW_STATUS.FATAL_ERR.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.HW_STATUS.FATAL_ERR.value <= 1'h0;
         end else if(field_combo.HW_STATUS.FATAL_ERR.load_next) begin
             field_storage.HW_STATUS.FATAL_ERR.value <= field_combo.HW_STATUS.FATAL_ERR.next;
@@ -1024,8 +1024,8 @@ module usb_ocp_recovery_reg (
         field_combo.HW_STATUS.RESERVED_7_3.next = next_c;
         field_combo.HW_STATUS.RESERVED_7_3.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.HW_STATUS.RESERVED_7_3.value <= 5'h0;
         end else if(field_combo.HW_STATUS.RESERVED_7_3.load_next) begin
             field_storage.HW_STATUS.RESERVED_7_3.value <= field_combo.HW_STATUS.RESERVED_7_3.next;
@@ -1045,8 +1045,8 @@ module usb_ocp_recovery_reg (
         field_combo.HW_STATUS.VENDOR_HW_STATUS.next = next_c;
         field_combo.HW_STATUS.VENDOR_HW_STATUS.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.HW_STATUS.VENDOR_HW_STATUS.value <= 8'h0;
         end else if(field_combo.HW_STATUS.VENDOR_HW_STATUS.load_next) begin
             field_storage.HW_STATUS.VENDOR_HW_STATUS.value <= field_combo.HW_STATUS.VENDOR_HW_STATUS.next;
@@ -1066,8 +1066,8 @@ module usb_ocp_recovery_reg (
         field_combo.HW_STATUS.CTEMP.next = next_c;
         field_combo.HW_STATUS.CTEMP.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.HW_STATUS.CTEMP.value <= 8'h0;
         end else if(field_combo.HW_STATUS.CTEMP.load_next) begin
             field_storage.HW_STATUS.CTEMP.value <= field_combo.HW_STATUS.CTEMP.next;
@@ -1087,8 +1087,8 @@ module usb_ocp_recovery_reg (
         field_combo.HW_STATUS.VENDOR_HW_STATUS_LEN.next = next_c;
         field_combo.HW_STATUS.VENDOR_HW_STATUS_LEN.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.HW_STATUS.VENDOR_HW_STATUS_LEN.value <= 8'h0;
         end else if(field_combo.HW_STATUS.VENDOR_HW_STATUS_LEN.load_next) begin
             field_storage.HW_STATUS.VENDOR_HW_STATUS_LEN.value <= field_combo.HW_STATUS.VENDOR_HW_STATUS_LEN.next;
@@ -1111,8 +1111,8 @@ module usb_ocp_recovery_reg (
         field_combo.INDIRECT_FIFO_CTRL_0.CMS.next = next_c;
         field_combo.INDIRECT_FIFO_CTRL_0.CMS.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.INDIRECT_FIFO_CTRL_0.CMS.value <= 8'h0;
         end else if(field_combo.INDIRECT_FIFO_CTRL_0.CMS.load_next) begin
             field_storage.INDIRECT_FIFO_CTRL_0.CMS.value <= field_combo.INDIRECT_FIFO_CTRL_0.CMS.next;
@@ -1135,8 +1135,8 @@ module usb_ocp_recovery_reg (
         field_combo.INDIRECT_FIFO_CTRL_0.RESET.next = next_c;
         field_combo.INDIRECT_FIFO_CTRL_0.RESET.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.INDIRECT_FIFO_CTRL_0.RESET.value <= 8'h0;
         end else if(field_combo.INDIRECT_FIFO_CTRL_0.RESET.load_next) begin
             field_storage.INDIRECT_FIFO_CTRL_0.RESET.value <= field_combo.INDIRECT_FIFO_CTRL_0.RESET.next;
@@ -1158,8 +1158,8 @@ module usb_ocp_recovery_reg (
         field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next = next_c;
         field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value <= 32'h0;
         end else if(field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.load_next) begin
             field_storage.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.value <= field_combo.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.next;
@@ -1187,8 +1187,8 @@ module usb_ocp_recovery_reg (
         field_combo.INDIRECT_FIFO_DATA.DATA.next = next_c;
         field_combo.INDIRECT_FIFO_DATA.DATA.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.INDIRECT_FIFO_DATA.DATA.value <= 32'h0;
         end else if(field_combo.INDIRECT_FIFO_DATA.DATA.load_next) begin
             field_storage.INDIRECT_FIFO_DATA.DATA.value <= field_combo.INDIRECT_FIFO_DATA.DATA.next;
@@ -1211,8 +1211,8 @@ module usb_ocp_recovery_reg (
         field_combo.VENDOR.VENDOR_DATA.next = next_c;
         field_combo.VENDOR.VENDOR_DATA.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.VENDOR.VENDOR_DATA.value <= 8'h0;
         end else if(field_combo.VENDOR.VENDOR_DATA.load_next) begin
             field_storage.VENDOR.VENDOR_DATA.value <= field_combo.VENDOR.VENDOR_DATA.next;
@@ -1232,8 +1232,8 @@ module usb_ocp_recovery_reg (
         field_combo.CALIPTRA_CTRL.OCP_PATH_DISABLE.next = next_c;
         field_combo.CALIPTRA_CTRL.OCP_PATH_DISABLE.load_next = load_next_c;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
             field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value <= 1'h0;
         end else if(field_combo.CALIPTRA_CTRL.OCP_PATH_DISABLE.load_next) begin
             field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value <= field_combo.CALIPTRA_CTRL.OCP_PATH_DISABLE.next;
@@ -1365,6 +1365,6 @@ module usb_ocp_recovery_reg (
     assign cpuif_rd_data = readback_data;
     assign cpuif_rd_err = readback_err;
 
-`CALIPTRA_ASSERT_KNOWN(ERR_HWIF_IN, hwif_in, clk, rst)
+`CALIPTRA_ASSERT_KNOWN(ERR_HWIF_IN, hwif_in, clk, !hwif_in.rst_ni)
 
 endmodule

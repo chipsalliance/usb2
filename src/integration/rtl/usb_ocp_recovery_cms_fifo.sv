@@ -48,7 +48,7 @@ module usb_ocp_recovery_cms_fifo #(
   parameter int FIFO_DEPTH = usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS
 )(
   input  logic clk,
-  input  logic rst,
+  input  logic rst_ni,
 
   // Compatibility-only legacy surface. EXT data no longer pops in clk_rd.
   input  logic clk_rd,
@@ -344,7 +344,7 @@ module usb_ocp_recovery_cms_fifo #(
     .OutputZeroIfEmpty(1'b0)
   ) u_indirect_fifo (
     .clk_i    (clk),
-    .rst_ni   (~rst),
+    .rst_ni   (rst_ni),
     .clr_i    (fifo_clear),
     .wvalid_i (fifo_wvalid),
     .wready_o (fifo_wready),
@@ -362,7 +362,7 @@ module usb_ocp_recovery_cms_fifo #(
   assign fifo_rdepth_int = fifo_wdepth;
 
   always_ff @(posedge clk) begin
-    if (rst) begin
+    if (!rst_ni) begin
       fifo_cms_q          <= '0;
       image_size_q        <= '0;
       write_index_q       <= '0;
@@ -597,7 +597,7 @@ module usb_ocp_recovery_cms_fifo #(
 `ifndef SYNTHESIS
   // synopsys translate_off
   always_ff @(posedge clk) begin
-    if (!rst) begin
+    if (rst_ni) begin
       if (fifo_rb_sel) begin
         assert (!$isunknown(fifo_rb_cmd))
           else $error("usb_ocp_recovery_cms_fifo: fifo_rb_cmd is X");
@@ -612,7 +612,7 @@ module usb_ocp_recovery_cms_fifo #(
         else $error("usb_ocp_recovery_cms_fifo: both sources attempted DATA pop");
       assert (!ext_data_rd || ext_data_mirror_ready_q)
         else $error("usb_ocp_recovery_cms_fifo: EXT data read fired before the regblock mirror was ready");
-      if (!$past(rst)) begin
+      if ($past(rst_ni)) begin
         assert (!$past(ext_head_change) || !ext_data_mirror_ready_q)
           else $error("usb_ocp_recovery_cms_fifo: head-changing event failed to clear EXT mirror readiness");
       end
@@ -645,11 +645,11 @@ module usb_ocp_recovery_cms_fifo #(
           end
         end
       end
-      if (!$past(rst) && $past(batch_aborted_q) && !fifo_flush) begin
+      if ($past(rst_ni) && $past(batch_aborted_q) && !fifo_flush) begin
         assert (batch_aborted_q)
           else $error("usb_ocp_recovery_cms_fifo: batch aborted cleared without reset");
       end
-      if (!$past(rst) && $past(payload_available_q) && !fifo_clear && !fifo_empty) begin
+      if ($past(rst_ni) && $past(payload_available_q) && !fifo_clear && !fifo_empty) begin
         assert (payload_available_q)
           else $error("usb_ocp_recovery_cms_fifo: payload available dropped before FIFO empty");
       end

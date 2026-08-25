@@ -15,7 +15,7 @@
 //   A5 : usb_ocp_recovery_fsm         (SV)
 //
 // Clock / Reset:
-//   Single clock `clk`, synchronous active-high `rst` (SV convention).
+//   Single clock `clk`, synchronous active-low `rst_ni`.
 //------------------------------------------------------------------------------
 
 module usb_ocp_recovery_top #(
@@ -24,7 +24,7 @@ module usb_ocp_recovery_top #(
   parameter int           FIFO_DEPTH_DWORDS = usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS
 )(
   input  logic                    clk,
-  input  logic                    rst,
+  input  logic                    rst_ni,
 
   //----------------------------------------------------------------------------
   // Legacy fifo_rd_* compatibility ports. The native dev_axi pop bypass was
@@ -280,7 +280,7 @@ module usb_ocp_recovery_top #(
   end
 
   always_ff @(posedge clk) begin
-    if (rst) begin
+    if (!rst_ni) begin
       owner_q          <= 2'b00;
       ext_in_flight_q  <= 1'b0;
     end else begin
@@ -350,7 +350,7 @@ module usb_ocp_recovery_top #(
 
   usb_ocp_recovery_ctrl_decode u_a2_ctrl_decode (
     .clk             (clk),
-    .rst             (rst),
+    .rst_ni          (rst_ni),
 
     .setup_pkt_vld   (rec_setup_pkt_vld),
     .setup_pkt       (rec_setup_pkt),
@@ -504,7 +504,7 @@ module usb_ocp_recovery_top #(
 
   usb_ocp_recovery_rb_adapter u_a3_adapter (
     .clk             (clk),
-    .rst             (rst),
+    .rst_ni          (rst_ni),
 
     .rb_cmd          (rb_cmd),
     .rb_offset       (rb_offset),
@@ -536,7 +536,7 @@ module usb_ocp_recovery_top #(
   // verifying the drained image. Delay cpuif swmod one cycle so the updated
   // field value is valid when the FSM recognizes that device-side clear.
   always_ff @(posedge clk) begin
-    if (rst) begin
+    if (!rst_ni) begin
       firmware_activate_clear_q <= 1'b0;
     end else begin
       firmware_activate_clear_q <= rb_hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.swmod;
@@ -629,6 +629,7 @@ module usb_ocp_recovery_top #(
   // --------------------------------------------------------------------------
   always_comb begin
     rb_hwif_in = '{default: '0};
+    rb_hwif_in.rst_ni = rst_ni;
 
     // PROT_CAP is firmware-configurable through cpuif and exposed to the USB
     // endpoint through hwif_out. Its RDL hw=r properties make the stored values
@@ -723,7 +724,7 @@ module usb_ocp_recovery_top #(
 
   usb_ocp_recovery_reg u_a3_regblock (
     .clk                  (clk),
-    .rst                  (rst),
+    .rst                  (~rst_ni), // Legacy generated compatibility reset port.
 
     .s_cpuif_req          (cpuif_req),
     .s_cpuif_req_is_wr    (cpuif_req_is_wr),
@@ -750,7 +751,7 @@ module usb_ocp_recovery_top #(
   // below, so they never share this direct port and therefore cannot inject
   // backpressure into the Recovery Agent data stream.
   always_ff @(posedge clk) begin
-    if (rst) begin
+    if (!rst_ni) begin
       usb_fifo_packet_active_q <= 1'b0;
     end else begin
       if (rec_ctrl_xfer_done || rec_ctrl_xfer_abort) begin
@@ -781,7 +782,7 @@ module usb_ocp_recovery_top #(
     .FIFO_DEPTH (FIFO_DEPTH_DWORDS)
   ) u_a4_cms_fifo (
     .clk             (clk),
-    .rst             (rst),
+    .rst_ni          (rst_ni),
 
     // Compatibility ports retained for the async FIFO hierarchy.
     .clk_rd          (clk_rd),
@@ -841,7 +842,7 @@ module usb_ocp_recovery_top #(
 
   usb_ocp_recovery_fsm u_a5_fsm (
     .clk             (clk),
-    .rst             (rst),
+    .rst_ni          (rst_ni),
 
     .rec_trigger     (rec_trigger),
     .soc_boot_ack    (soc_boot_ack),
@@ -894,7 +895,7 @@ module usb_ocp_recovery_top #(
   //////////////////////////////////////////////////////////////////////////////
   // synopsys translate_off
   always_ff @(posedge clk) begin
-    if (!rst) begin
+    if (rst_ni) begin
       assert (!(rb_wr && rb_rd))
         else $error("usb_ocp_recovery_top: rb_wr and rb_rd both asserted");
       assert (!(usb_rb_wr && usb_rb_rd))

@@ -407,6 +407,7 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__CALIPTRA_STATUS__in_t;
 
     typedef struct packed{
+        logic rst_ni;
         usb_ocp_recovery_reg__DEVICE_ID_0__in_t DEVICE_ID_0;
         usb_ocp_recovery_reg__DEVICE_ID_1__in_t DEVICE_ID_1;
         usb_ocp_recovery_reg__DEVICE_ID_2__in_t DEVICE_ID_2;

@@ -843,11 +843,8 @@ module ip_xxx_3516_hs_mem_wrapper
     // (Declared at the top of the module so the uut port-map sees the
     // proper vector widths; see decls near line 387.)
 
-    // ---- Recovery subsystem reset. ----
     // Recovery stack and AHB management surface share dev_axi_aclk with the
-    // post-sync arbiter. Reset is the active-high subordinate reset.
-    logic rec_rst;
-    assign rec_rst = ~dev_axi_aresetn;
+    // post-sync arbiter and use the subordinate active-low reset directly.
 
     // ==================================================================
     // Recovery aperture bridge
@@ -1004,7 +1001,7 @@ module ip_xxx_3516_hs_mem_wrapper
     ) u_ocp_recovery (
         // Recovery logic shares dev_axi_aclk with its AHB management surface.
         .clk  (dev_axi_aclk),
-        .rst  (rec_rst),
+        .rst_ni(dev_axi_aresetn),
 
         // Legacy fifo_rd_* ports stay plumbed for S4d async FIFO compatibility.
         .clk_rd        (dev_axi_aclk),

@@ -21,7 +21,7 @@
 //
 // State diagram (Sec 6 flow, minimized):
 //
-//   rst                    rec_trigger
+//   rst_ni                 rec_trigger
 //    |                          |
 //    v                          v
 //   S_IDLE ---rec_trigger---> S_DETECTED
@@ -57,7 +57,7 @@
 
 module usb_ocp_recovery_fsm (
   input  logic        clk,
-  input  logic        rst,
+  input  logic        rst_ni,
 
   // Trigger inputs from SoC / platform
   input  logic        rec_trigger,
@@ -520,7 +520,7 @@ module usb_ocp_recovery_fsm (
   // Sequential
   // ---------------------------------------------------------------------------
   always_ff @(posedge clk) begin
-    if (rst) begin
+    if (!rst_ni) begin
       state_q       <= S_IDLE;
       img_idx_q     <= 4'h0;
       size_err_q    <= 1'b0;
@@ -545,7 +545,7 @@ module usb_ocp_recovery_fsm (
 `ifndef SYNTHESIS
   // X-check on critical controls
   always_ff @(posedge clk) begin
-    if (!rst) begin
+    if (rst_ni) begin
       assert (!$isunknown({rec_trigger, soc_boot_ack,
                            device_reset_wr, recovery_ctrl_wr,
                            image_push_active, image_push_done,
@@ -556,7 +556,7 @@ module usb_ocp_recovery_fsm (
 
   // boot_req must only assert once image_ready has been asserted
   property p_boot_req_implies_image_ready;
-    @(posedge clk) disable iff (rst)
+    @(posedge clk) disable iff (!rst_ni)
       boot_req |-> image_ready;
   endproperty
   assert property (p_boot_req_implies_image_ready)
@@ -564,7 +564,7 @@ module usb_ocp_recovery_fsm (
 
   // fatal_err must only assert in S_ERROR
   property p_fatal_err_state;
-    @(posedge clk) disable iff (rst)
+    @(posedge clk) disable iff (!rst_ni)
       fatal_err |-> (state_q == S_ERROR);
   endproperty
   assert property (p_fatal_err_state)
@@ -572,7 +572,7 @@ module usb_ocp_recovery_fsm (
 
   // device_reset_req is a single-cycle pulse
   property p_reset_req_pulse;
-    @(posedge clk) disable iff (rst)
+    @(posedge clk) disable iff (!rst_ni)
       device_reset_req |=> !device_reset_req;
   endproperty
   assert property (p_reset_req_pulse)
@@ -582,7 +582,7 @@ module usb_ocp_recovery_fsm (
   // must not boot before firmware finishes drain/verification and clears the
   // standard field. Firmware nonzero writes are not presented as a clear.
   property p_ra_activate_waits_for_firmware_clear;
-    @(posedge clk) disable iff (rst)
+    @(posedge clk) disable iff (!rst_ni)
       (state_q == S_IMAGE_LOADED && activate_cmd && !firmware_activate_clear)
       |=> (state_q == S_IMAGE_LOADED);
   endproperty
@@ -590,7 +590,7 @@ module usb_ocp_recovery_fsm (
     else $error("usb_ocp_recovery_fsm: RA activation booted before firmware clear");
 
   property p_firmware_clear_consumes_pending_activation;
-    @(posedge clk) disable iff (rst)
+    @(posedge clk) disable iff (!rst_ni)
       (state_q == S_IMAGE_LOADED && activation_pending_q && firmware_activate_clear)
       |=> (state_q == S_ACTIVATE);
   endproperty

@@ -50,7 +50,7 @@
 
 module usb_ocp_recovery_ctrl_decode (
   input  logic        clk,
-  input  logic        rst,                 // sync active-high
+  input  logic        rst_ni,              // sync active-low
 
   // from the arbiter control EP surface (32-bit word + byte-enable)
   input  logic        setup_pkt_vld,
@@ -183,7 +183,7 @@ module usb_ocp_recovery_ctrl_decode (
   // Sequential
   //---------------------------------------------------------------------------
   always_ff @(posedge clk) begin
-    if (rst) begin
+    if (!rst_ni) begin
       state_q  <= S_IDLE;
       cmd_q    <= '0;
       is_in_q  <= 1'b0;
@@ -444,7 +444,7 @@ module usb_ocp_recovery_ctrl_decode (
   //---------------------------------------------------------------------------
 `ifndef SYNTHESIS
   always_ff @(posedge clk) begin
-    if (!rst) begin
+    if (rst_ni) begin
       if (setup_pkt_vld) begin
         assert (!$isunknown(setup_pkt))
           else $error("ctrl_decode: setup_pkt has X with vld high");

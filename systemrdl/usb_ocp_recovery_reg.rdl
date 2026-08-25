@@ -24,6 +24,8 @@ addrmap usb_ocp_recovery_reg {
     desc = "USB transport OCP Secure Firmware Recovery v1.1 register aperture. OCP command fields follow OCP Recovery v1.1 Sec 9.2 command summaries, with USB-specific live-status behaviors aligned to usb_ocp_recovery_regs.sv and usb_ocp_recovery_cms_fifo.sv.";
     default regwidth = 32;
     default hw = na;
+    signal {activelow; async;} rst_ni;
+    default resetsignal = rst_ni;
 
     // PROT_CAP command (cmd 0x22, bytes 0-15).
     reg {

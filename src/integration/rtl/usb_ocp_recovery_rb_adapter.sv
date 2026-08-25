@@ -38,12 +38,12 @@
 //     cpuif_req pulse so swmod fires exactly once per word.
 //   - All implemented EXT commands ack through the regblock cpuif path.
 //
-// Reset: synchronous, active-high (SV integration convention).
+// Reset: synchronous, active-low `rst_ni`.
 // ============================================================================
 
 module usb_ocp_recovery_rb_adapter (
   input  logic        clk,
-  input  logic        rst,
+  input  logic        rst_ni,
 
   // --------------------------------------------------------------------------
   // Word-wide USB command path.
@@ -305,7 +305,7 @@ module usb_ocp_recovery_rb_adapter (
   logic        unsupported_cmd_pulse_q;
 
   always_ff @(posedge clk) begin
-    if (rst) begin
+    if (!rst_ni) begin
       rb_ack_q             <= 1'b0;
       rb_err_q             <= 1'b0;
       rb_rdata_q           <= '0;
@@ -369,7 +369,7 @@ module usb_ocp_recovery_rb_adapter (
 `ifndef SYNTHESIS
   // synopsys translate_off
   always_ff @(posedge clk) begin
-    if (!rst) begin
+    if (rst_ni) begin
       assert (!(rb_wr && rb_rd))
         else $error("usb_ocp_recovery_rb_adapter: rb_wr and rb_rd both asserted");
       if (rb_wr | rb_rd) begin
