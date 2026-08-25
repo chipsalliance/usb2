@@ -87,6 +87,7 @@ The external USB host observes a topology equivalent to:
 ### 2.2 Programmer View
 
 ![](module_view.png)
+TODO: This diagram will be updated with more accurate AXI interfaces (Will show 4 independent AXI interfaces for SOC side of integration)
 
 #### 2.2.1. Software-visible resources
 
