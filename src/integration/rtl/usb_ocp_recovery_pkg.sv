@@ -36,15 +36,24 @@ localparam logic [7:0] OCP_CMD_MAX                  = 8'h2F;
 
 typedef logic [7:0] ocp_cmd_t;
 
-// Caliptra-specific (non-OCP) register command tags.  These carry no OCP
-// wValue and are produced ONLY by the firmware/AXI (EXT) sub-decoder in
-// ip_xxx_3516_hs_mem_wrapper.sv for the design-specific register region above
-// the OCP command aperture.  They lie outside OCP_CMD_MIN..OCP_CMD_MAX, so the
-// USB host command decode (usb_ocp_recovery_ctrl_decode.sv, which only accepts
-// OCP_CMD_MIN..OCP_CMD_MAX) can never emit them: the Caliptra-specific
-// registers are firmware-reachable only.
+// Caliptra-specific (non-OCP) register command tags. These carry no OCP wValue
+// and are used only on the USB command path's local register routing. They lie
+// outside OCP_CMD_MIN..OCP_CMD_MAX, so the USB host command decoder
+// (usb_ocp_recovery_ctrl_decode.sv) can never emit them: the Caliptra-specific
+// registers are firmware-reachable only through the raw EXT aperture.
 localparam logic [7:0] OCP_CMD_CALIPTRA_CTRL        = 8'hE0;
 localparam logic [7:0] OCP_CMD_CALIPTRA_STATUS      = 8'hE1;
+
+// Recovery aperture placement within the 4 KiB local USB device window. The
+// wrapper uses these values to select recovery ownership and derive raw EXT
+// offsets; all per-register offsets below are relative to this aperture.
+localparam logic [11:0] OCP_RECOVERY_APERTURE_OFFSET_BYTES = 12'h800;
+localparam logic [11:0] OCP_RECOVERY_APERTURE_SIZE_BYTES   = 12'h800;
+localparam logic [12:0] OCP_RECOVERY_APERTURE_END_BYTES =
+    {1'b0, OCP_RECOVERY_APERTURE_OFFSET_BYTES}
+  + {1'b0, OCP_RECOVERY_APERTURE_SIZE_BYTES};
+localparam int unsigned OCP_RECOVERY_APERTURE_ADDR_W =
+    $clog2(OCP_RECOVERY_APERTURE_SIZE_BYTES);
 
 // Aperture-relative DWORD register-window offsets generated from the RDL.
 // Use the next base or an explicit *_END sentinel for decode ranges; do not

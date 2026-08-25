@@ -347,6 +347,14 @@ module ip_xxx_3516_hs_mem_wrapper
    // legacy uut's hsel.
    logic                           rec_addr_in_window;
 
+   initial begin
+     assert (OCP_RECOVERY_APERTURE_END_BYTES == 13'h1000)
+       else $fatal(1, "recovery aperture must occupy the upper half of the 4 KiB USB window");
+     assert (OCP_RECOVERY_APERTURE_ADDR_W ==
+             usb_ocp_recovery_reg_pkg::USB_OCP_RECOVERY_REG_MIN_ADDR_WIDTH)
+       else $fatal(1, "recovery aperture width must match the generated CPUif address width");
+   end
+
    // ---- VHDL arbiter <-> SV recovery_top byte-stream wires ----
    // Declared early so the uut port-map (~line 824) sees the proper
    // vector widths and does not auto-create conflicting implicit nets.
@@ -849,18 +857,20 @@ module ip_xxx_3516_hs_mem_wrapper
     // ==================================================================
     // Recovery aperture bridge
     // ------------------------------------------------------------------
-    // The upper 2 KiB of the local USB device window routes to recovery;
-    // the lower 2 KiB remains owned by the legacy controller.
+    // The package-defined recovery aperture routes to recovery; all remaining
+    // offsets in the local USB device window remain owned by the legacy controller.
     // ==================================================================
 
     // -- Aperture decode (combinational, dev_axi_aclk domain) --
-    // Address bit [11] selects the recovery half of the local USB window.
-    assign rec_addr_in_window = dev_ahb_haddr[11];
+    logic [12:0] dev_ahb_local_offset;
+    assign dev_ahb_local_offset = {1'b0, dev_ahb_haddr[11:0]};
+    assign rec_addr_in_window = (dev_ahb_local_offset >= {1'b0, OCP_RECOVERY_APERTURE_OFFSET_BYTES}) &&
+                                (dev_ahb_local_offset < OCP_RECOVERY_APERTURE_END_BYTES);
     assign legacy_dev_hsel = dev_ahb_hsel & ~rec_addr_in_window;
 
-    // Recovery-relative byte offset within the upper 2 KiB aperture.
-    logic [11:0] rec_offset;
-    assign rec_offset = {1'b0, dev_ahb_haddr[10:0]};
+    // Recovery-relative byte offset within the package-defined aperture.
+    logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] rec_offset;
+    assign rec_offset = dev_ahb_local_offset - {1'b0, OCP_RECOVERY_APERTURE_OFFSET_BYTES};
 
     // -- AHB address-phase strobe to capture in IDLE --
     logic rec_ahb_addr_phase;
@@ -876,7 +886,7 @@ module ip_xxx_3516_hs_mem_wrapper
     logic [$clog2(usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS+1)-1:0] fifo_rd_depth;
 
     // -- Captured AHB transaction metadata --
-    logic [10:0] ahb_aperture_offset_q;
+    logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] ahb_aperture_offset_q;
     logic        ahb_wr_q;
     logic [31:0] ahb_wdata_q;
 
@@ -924,7 +934,7 @@ module ip_xxx_3516_hs_mem_wrapper
         // The adapter owns all per-register decode. AHB accesses are word
         // native, so preserve the documented DWORD alignment of this aperture.
         if (a_state_q == A_IDLE && rec_ahb_addr_phase) begin
-          ahb_aperture_offset_q <= {rec_offset[10:2], 2'b00};
+          ahb_aperture_offset_q <= {rec_offset[OCP_RECOVERY_APERTURE_ADDR_W-1:2], 2'b00};
           ahb_wr_q              <= dev_ahb_hwrite;
         end
 

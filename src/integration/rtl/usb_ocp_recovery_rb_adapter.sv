@@ -41,7 +41,9 @@
 // Reset: synchronous, active-low `rst_ni`.
 // ============================================================================
 
-module usb_ocp_recovery_rb_adapter (
+module usb_ocp_recovery_rb_adapter 
+  import usb_ocp_recovery_pkg::*
+(
   input  logic        clk,
   input  logic        rst_ni,
 
@@ -69,14 +71,16 @@ module usb_ocp_recovery_rb_adapter (
   // Recovery v1.1 Sec 9.1 write-to-RO / capability source-qualification).
   // --------------------------------------------------------------------------
   input  logic        rb_is_ext,
-  input  logic [10:0] ext_aperture_offset,
+  input  logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0]
+                       ext_aperture_offset,
 
   // --------------------------------------------------------------------------
   // peakrdl-regblock passthrough CPU interface (0-cycle balanced ack).
   // --------------------------------------------------------------------------
   output logic        cpuif_req,
   output logic        cpuif_req_is_wr,
-  output logic [11:0] cpuif_addr,
+  output logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0]
+                       cpuif_addr,
   output logic [31:0] cpuif_wr_data,
   output logic [31:0] cpuif_wr_biten,
   input  logic        cpuif_req_block,
@@ -115,7 +119,6 @@ module usb_ocp_recovery_rb_adapter (
   // Command-code constants are sourced from the shared package so the wire
   // wValue decode has a single definition (OCP Recovery v1.1 Sec 9.2).
   // --------------------------------------------------------------------------
-  import usb_ocp_recovery_pkg::*;
 
   // --------------------------------------------------------------------------
   // Local command base address + payload length (bytes)
@@ -223,8 +226,9 @@ module usb_ocp_recovery_rb_adapter (
   assign local_read_fire = do_cpuif_rd & ~regblock_busy_q & ~cpuif_req_block;
   assign cpuif_req      = cpuif_fire;
   assign cpuif_req_is_wr= rb_wr;
-  assign cpuif_addr     = rb_is_ext ? {1'b0, ext_aperture_offset}
-                                    : cmd_base + word_base_byte[11:0];
+  assign cpuif_addr     = rb_is_ext ? ext_aperture_offset
+                                    : cmd_base[OCP_RECOVERY_APERTURE_ADDR_W-1:0]
+                                    + word_base_byte[OCP_RECOVERY_APERTURE_ADDR_W-1:0];
   assign cpuif_wr_data  = rb_wdata;
   // Expand the per-lane byte strobe into per-bit biten (8 biten bits / lane).
   assign cpuif_wr_biten = {{8{rb_wstrb[3]}}, {8{rb_wstrb[2]}},

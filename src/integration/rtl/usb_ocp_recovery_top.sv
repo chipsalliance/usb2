@@ -18,7 +18,9 @@
 //   Single clock `clk`, synchronous active-low `rst_ni`.
 //------------------------------------------------------------------------------
 
-module usb_ocp_recovery_top #(
+module usb_ocp_recovery_top
+  import usb_ocp_recovery_pkg::*;
+#(
   parameter int           CMS_ADDR_W     = 16,
   parameter int           NUM_CMS        = 2,
   parameter int           FIFO_DEPTH_DWORDS = usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS
@@ -77,7 +79,7 @@ module usb_ocp_recovery_top #(
   // The aperture-relative byte offset routes directly to the generated
   // register CPU interface.
   //----------------------------------------------------------------------------
-  input  logic [10:0]             ext_aperture_offset,
+  input  logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] ext_aperture_offset,
   input  logic                    ext_rb_wr,
   input  logic                    ext_rb_rd,
   input  logic [31:0]             ext_rb_wdata,
@@ -102,8 +104,6 @@ module usb_ocp_recovery_top #(
   output logic                    device_reset_req,
   output logic                    fatal_err
 );
-
-  import usb_ocp_recovery_pkg::*;
 
   //////////////////////////////////////////////////////////////////////////////
   // Internal wiring
@@ -582,11 +582,11 @@ module usb_ocp_recovery_top #(
   //  (3) ext_data_mirror_ready rises after that edge, so the FOLLOWING cycle is
   //      the first safe EXT cpuif read and swacc/pop point.
   assign ext_fifo_aperture_access = rb_is_ext
-                                  && (ext_aperture_offset >= OCP_ADDR_INDIRECT_FIFO_CTRL[10:0])
-                                  && (ext_aperture_offset < OCP_ADDR_VENDOR[10:0]);
+                                  && (ext_aperture_offset >= OCP_ADDR_INDIRECT_FIFO_CTRL[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
+                                  && (ext_aperture_offset <  OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
   assign ext_fifo_data_aperture_access = rb_is_ext
-                                       && (ext_aperture_offset >= OCP_ADDR_INDIRECT_FIFO_DATA[10:0])
-                                       && (ext_aperture_offset < OCP_ADDR_VENDOR[10:0]);
+                                       && (ext_aperture_offset >= OCP_ADDR_INDIRECT_FIFO_DATA[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
+                                       && (ext_aperture_offset <  OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
   assign cpuif_req_block = rb_is_ext
                            && ((ext_fifo_aperture_access
                                 && (usb_fifo_req || usb_fifo_packet_active_q))
@@ -728,10 +728,8 @@ module usb_ocp_recovery_top #(
 
     .s_cpuif_req          (cpuif_req),
     .s_cpuif_req_is_wr    (cpuif_req_is_wr),
-    // Regblock addrmap is 2 KiB (upper half of the merged USB device window),
-    // so s_cpuif_addr is 11 bits.  cpuif_addr[11] is always 0 (every OCP /
-    // Caliptra-specific register offset is < 0x800); slice it off explicitly.
-    .s_cpuif_addr         (cpuif_addr[10:0]),
+    // The generated RDL addrmap spans the package-defined recovery aperture.
+    .s_cpuif_addr         (cpuif_addr[OCP_RECOVERY_APERTURE_ADDR_W-1:0]),
     .s_cpuif_wr_data      (cpuif_wr_data),
     .s_cpuif_wr_biten     (cpuif_wr_biten),
     .s_cpuif_req_stall_wr (/* unused */),
