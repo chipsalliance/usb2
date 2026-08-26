@@ -42,7 +42,7 @@
 // ============================================================================
 
 module usb_ocp_recovery_rb_adapter 
-  import usb_ocp_recovery_pkg::*
+  import usb_ocp_recovery_pkg::*;
 (
   input  logic        clk,
   input  logic        rst_ni,
