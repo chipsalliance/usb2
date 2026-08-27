@@ -173,7 +173,8 @@ module usb_ocp_recovery_top
   logic                       ext_fifo_status_2_access;
   logic                       ext_fifo_status_3_access;
   logic                       ext_fifo_status_4_access;
-  logic                       ext_fifo_data_access;
+  logic                       ext_fifo_data_read;
+  logic                       ext_fifo_data_write;
   logic                       ext_fifo_aperture_access;
   logic                       ext_fifo_data_aperture_access;
 
@@ -218,9 +219,9 @@ module usb_ocp_recovery_top
   logic [31:0]                image_size;
   logic [31:0]                bytes_pushed;
 
-  // --- INDIRECT_FIFO_* mirror drive from A4 (cms_fifo) into the A3 regblock.
-  //     cms_fifo is the single live owner; the regblock stores only the
-  //     cpuif-visible mirror used by EXT accesses and USB shared read-back. ---
+  // --- INDIRECT_FIFO_* values from A4 (cms_fifo) into the A3 regblock.
+  //     CTRL fields are stored read-back mirrors. STATUS and DATA are
+  //     storage-less live hwif views of cms_fifo. ---
   logic [7:0]                 fifo_ctrl_cms;
   logic                       fifo_ctrl_reset;
   logic [31:0]                fifo_ctrl_image_size;
@@ -230,7 +231,6 @@ module usb_ocp_recovery_top
   logic [31:0]                fifo_status_word_3;
   logic [31:0]                fifo_status_word_4;
   logic [31:0]                fifo_data_peek;
-  logic                       ext_data_mirror_ready;
 
   //////////////////////////////////////////////////////////////////////////////
   // Firmware cpuif arbiter. USB register and FIFO commands bypass this
@@ -569,18 +569,17 @@ module usb_ocp_recovery_top
   assign ext_fifo_status_2_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_2.READ_INDEX.swacc;
   assign ext_fifo_status_3_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_3.FIFO_SIZE.swacc;
   assign ext_fifo_status_4_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_4.MAX_TRANSFER_SIZE.swacc;
-  assign ext_fifo_data_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_DATA.DATA.swacc;
+  assign ext_fifo_data_read = cpuif_req
+                            && !cpuif_req_is_wr
+                            && rb_hwif_out.INDIRECT_FIFO_DATA.DATA.swacc;
+  assign ext_fifo_data_write = cpuif_req
+                             && cpuif_req_is_wr
+                             && rb_hwif_out.INDIRECT_FIFO_DATA.DATA.swacc;
 
   // A USB FIFO command owns the complete claimed control transfer. Defer every
   // EXT FIFO CPUif request until that transfer retires so a ctrl_decode skid
   // bubble cannot let firmware interleave FIFO control, status, or data access.
-  // EXT INDIRECT_FIFO_DATA reads are also deferred while cms_fifo re-arms the
-  // regblock-backed DATA mirror after a head-changing event:
-  //  (1) a completed pop or push-into-empty clears ext_data_mirror_ready,
-  //  (2) a later cycle with fifo_rvalid_int=1 and no new head change lets the
-  //      generated regblock sample hwif next = current fifo_data_peek,
-  //  (3) ext_data_mirror_ready rises after that edge, so the FOLLOWING cycle is
-  //      the first safe EXT cpuif read and swacc/pop point.
+  // DATA reads remain blocking until a full or terminal batch is available.
   assign ext_fifo_aperture_access = rb_is_ext
                                   && (ext_aperture_offset >= OCP_ADDR_INDIRECT_FIFO_CTRL[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
                                   && (ext_aperture_offset <  OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
@@ -592,7 +591,7 @@ module usb_ocp_recovery_top
                                 && (usb_fifo_req || usb_fifo_packet_active_q))
                                || (ext_fifo_data_aperture_access
                                    && rb_rd
-                                   && (!ext_data_mirror_ready || !payload_available)));
+                                   && !payload_available));
 
   // --------------------------------------------------------------------------
   // hwif_in wiring.
@@ -618,9 +617,8 @@ module usb_ocp_recovery_top
   //
   // INDIRECT_FIFO_CTRL / INDIRECT_FIFO_STATUS / INDIRECT_FIFO_DATA are EXT-cpuif
   // visible through the generated regblock, but usb_ocp_recovery_cms_fifo.sv
-  // remains the live owner of control, status, payload, and indices. The
-  // regblock hwif bridge below mirrors the committed FIFO state back into the
-  // generated window.
+  // remains the live owner of control, status, payload, and indices. CTRL uses
+  // generated read-back storage; STATUS and DATA read hwif next directly.
   //
   // The adapter only forwards regblock cpuif errors for in-window accesses, so
   // a regblock-side decode miss cannot surface as an rb_err /
@@ -715,10 +713,9 @@ module usb_ocp_recovery_top
     rb_hwif_in.INDIRECT_FIFO_STATUS_3.FIFO_SIZE.next         = fifo_status_word_3;
     rb_hwif_in.INDIRECT_FIFO_STATUS_4.MAX_TRANSFER_SIZE.next = fifo_status_word_4;
 
-    // INDIRECT_FIFO_DATA read-back uses the generated regblock field storage.
-    // cpuif_req_block above prevents a new EXT read from reaching this field
-    // until fifo_data_peek has been sampled for a full clk after any head change,
-    // so field_storage.DATA.value cannot repeat a stale word.
+    // INDIRECT_FIFO_DATA is a storage-less live hardware read. The same
+    // read-qualified swacc event that returns this value pops the FIFO at the
+    // following clock edge, so software observes the pre-pop head exactly once.
     rb_hwif_in.INDIRECT_FIFO_DATA.DATA.next = fifo_data_peek;
   end
 
@@ -808,7 +805,8 @@ module usb_ocp_recovery_top
      .ext_fifo_status_2_access (ext_fifo_status_2_access),
      .ext_fifo_status_3_access (ext_fifo_status_3_access),
      .ext_fifo_status_4_access (ext_fifo_status_4_access),
-     .ext_fifo_data_access (ext_fifo_data_access),
+     .ext_fifo_data_read (ext_fifo_data_read),
+     .ext_fifo_data_write (ext_fifo_data_write),
      .ext_cpuif_req_is_wr (cpuif_req_is_wr),
      .ext_cpuif_wr_data   (cpuif_wr_data),
      .ext_cpuif_wr_strb   (cpuif_wr_strb),
@@ -830,8 +828,7 @@ module usb_ocp_recovery_top
       .fifo_status_word_2   (fifo_status_word_2),
       .fifo_status_word_3   (fifo_status_word_3),
       .fifo_status_word_4   (fifo_status_word_4),
-      .fifo_data_peek       (fifo_data_peek),
-      .ext_data_mirror_ready(ext_data_mirror_ready)
+      .fifo_data_peek       (fifo_data_peek)
     );
 
   //////////////////////////////////////////////////////////////////////////////

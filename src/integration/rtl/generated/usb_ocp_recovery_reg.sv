@@ -314,12 +314,6 @@ module usb_ocp_recovery_reg (
         } INDIRECT_FIFO_CTRL_1;
         struct packed{
             struct packed{
-                logic [31:0] next;
-                logic load_next;
-            } DATA;
-        } INDIRECT_FIFO_DATA;
-        struct packed{
-            struct packed{
                 logic [7:0] next;
                 logic load_next;
             } VENDOR_DATA;
@@ -444,11 +438,6 @@ module usb_ocp_recovery_reg (
                 logic [31:0] value;
             } IMAGE_SIZE;
         } INDIRECT_FIFO_CTRL_1;
-        struct packed{
-            struct packed{
-                logic [31:0] value;
-            } DATA;
-        } INDIRECT_FIFO_DATA;
         struct packed{
             struct packed{
                 logic [7:0] value;
@@ -1171,29 +1160,6 @@ module usb_ocp_recovery_reg (
     assign hwif_out.INDIRECT_FIFO_STATUS_2.READ_INDEX.swacc = decoded_reg_strb.INDIRECT_FIFO_STATUS_2;
     assign hwif_out.INDIRECT_FIFO_STATUS_3.FIFO_SIZE.swacc = decoded_reg_strb.INDIRECT_FIFO_STATUS_3;
     assign hwif_out.INDIRECT_FIFO_STATUS_4.MAX_TRANSFER_SIZE.swacc = decoded_reg_strb.INDIRECT_FIFO_STATUS_4;
-    // Field: usb_ocp_recovery_reg.INDIRECT_FIFO_DATA.DATA
-    always_comb begin
-        automatic logic [31:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.INDIRECT_FIFO_DATA.DATA.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.INDIRECT_FIFO_DATA && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.INDIRECT_FIFO_DATA.DATA.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
-            load_next_c = '1;
-        end else begin // HW Write
-            next_c = hwif_in.INDIRECT_FIFO_DATA.DATA.next;
-            load_next_c = '1;
-        end
-        field_combo.INDIRECT_FIFO_DATA.DATA.next = next_c;
-        field_combo.INDIRECT_FIFO_DATA.DATA.load_next = load_next_c;
-    end
-    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
-        if(~hwif_in.rst_ni) begin
-            field_storage.INDIRECT_FIFO_DATA.DATA.value <= 32'h0;
-        end else if(field_combo.INDIRECT_FIFO_DATA.DATA.load_next) begin
-            field_storage.INDIRECT_FIFO_DATA.DATA.value <= field_combo.INDIRECT_FIFO_DATA.DATA.next;
-        end
-    end
     assign hwif_out.INDIRECT_FIFO_DATA.DATA.swacc = decoded_reg_strb.INDIRECT_FIFO_DATA;
     // Field: usb_ocp_recovery_reg.VENDOR.VENDOR_DATA
     always_comb begin
@@ -1339,7 +1305,7 @@ module usb_ocp_recovery_reg (
     assign readback_array[34][31:0] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_2 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_2.READ_INDEX.next : '0;
     assign readback_array[35][31:0] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_3 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_3.FIFO_SIZE.next : '0;
     assign readback_array[36][31:0] = (decoded_reg_strb.INDIRECT_FIFO_STATUS_4 && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_STATUS_4.MAX_TRANSFER_SIZE.next : '0;
-    assign readback_array[37][31:0] = (decoded_reg_strb.INDIRECT_FIFO_DATA && !decoded_req_is_wr) ? field_storage.INDIRECT_FIFO_DATA.DATA.value : '0;
+    assign readback_array[37][31:0] = (decoded_reg_strb.INDIRECT_FIFO_DATA && !decoded_req_is_wr) ? hwif_in.INDIRECT_FIFO_DATA.DATA.next : '0;
     assign readback_array[38][7:0] = (decoded_reg_strb.VENDOR && !decoded_req_is_wr) ? field_storage.VENDOR.VENDOR_DATA.value : '0;
     assign readback_array[38][31:8] = (decoded_reg_strb.VENDOR && !decoded_req_is_wr) ? 24'h0 : '0;
     assign readback_array[39][0:0] = (decoded_reg_strb.CALIPTRA_CTRL && !decoded_req_is_wr) ? field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value : '0;

@@ -19,12 +19,9 @@
 //       reflects a just-freed slot on the cycle after the pop.
 //     - USB accesses still use the direct fifo_rb_* path. EXT accesses arrive
 //       only through cpuif/hwif swacc events from the generated regblock.
-//     - EXT INDIRECT_FIFO_DATA reads still come back through the generated
-//       regblock field storage. ext_data_mirror_ready_q is deasserted by any
-//       head-changing event (pop, push into empty, or FIFO reset) and only
-//       reasserts after a later clk edge sees fifo_rvalid_int high with no new
-//       head change. That edge is when the regblock samples hwif next with the
-//       current head, so the NEXT cycle is the first safe EXT cpuif read.
+//     - EXT INDIRECT_FIFO_DATA reads return fifo_data_peek directly through the
+//       generated storage-less hwif read path. The read-qualified swacc event
+//       pops the FIFO on the following clock edge.
 //
 //   Control plane:
 //     - fifo_cms_q, image_size_q, write_index_q, accepted_push_count_q,
@@ -78,7 +75,8 @@ module usb_ocp_recovery_cms_fifo #(
   input  logic        ext_fifo_status_2_access,
   input  logic        ext_fifo_status_3_access,
   input  logic        ext_fifo_status_4_access,
-  input  logic        ext_fifo_data_access,
+  input  logic        ext_fifo_data_read,
+  input  logic        ext_fifo_data_write,
   input  logic        ext_cpuif_req_is_wr,
   input  logic [31:0] ext_cpuif_wr_data,
   input  logic [3:0]  ext_cpuif_wr_strb,
@@ -95,7 +93,7 @@ module usb_ocp_recovery_cms_fifo #(
 
   input  logic        fifo_abort_i,
 
-  // Regblock mirrors.
+  // Regblock control/status values and live FIFO head.
   output logic [7:0]  fifo_ctrl_cms,
   output logic        fifo_ctrl_reset,
   output logic [31:0] fifo_ctrl_image_size,
@@ -104,8 +102,7 @@ module usb_ocp_recovery_cms_fifo #(
   output logic [31:0] fifo_status_word_2,
   output logic [31:0] fifo_status_word_3,
   output logic [31:0] fifo_status_word_4,
-  output logic [31:0] fifo_data_peek,
-  output logic        ext_data_mirror_ready
+  output logic [31:0] fifo_data_peek
 );
 
   import usb_ocp_recovery_pkg::*;
@@ -165,7 +162,6 @@ module usb_ocp_recovery_cms_fifo #(
   logic ext_status_4_rd;
   logic usb_data_wr;
   logic usb_data_rd;
-  logic ext_data_wr;
   logic ext_data_rd;
 
   logic [31:0] ctrl_word0_wdata;
@@ -179,6 +175,7 @@ module usb_ocp_recovery_cms_fifo #(
   logic        push_req;
   logic        push_accept;
   logic        push_drop_full;
+  logic        push_reject;
   logic        pop_req;
   logic        pop_accept;
   logic [3:0]  push_wstrb;
@@ -199,9 +196,6 @@ module usb_ocp_recovery_cms_fifo #(
   logic [31:0] write_index_next;
   logic [31:0] read_index_derived;
   logic [FIFO_DEPTH_W-1:0] fifo_occupancy;
-  logic        ext_data_mirror_ready_q;
-  logic        ext_head_change;
-  logic        push_creates_head;
   logic        fifo_clear;
   logic        fifo_becomes_full;
   logic        fifo_becomes_empty;
@@ -269,8 +263,7 @@ module usb_ocp_recovery_cms_fifo #(
 
   assign usb_data_wr = is_fifo_data && fifo_rb_wr;
   assign usb_data_rd = is_fifo_data && fifo_rb_rd;
-  assign ext_data_wr = ext_fifo_data_access && ext_cpuif_req_is_wr;
-  assign ext_data_rd = ext_fifo_data_access && !ext_cpuif_req_is_wr;
+  assign ext_data_rd = ext_fifo_data_read;
 
   assign ctrl_word0_wdata = usb_ctrl_word0_wr ? fifo_rb_wdata : ext_cpuif_wr_data;
   assign ctrl_word1_wdata = usb_ctrl_word1_wr ? fifo_rb_wdata : ext_cpuif_wr_data;
@@ -284,11 +277,12 @@ module usb_ocp_recovery_cms_fifo #(
   assign fifo_full  = fifo_full_int;
   assign image_complete = (image_size_q != '0) && (accepted_push_count_q >= image_size_q);
 
-  assign push_req = usb_data_wr || ext_data_wr;
+  assign push_req = usb_data_wr;
   assign push_accept = fifo_wvalid && fifo_wready;
   assign push_drop_full = push_req && fifo_full && !image_complete && !fifo_clear;
-  assign push_raw_wdata = usb_data_wr ? fifo_rb_wdata : ext_cpuif_wr_data;
-  assign push_wstrb = usb_data_wr ? fifo_rb_wstrb : ext_cpuif_wr_strb;
+  assign push_reject = usb_data_wr && !push_accept;
+  assign push_raw_wdata = fifo_rb_wdata;
+  assign push_wstrb = fifo_rb_wstrb;
   always_comb begin
     push_wdata = '0;
     for (int i = 0; i < 4; i++) begin
@@ -298,10 +292,8 @@ module usb_ocp_recovery_cms_fifo #(
     end
   end
 
-  assign pop_req = usb_data_rd || ext_data_rd;
+  assign pop_req = ext_data_rd;
   assign pop_accept = pop_req && fifo_rvalid_int && !fifo_clear;
-  assign push_creates_head = push_accept && fifo_empty;
-  assign ext_head_change = pop_accept || push_creates_head || fifo_clear;
   assign fifo_becomes_full = push_accept
                            && (fifo_wdepth == FIFO_DEPTH_W'(FIFO_DEPTH - 1));
   assign fifo_becomes_empty = pop_accept
@@ -373,7 +365,6 @@ module usb_ocp_recovery_cms_fifo #(
       image_push_active_q <= 1'b0;
       payload_available_q <= 1'b0;
       batch_aborted_q    <= 1'b0;
-      ext_data_mirror_ready_q <= 1'b0;
       usb_status_snapshot_vld_q <= 1'b0;
       usb_status_snapshot_next_word_q <= '0;
       ext_status_snapshot_vld_q <= 1'b0;
@@ -467,7 +458,6 @@ module usb_ocp_recovery_cms_fifo #(
           region_reset_q      <= 1'b1;
           image_done_q        <= 1'b0;
           image_push_active_q <= 1'b0;
-          ext_data_mirror_ready_q <= 1'b0;
           usb_status_snapshot_vld_q <= 1'b0;
           usb_status_snapshot_next_word_q <= '0;
           ext_status_snapshot_vld_q <= 1'b0;
@@ -482,7 +472,6 @@ module usb_ocp_recovery_cms_fifo #(
           region_reset_q      <= 1'b1;
           image_done_q        <= 1'b0;
           image_push_active_q <= 1'b0;
-          ext_data_mirror_ready_q <= 1'b0;
           usb_status_snapshot_vld_q <= 1'b0;
           usb_status_snapshot_next_word_q <= '0;
           ext_status_snapshot_vld_q <= 1'b0;
@@ -514,14 +503,6 @@ module usb_ocp_recovery_cms_fifo #(
         overflow_q <= 1'b1;
       end
 
-      if (ext_head_change) begin
-        ext_data_mirror_ready_q <= 1'b0;
-      end else if (fifo_rvalid_int || fifo_empty) begin
-        ext_data_mirror_ready_q <= 1'b1;
-      end else begin
-        ext_data_mirror_ready_q <= 1'b0;
-      end
-
       if (fifo_abort_i) begin
         write_index_q          <= '0;
         accepted_push_count_q  <= '0;
@@ -529,7 +510,6 @@ module usb_ocp_recovery_cms_fifo #(
         image_done_q           <= 1'b0;
         image_push_active_q    <= 1'b0;
         payload_available_q    <= 1'b0;
-        ext_data_mirror_ready_q <= 1'b0;
         usb_status_snapshot_vld_q <= 1'b0;
         usb_status_snapshot_next_word_q <= '0;
         ext_status_snapshot_vld_q <= 1'b0;
@@ -545,9 +525,7 @@ module usb_ocp_recovery_cms_fifo #(
 
   always_comb begin
     fifo_rb_rdata = 32'h0;
-    if (usb_data_rd) begin
-      fifo_rb_rdata = fifo_rvalid_int ? fifo_rdata_int : 32'h0;
-    end else if (usb_status_rd) begin
+    if (usb_status_rd) begin
       unique case (word_idx)
         3'd0: fifo_rb_rdata = usb_fifo_status_snapshot_use ? usb_status_snapshot_q[0] : fifo_status_live_word_0;
         3'd1: fifo_rb_rdata = usb_fifo_status_snapshot_use ? usb_status_snapshot_q[1] : fifo_status_live_word_1;
@@ -560,8 +538,13 @@ module usb_ocp_recovery_cms_fifo #(
   end
 
   always_comb begin
-    fifo_rb_ack = rb_req && (is_reg_cmd || is_fifo_data);
+    fifo_rb_ack = rb_req && (is_reg_cmd
+                           || usb_data_rd
+                           || (usb_data_wr && (push_accept || push_reject)));
     fifo_rb_err = 1'b0;
+    if (usb_data_rd || push_reject) begin
+      fifo_rb_err = rb_req;
+    end
     if (fifo_rb_sel && !(is_reg_cmd || is_fifo_data)) begin
       fifo_rb_err = rb_req;
     end
@@ -591,7 +574,6 @@ module usb_ocp_recovery_cms_fifo #(
     fifo_status_word_3 = ext_fifo_status_snapshot_use ? ext_status_snapshot_q[3] : fifo_status_live_word_3;
     fifo_status_word_4 = ext_fifo_status_snapshot_use ? ext_status_snapshot_q[4] : fifo_status_live_word_4;
     fifo_data_peek     = fifo_rvalid_int ? fifo_rdata_int : 32'h0;
-    ext_data_mirror_ready = ext_data_mirror_ready_q;
   end
 
 `ifndef SYNTHESIS
@@ -610,14 +592,8 @@ module usb_ocp_recovery_cms_fifo #(
         else $error("usb_ocp_recovery_cms_fifo: abort accepted a FIFO transfer");
       assert (!(usb_data_rd && ext_data_rd))
         else $error("usb_ocp_recovery_cms_fifo: both sources attempted DATA pop");
-      assert (!ext_data_rd || ext_data_mirror_ready_q)
-        else $error("usb_ocp_recovery_cms_fifo: EXT data read fired before the regblock mirror was ready");
-      if ($past(rst_ni)) begin
-        assert (!$past(ext_head_change) || !ext_data_mirror_ready_q)
-          else $error("usb_ocp_recovery_cms_fifo: head-changing event failed to clear EXT mirror readiness");
-      end
       assert (!((usb_data_wr || usb_data_rd || usb_ctrl_word0_wr || usb_ctrl_word1_wr)
-                && (ext_data_wr || ext_data_rd || ext_ctrl_word0_wr || ext_ctrl_word1_wr)))
+                && (ext_data_rd || ext_ctrl_word0_wr || ext_ctrl_word1_wr)))
         else $error("usb_ocp_recovery_cms_fifo: USB and EXT fifo control/data activity collided");
       assert (write_index_q <= FIFO_INDEX_MAX_DWORDS)
         else $error("usb_ocp_recovery_cms_fifo: WRITE_INDEX exceeded 64");
@@ -662,6 +638,18 @@ module usb_ocp_recovery_cms_fifo #(
       if (ext_data_rd) begin
         assert (pop_accept)
           else $error("usb_ocp_recovery_cms_fifo: non-empty EXT data read did not pop exactly one word");
+      end
+      if (usb_data_wr && fifo_rb_ack && !fifo_rb_err) begin
+        assert (push_accept)
+          else $error("usb_ocp_recovery_cms_fifo: successful USB DATA write did not enter FIFO");
+      end
+      if (usb_data_rd) begin
+        assert (!pop_accept)
+          else $error("usb_ocp_recovery_cms_fifo: USB read popped write-only FIFO");
+      end
+      if (ext_fifo_data_write) begin
+        assert (!push_req)
+          else $error("usb_ocp_recovery_cms_fifo: firmware write pushed write-only FIFO");
       end
     end
   end
