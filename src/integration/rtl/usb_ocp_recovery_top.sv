@@ -413,94 +413,194 @@ module usb_ocp_recovery_top
   usb_ocp_recovery_reg_pkg::usb_ocp_recovery_reg__in_t  rb_hwif_in;
   usb_ocp_recovery_reg_pkg::usb_ocp_recovery_reg__out_t rb_hwif_out;
 
-  // USB Recovery Agent register endpoint. It consumes the ctrl_decode rb_*
-  // command stream for non-FIFO commands without touching the firmware cpuif.
-  // FIFO commands are identified on usb_is_fifo_cmd and continue through A3/A4.
-  usb_ocp_recovery_hwif_adapter u_usb_hwif_adapter (
-    .cmd                         (usb_rb_cmd),
-    .word_offset                 (usb_rb_offset),
-    .wr                          (usb_rb_wr),
-    .rd                          (usb_rb_rd),
-    .wdata                       (usb_rb_wdata),
-    .wstrb                       (usb_rb_wstrb),
-    .prot_cap_0                  (rb_hwif_out.PROT_CAP_0.REC_MAGIC_STRING_0.value),
-    .prot_cap_1                  (rb_hwif_out.PROT_CAP_1.REC_MAGIC_STRING_1.value),
-    .prot_cap_2                  ({
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_RESERVED.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value,
-                                    rb_hwif_out.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value,
-                                    rb_hwif_out.PROT_CAP_2.REC_PROT_VERSION.value
-                                  }),
-    .prot_cap_3                  ({
-                                    rb_hwif_out.PROT_CAP_3.RESERVED_31_24.value,
-                                    rb_hwif_out.PROT_CAP_3.HEARTBEAT_PERIOD.value,
-                                    rb_hwif_out.PROT_CAP_3.MAX_RESP_TIME.value,
-                                    rb_hwif_out.PROT_CAP_3.NUM_OF_CMS_REGIONS.value
-                                  }),
-    .device_id                   (device_id_in),
-    .device_status               (device_status_out),
-    .protocol_error              (device_status_protocol_err_out),
-    .recovery_reason             (device_status_reason_out),
-    .recovery_status             (recovery_status_out),
-    .recovery_vendor_status      (recovery_vendor_status_out),
-     .hw_status                   ({rb_hwif_out.HW_STATUS.RESERVED_7_3.value,
-                                    rb_hwif_out.HW_STATUS.FATAL_ERR.value,
-                                    rb_hwif_out.HW_STATUS.SOFT_ERR.value,
-                                    rb_hwif_out.HW_STATUS.TEMP_CRITICAL.value}),
-     .hw_vendor_status            (rb_hwif_out.HW_STATUS.VENDOR_HW_STATUS.value),
-     .hw_ctemp                    (rb_hwif_out.HW_STATUS.CTEMP.value),
-     .hw_vendor_status_len        (rb_hwif_out.HW_STATUS.VENDOR_HW_STATUS_LEN.value),
-    .fifo_ctrl_cms               (fifo_ctrl_cms),
-    .fifo_ctrl_reset             (fifo_ctrl_reset),
-    .fifo_ctrl_image_size        (fifo_ctrl_image_size),
-    .device_reset_ctrl_value     (rb_hwif_out.DEVICE_RESET.RESET_CTRL.value),
-    .device_reset_forced_value   (rb_hwif_out.DEVICE_RESET.FORCED_RECOVERY.value),
-    .device_reset_iface_value    (rb_hwif_out.DEVICE_RESET.IF_CTRL.value),
-    .recovery_ctrl_cms_value     (rb_hwif_out.RECOVERY_CTRL.CMS.value),
-    .recovery_ctrl_img_sel_value (rb_hwif_out.RECOVERY_CTRL.REC_IMG_SEL.value),
-    .recovery_ctrl_activate_value(rb_hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.value),
-    .vendor_value                (rb_hwif_out.VENDOR.VENDOR_DATA.value),
-    .rdata                       (usb_hw_rdata),
-    .ack                         (usb_hw_ack),
-    .err                         (usb_hw_err),
-    .is_fifo_cmd                 (usb_is_fifo_cmd),
-    .protocol_error_set          (usb_protocol_error_set),
-    .device_reset_ctrl_next      (usb_device_reset_ctrl_next),
-    .device_reset_ctrl_we        (usb_device_reset_ctrl_we),
-    .device_reset_forced_next    (usb_device_reset_forced_next),
-    .device_reset_forced_we      (usb_device_reset_forced_we),
-    .device_reset_iface_next     (usb_device_reset_iface_next),
-    .device_reset_iface_we       (usb_device_reset_iface_we),
-    .recovery_ctrl_cms_next      (usb_recovery_ctrl_cms_next),
-    .recovery_ctrl_cms_we        (usb_recovery_ctrl_cms_we),
-    .recovery_ctrl_img_sel_next  (usb_recovery_ctrl_img_sel_next),
-    .recovery_ctrl_img_sel_we    (usb_recovery_ctrl_img_sel_we),
-    .recovery_ctrl_activate_next (usb_recovery_ctrl_activate_next),
-    .recovery_ctrl_activate_we   (usb_recovery_ctrl_activate_we),
-    .vendor_next                 (usb_vendor_next),
-    .vendor_we                   (usb_vendor_we),
-    .device_reset_wr             (device_reset_wr),
-    .device_reset_ctrl           (device_reset_ctrl),
-    .device_reset_forced         (device_reset_forced),
-    .device_reset_iface          (device_reset_iface),
-    .recovery_ctrl_wr_cms        (recovery_ctrl_wr_cms),
-    .recovery_ctrl_wr_img_sel    (recovery_ctrl_wr_img_sel),
-    .recovery_ctrl_wr_activate   (recovery_ctrl_wr_activate),
-    .recovery_ctrl_cms           (recovery_ctrl_cms),
-    .recovery_ctrl_img_sel       (recovery_ctrl_img_sel),
-    .recovery_ctrl_activate      (recovery_ctrl_activate)
-  );
+  // USB Recovery Agent hardware endpoint. This path consumes the ctrl_decode
+  // command stream without touching the firmware CPUif. FIFO commands are
+  // identified here but selected only by the response mux below.
+  logic        usb_hw_access;
+  logic        usb_hw_supported_cmd;
+  logic        usb_hw_host_ro_cmd;
+  logic [15:0] usb_hw_cmd_len;
+  logic [15:0] usb_hw_byte_offset;
+
+  always_comb begin
+    usb_hw_access       = usb_rb_wr | usb_rb_rd;
+    usb_is_fifo_cmd     = ((usb_rb_cmd == OCP_CMD_INDIRECT_FIFO_CTRL) && usb_rb_wr)
+                        || ((usb_rb_cmd == OCP_CMD_INDIRECT_FIFO_STATUS) && usb_rb_rd)
+                        ||  (usb_rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA);
+    usb_hw_supported_cmd = 1'b1;
+    usb_hw_host_ro_cmd   = 1'b0;
+    usb_hw_cmd_len       = '0;
+    usb_hw_byte_offset   = {usb_rb_offset[13:0], 2'b00};
+    usb_hw_rdata         = '0;
+    usb_hw_ack           = usb_hw_access;
+    usb_hw_err           = 1'b0;
+    usb_protocol_error_set = 1'b0;
+
+    usb_device_reset_ctrl_next      = usb_rb_wdata[7:0];
+    usb_device_reset_ctrl_we        = 1'b0;
+    usb_device_reset_forced_next    = usb_rb_wdata[15:8];
+    usb_device_reset_forced_we      = 1'b0;
+    usb_device_reset_iface_next     = usb_rb_wdata[23:16];
+    usb_device_reset_iface_we       = 1'b0;
+    usb_recovery_ctrl_cms_next      = usb_rb_wdata[7:0];
+    usb_recovery_ctrl_cms_we        = 1'b0;
+    usb_recovery_ctrl_img_sel_next  = usb_rb_wdata[15:8];
+    usb_recovery_ctrl_img_sel_we    = 1'b0;
+    usb_recovery_ctrl_activate_next = usb_rb_wdata[23:16];
+    usb_recovery_ctrl_activate_we   = 1'b0;
+    usb_vendor_next                 = usb_rb_wdata[7:0];
+    usb_vendor_we                   = 1'b0;
+
+    device_reset_wr              = 1'b0;
+    device_reset_ctrl            = usb_rb_wdata[7:0];
+    device_reset_forced          = usb_rb_wdata[15:8];
+    device_reset_iface           = usb_rb_wdata[23:16];
+    recovery_ctrl_wr_cms         = 1'b0;
+    recovery_ctrl_wr_img_sel     = 1'b0;
+    recovery_ctrl_wr_activate    = 1'b0;
+    recovery_ctrl_cms            = usb_rb_wdata[7:0];
+    recovery_ctrl_img_sel        = usb_rb_wdata[15:8];
+    recovery_ctrl_activate       = usb_rb_wdata[23:16];
+
+    unique case (usb_rb_cmd)
+      OCP_CMD_PROT_CAP: begin
+        usb_hw_cmd_len     = OCP_LEN_PROT_CAP;
+        usb_hw_host_ro_cmd = 1'b1;
+        unique case (usb_rb_offset)
+          16'd0: usb_hw_rdata = rb_hwif_out.PROT_CAP_0.REC_MAGIC_STRING_0.value;
+          16'd1: usb_hw_rdata = rb_hwif_out.PROT_CAP_1.REC_MAGIC_STRING_1.value;
+          16'd2: usb_hw_rdata = {
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_RESERVED.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_FIFO_CMS_SUPPORT.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_HARDWARE_STATUS.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_PUSH_C_IMAGE.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_LOCAL_C_IMAGE.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_RECOVERY_MEM_ACCESS.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_DEVICE_STATUS.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value,
+            rb_hwif_out.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value,
+            rb_hwif_out.PROT_CAP_2.REC_PROT_VERSION.value
+          };
+          16'd3: usb_hw_rdata = {
+            rb_hwif_out.PROT_CAP_3.RESERVED_31_24.value,
+            rb_hwif_out.PROT_CAP_3.HEARTBEAT_PERIOD.value,
+            rb_hwif_out.PROT_CAP_3.MAX_RESP_TIME.value,
+            rb_hwif_out.PROT_CAP_3.NUM_OF_CMS_REGIONS.value
+          };
+          default: usb_hw_err = usb_rb_rd;
+        endcase
+      end
+      OCP_CMD_DEVICE_ID: begin
+        usb_hw_cmd_len     = OCP_LEN_DEVICE_ID;
+        usb_hw_host_ro_cmd = 1'b1;
+        if (usb_rb_offset < 16'd6) begin
+          usb_hw_rdata = device_id_in[usb_rb_offset[2:0]*32 +: 32];
+        end else begin
+          usb_hw_err = usb_rb_rd;
+        end
+      end
+      OCP_CMD_DEVICE_STATUS: begin
+        usb_hw_cmd_len     = OCP_LEN_DEVICE_STATUS;
+        usb_hw_host_ro_cmd = 1'b1;
+        if (usb_rb_offset == 16'd0) begin
+          usb_hw_rdata = {device_status_reason_out,
+                          device_status_protocol_err_out, device_status_out};
+        end else if (usb_rb_offset < 16'd16) begin
+          usb_hw_rdata = '0;
+        end else begin
+          usb_hw_err = usb_rb_rd;
+        end
+      end
+      OCP_CMD_DEVICE_RESET: begin
+        usb_hw_cmd_len = OCP_LEN_DEVICE_RESET;
+        usb_hw_rdata   = {8'h00, rb_hwif_out.DEVICE_RESET.IF_CTRL.value,
+                          rb_hwif_out.DEVICE_RESET.FORCED_RECOVERY.value,
+                          rb_hwif_out.DEVICE_RESET.RESET_CTRL.value};
+        if (usb_rb_wr) begin
+          usb_device_reset_ctrl_we   = usb_rb_wstrb[0];
+          usb_device_reset_forced_we = usb_rb_wstrb[1];
+          usb_device_reset_iface_we  = usb_rb_wstrb[2];
+          device_reset_wr            = |usb_rb_wstrb[2:0];
+        end
+      end
+      OCP_CMD_RECOVERY_CTRL: begin
+        usb_hw_cmd_len = OCP_LEN_RECOVERY_CTRL;
+        usb_hw_rdata   = {8'h00, rb_hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.value,
+                          rb_hwif_out.RECOVERY_CTRL.REC_IMG_SEL.value,
+                          rb_hwif_out.RECOVERY_CTRL.CMS.value};
+        if (usb_rb_wr) begin
+          usb_recovery_ctrl_cms_we        = usb_rb_wstrb[0];
+          usb_recovery_ctrl_img_sel_we    = usb_rb_wstrb[1];
+          usb_recovery_ctrl_activate_we   = usb_rb_wstrb[2];
+          recovery_ctrl_wr_cms            = usb_rb_wstrb[0];
+          recovery_ctrl_wr_img_sel        = usb_rb_wstrb[1];
+          recovery_ctrl_wr_activate       = usb_rb_wstrb[2];
+        end
+      end
+      OCP_CMD_RECOVERY_STATUS: begin
+        usb_hw_cmd_len     = OCP_LEN_RECOVERY_STATUS;
+        usb_hw_host_ro_cmd = 1'b1;
+        usb_hw_rdata       = {16'h0, recovery_vendor_status_out, recovery_status_out};
+      end
+      OCP_CMD_HW_STATUS: begin
+        usb_hw_cmd_len     = OCP_LEN_HW_STATUS;
+        usb_hw_host_ro_cmd = 1'b1;
+        usb_hw_rdata       = {
+          rb_hwif_out.HW_STATUS.VENDOR_HW_STATUS_LEN.value,
+          rb_hwif_out.HW_STATUS.CTEMP.value,
+          rb_hwif_out.HW_STATUS.VENDOR_HW_STATUS.value,
+          rb_hwif_out.HW_STATUS.RESERVED_7_3.value,
+          rb_hwif_out.HW_STATUS.FATAL_ERR.value,
+          rb_hwif_out.HW_STATUS.SOFT_ERR.value,
+          rb_hwif_out.HW_STATUS.TEMP_CRITICAL.value
+        };
+      end
+      OCP_CMD_INDIRECT_FIFO_CTRL: begin
+        usb_hw_cmd_len = OCP_LEN_INDIRECT_FIFO_CTRL;
+        if (usb_rb_rd) begin
+          unique case (usb_rb_offset)
+            16'd0: usb_hw_rdata = {fifo_ctrl_image_size[15:0],
+                                    {7'h0, fifo_ctrl_reset}, fifo_ctrl_cms};
+            16'd1: usb_hw_rdata = {16'h0, fifo_ctrl_image_size[31:16]};
+            default: usb_hw_err = 1'b1;
+          endcase
+        end
+      end
+      OCP_CMD_INDIRECT_FIFO_STATUS: begin
+        usb_hw_cmd_len = OCP_LEN_INDIRECT_FIFO_STATUS;
+        if (usb_rb_wr) begin
+          usb_protocol_error_set = 1'b1;
+        end
+      end
+      OCP_CMD_VENDOR: begin
+        usb_hw_cmd_len = OCP_LEN_VENDOR;
+        usb_hw_rdata   = {24'h0, rb_hwif_out.VENDOR.VENDOR_DATA.value};
+        if (usb_rb_wr) begin
+          usb_vendor_we = usb_rb_wstrb[0];
+        end
+      end
+      default: begin
+        usb_hw_supported_cmd = 1'b0;
+        usb_protocol_error_set = usb_hw_access;
+      end
+    endcase
+
+    if (usb_rb_wr && usb_hw_host_ro_cmd) begin
+      usb_protocol_error_set = 1'b1;
+    end
+    if (usb_hw_access && !usb_hw_supported_cmd) begin
+      usb_hw_err = 1'b0;
+    end
+    if (usb_hw_access && !usb_is_fifo_cmd && usb_hw_supported_cmd
+        && (usb_hw_byte_offset >= usb_hw_cmd_len)) begin
+      usb_hw_err = 1'b1;
+    end
+  end
 
   usb_ocp_recovery_rb_adapter u_a3_adapter (
     .clk             (clk),
