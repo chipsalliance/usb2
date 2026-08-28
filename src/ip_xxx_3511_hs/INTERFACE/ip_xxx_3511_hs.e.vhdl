@@ -250,7 +250,7 @@ entity ip_xxx_3511_hs is
        rec_ctrl_xfer_done  : out std_logic;
        rec_ctrl_xfer_abort : out std_logic;
        rec_ctrl_claim      : out std_logic;
-       -- Emergency-fallback path-disable control (see usb_ocp_recovery_post_sync_arb.e.vhdl
+       -- Emergency-fallback path-disable control (see usb_ocp_recovery_post_sync_arb.m.vhdl
        -- ocp_path_disable_i): firmware-writable via CALIPTRA_CTRL.
        -- OCP_PATH_DISABLE, EXT/firmware write-only. Reset default '0'.
        rec_ocp_path_disable : in  std_logic;

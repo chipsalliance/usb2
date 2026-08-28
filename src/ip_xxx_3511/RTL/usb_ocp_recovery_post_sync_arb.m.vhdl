@@ -2,10 +2,9 @@
 --  ----------------------------------------------------------------------------
 --  File: usb_ocp_recovery_post_sync_arb.m.vhdl
 --
---  Architecture: rtl
+--  Entity and architecture: rtl
 --
---  Post-synchronizer OCP Recovery v1.1 EP0 arbiter (see the entity header in
---  usb_ocp_recovery_post_sync_arb.e.vhdl for the full routing model).
+--  Post-synchronizer OCP Recovery v1.1 EP0 arbiter.
 --
 --  Every EP0 SETUP is trapped in the hclk domain, classified, and either
 --  replayed to the legacy usb_dma path (non-OCP SETUP) or routed to the SV
@@ -16,6 +15,102 @@
 library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
+
+entity usb_ocp_recovery_post_sync_arb is
+  generic (
+    USB_DATAWIDTH    : integer := 64;
+    RXNBYTES_BITS    : integer := 12;
+    TXNBYTES_BITS    : integer := 15;
+    C_REC_IFACE_NUM  : integer range 0 to 255 := 0
+  );
+  port (
+    hclk     : in  std_logic;
+    hresetn  : in  std_logic;
+
+    sync_busreset : in std_logic;
+    sync_vbus_valid_i : in std_logic;
+
+    sync_sieint_epinfo_req_i    : in  std_logic;
+    sync_sieint_epinfo_epnr_i   : in  std_logic_vector(3 downto 0);
+    sync_sieint_epinfo_epdir_i  : in  std_logic;
+    sync_sieint_epinfo_setup_i  : in  std_logic;
+    sync_sieint_setup_received_i: in  std_logic;
+    sync_sieint_rx_nbytes_i     : in  std_logic_vector(RXNBYTES_BITS-1 downto 0);
+    sync_sieint_rxdata_i        : in  std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    sync_sieint_rxdatavalid_i   : in  std_logic;
+    sync_sieint_endtransfer_i   : in  std_logic;
+    sync_sieint_success_i       : in  std_logic;
+    sync_sieint_error_i         : in  std_logic;
+    sync_sieint_errortype_i     : in  std_logic_vector(3 downto 0);
+    sync_sieint_sentNAK_i       : in  std_logic;
+    sync_sieint_txdatafetched_i : in  std_logic;
+
+    epinfo_sync_valid_dma           : in  std_logic;
+    epinfo_sync_active_dma          : in  std_logic;
+    epinfo_sync_disabled_dma        : in  std_logic;
+    epinfo_sync_toggle_dma          : in  std_logic;
+    epinfo_sync_stall_dma           : in  std_logic;
+    epinfo_sync_iso_dma             : in  std_logic;
+    epinfo_sync_ratefeedbackmode_dma: in  std_logic;
+    epinfo_sync_nbytes_dma          : in  std_logic_vector(TXNBYTES_BITS-1 downto 0);
+    epinfo_sync_maxpacket_dma       : in  std_logic_vector(1 downto 0);
+    epinfo_sync_txdata_dma          : in  std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    epinfo_sync_txdata_valid_dma    : in  std_logic;
+
+    sync_sieint_epinfo_req_o    : out std_logic;
+    sync_sieint_epinfo_epnr_o   : out std_logic_vector(3 downto 0);
+    sync_sieint_epinfo_epdir_o  : out std_logic;
+    sync_sieint_epinfo_setup_o  : out std_logic;
+    sync_sieint_rx_nbytes_o     : out std_logic_vector(RXNBYTES_BITS-1 downto 0);
+    sync_sieint_rxdata_o        : out std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    sync_sieint_rxdatavalid_o   : out std_logic;
+    sync_sieint_endtransfer_o   : out std_logic;
+    sync_sieint_success_o       : out std_logic;
+    sync_sieint_sentNAK_o       : out std_logic;
+    sync_sieint_txdatafetched_o : out std_logic;
+
+    sync_sieint_setup_received_o: out std_logic;
+    sync_sieint_error_o         : out std_logic;
+    sync_sieint_errortype_o     : out std_logic_vector(3 downto 0);
+
+    epinfo_sync_valid_o           : out std_logic;
+    epinfo_sync_active_o          : out std_logic;
+    epinfo_sync_disabled_o        : out std_logic;
+    epinfo_sync_toggle_o          : out std_logic;
+    epinfo_sync_stall_o           : out std_logic;
+    epinfo_sync_iso_o             : out std_logic;
+    epinfo_sync_ratefeedbackmode_o: out std_logic;
+    epinfo_sync_nbytes_o          : out std_logic_vector(TXNBYTES_BITS-1 downto 0);
+    epinfo_sync_maxpacket_o       : out std_logic_vector(1 downto 0);
+    epinfo_sync_txdata_o          : out std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    epinfo_sync_txdata_valid_o    : out std_logic;
+
+    setup_pkt_vld   : out std_logic;
+    setup_pkt       : out std_logic_vector(63 downto 0);
+
+    ctrl_out_data   : out std_logic_vector(31 downto 0);
+    ctrl_out_be     : out std_logic_vector(3 downto 0);
+    ctrl_out_vld    : out std_logic;
+    ctrl_out_last   : out std_logic;
+    ctrl_out_rdy    : in  std_logic;
+
+    ctrl_in_data    : in  std_logic_vector(31 downto 0);
+    ctrl_in_be      : in  std_logic_vector(3 downto 0);
+    ctrl_in_vld     : in  std_logic;
+    ctrl_in_last    : in  std_logic;
+    ctrl_in_rdy     : out std_logic;
+    ctrl_in_resp_bytes : in  std_logic_vector(6 downto 0);
+    ctrl_in_resp_known : in  std_logic;
+
+    ctrl_set_stall  : in  std_logic;
+    ctrl_xfer_done  : out std_logic;
+    ctrl_xfer_abort : out std_logic;
+
+    ocp_path_disable_i : in  std_logic;
+    fifo_payload_available_i : in std_logic;
+    rec_claim_status : out std_logic
+  );
+end entity usb_ocp_recovery_post_sync_arb;
 
 architecture rtl of usb_ocp_recovery_post_sync_arb is
 
