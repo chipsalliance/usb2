@@ -28,7 +28,8 @@ entity usb_pie is
       USB_DATAWIDTH         : integer := 64;
       C_NBDEV               : integer := 1;
       C_NBPHYSEP            : integer := 14;
-      C_EXTEND_TX_DELAY     : boolean := FALSE
+      C_EXTEND_TX_DELAY     : boolean := FALSE;
+      G_SIM_CHIRP_TIMERS    : boolean := FALSE
    );
     port (
           ----- To/From usb synchronizer ------------------------
@@ -193,6 +194,27 @@ constant LINESTATE_INCST     : std_logic_vector(1 DOWNTO 0) := "11";
 -- T_3ms can be used for several timings: -  3ms < TWTREV (3.072 ms @ 60 MHz) < 3.125 ms &  T3 (5.22.1.1 UTMI spec)
 -- - 1 ms < TDRSMUP (1.1 us @ 60 MHz) < 15 ms (5.22.3 UTMI spec) & TUCH (min 1 ms), max 7 ms
 constant T_3ms             : natural := 184320;  --  3ms < TWTREV (3.072 ms @ 60 MHz) < 3.125 ms &  T3 (5.22.1.1 UTMI spec)
+
+-- T_TUCH: device chirp K duration for HS detection (USB 2.0 T_UCH).
+-- T_CHIRP_DELAY: delay before device drives chirp K after detecting reset.
+-- When G_SIM_CHIRP_TIMERS is TRUE, these are scaled down for simulation speed;
+-- otherwise they use the full USB-spec real-time values (T_3ms / T_125us).
+constant T_TUCH_SIM         : natural := 1800;    -- 30 us @ 60 MHz (sim)
+constant T_TUCH_SPEC        : natural := 184320;  -- 3.072 ms @ 60 MHz (spec)
+constant T_CHIRP_DELAY_SIM  : natural := 600;     -- 10 us @ 60 MHz (sim)
+constant T_CHIRP_DELAY_SPEC : natural := 7500;    -- 125 us @ 60 MHz (spec)
+
+function sel_nat(sim : boolean; s : natural; r : natural) return natural is
+begin
+  if sim then
+    return s;
+  else
+    return r;
+  end if;
+end function;
+
+constant T_TUCH             : natural := sel_nat(G_SIM_CHIRP_TIMERS, T_TUCH_SIM, T_TUCH_SPEC);
+constant T_CHIRP_DELAY      : natural := sel_nat(G_SIM_CHIRP_TIMERS, T_CHIRP_DELAY_SIM, T_CHIRP_DELAY_SPEC);
 
 constant T_60us            : natural := 3600;  -- 60 us @ 60 MHz
 constant T_125us           : natural := 7500;  -- 125 us @ 60 MHz
@@ -1265,7 +1287,7 @@ begin
                bus_event_state_nxt <= BUS_EVENT_WF_EOR_FS;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';
-            elsif timer_bus_event = T_125us then -- add extra delay before driving chirp K
+            elsif timer_bus_event = T_CHIRP_DELAY then -- add extra delay before driving chirp K (scaled for sim)
                bus_event_state_nxt <= BUS_EVENT_HS_DET_HSK_1;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';
@@ -1356,7 +1378,7 @@ begin
             end if;
 
          when BUS_EVENT_HS_DET_HSK_1 => -- High Speed Detection HandShake
-            if timer_bus_event = T_3ms  then --  TUCH minimum requirement is 1ms (UTMI spec 5.22.2.1)
+            if timer_bus_event = T_TUCH  then --  TUCH minimum requirement is 1ms (UTMI spec 5.22.2.1) (scaled for sim)
                bus_event_state_nxt <= BUS_EVENT_HS_DET_HSK_2;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';
