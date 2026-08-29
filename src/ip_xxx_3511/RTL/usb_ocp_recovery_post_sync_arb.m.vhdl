@@ -163,7 +163,7 @@ begin
     type t_trap_state is (T_IDLE, T_TRAP,
                           T_REPLAY_REQ, T_REPLAY_ALIGN, T_REPLAY_DATA,
                           T_REPLAY_END, T_PASS,
-                          C_DATA, C_STATUS);
+                          T_DATA, T_STATUS);
     signal st : t_trap_state;
 
     signal cap_rxdata    : std_logic_vector(USB_DATAWIDTH-1 downto 0);
@@ -197,10 +197,10 @@ begin
     signal in_data_toggle_r : std_logic;
     signal zlp_phase_r      : std_logic;
     -- Latches a STATUS-stage end pulse that arrives while the OUT elastic queue
-    -- is still draining, so C_STATUS release waits for rx_count_r=0 even though
+    -- is still draining, so T_STATUS release waits for rx_count_r=0 even though
     -- st_end_c is a single-cycle pulse.  Without it, an OUT whose RX buffer has
     -- not drained by
-    -- the STATUS endtransfer would hang C_STATUS forever.
+    -- the STATUS endtransfer would hang T_STATUS forever.
     signal status_end_pend_r : std_logic;
     signal zlp_owed_c       : std_logic;
 
@@ -282,7 +282,7 @@ begin
 
     fwd     <= '1' when (st = T_IDLE) or (st = T_PASS) else '0';
     fab     <= '1' when (st = T_TRAP) and (end_seen = '0') else '0';
-    claim_q <= '1' when (st = C_DATA) or (st = C_STATUS) else '0';
+    claim_q <= '1' when (st = T_DATA) or (st = T_STATUS) else '0';
 
     -- OCP-recovery class match on the captured SETUP (little-endian, USB 2.0
     -- Sec 9.3 Tbl 9-2; OCP Recovery v1.1 Sec 8.5).
@@ -368,7 +368,7 @@ begin
     -- ------------------------------------------------------------------
     -- Control-IN cut-through queue combinational (SV 32b words -> SIE beats).
     -- ------------------------------------------------------------------
-    tx_in_data_c <= '1' when (claim_q = '1') and (st = C_DATA)
+    tx_in_data_c <= '1' when (claim_q = '1') and (st = T_DATA)
                              and (xfer_dir_in_r = '1') and (zlp_phase_r = '0')
                      else '0';
     tx_remaining_bytes_c <= tx_response_bytes_r - tx_bytes_sent_r
@@ -408,8 +408,8 @@ begin
     -- not trip the decoder's early-termination escape).
     ctrl_xfer_done <= rx_drain_done_r when (xfer_dir_in_r = '0') else
                       (sync_sieint_endtransfer_i and tx_launch_ready_c)
-                        when (st = C_DATA) or (st = C_STATUS) else '0';
-    ctrl_xfer_abort <= '1' when ((st = C_DATA) or (st = C_STATUS))
+                        when (st = T_DATA) or (st = T_STATUS) else '0';
+    ctrl_xfer_abort <= '1' when ((st = T_DATA) or (st = T_STATUS))
                                 and (xfer_dir_in_r = '0')
                                 and ((new_setup_c = '1') or (sync_busreset = '1')
                                      or (sync_vbus_valid_i = '0'))
@@ -464,7 +464,7 @@ begin
           -- the claim FSM owns every EP0 transaction (SETUP/DATA/STATUS) of the
           -- transfer, and a host-abandon SETUP is handled explicitly below.
           if (st /= T_IDLE) and (st /= T_PASS)
-             and (st /= C_DATA) and (st /= C_STATUS)
+             and (st /= T_DATA) and (st /= T_STATUS)
              and (sync_sieint_epinfo_req_i = '1') and (pend_valid = '0') then
             pend_valid <= '1';
             pend_setup <= sync_sieint_epinfo_setup_i;
@@ -486,7 +486,7 @@ begin
           if (claim_q = '0') then
             in_data_toggle_r <= '1';
             zlp_phase_r      <= '0';
-          elsif (st = C_DATA) and (st_end_c = '1') then
+          elsif (st = T_DATA) and (st_end_c = '1') then
             if (zlp_phase_r = '0') and (zlp_owed_c = '1') then
               zlp_phase_r      <= '1';
               in_data_toggle_r <= not in_data_toggle_r;
@@ -497,7 +497,7 @@ begin
 
           -- Sample backpressure at the start of each OUT transaction and hold it
           -- through the packet so a fill/drain edge cannot alter its handshake.
-          if (st = C_DATA) and (xfer_dir_in_r = '0')
+          if (st = T_DATA) and (xfer_dir_in_r = '0')
              and (cap_rxdata(23 downto 16) = OCP_INDIRECT_FIFO_DATA)
              and (sync_sieint_epinfo_req_i = '1')
              and (sync_sieint_epinfo_setup_i = '0') then
@@ -505,8 +505,8 @@ begin
           end if;
 
           -- Latch a STATUS-stage end that arrives while the OUT elastic queue
-          -- still holds beats, so C_STATUS releases once the tail has drained.
-          if st = C_STATUS then
+          -- still holds beats, so T_STATUS releases once the tail has drained.
+          if st = T_STATUS then
             if (st_end_c = '1')
                and (rx_count_r /= to_unsigned(0, rx_count_r'length)) then
               status_end_pend_r <= '1';
@@ -559,9 +559,9 @@ begin
               if (end_seen = '1') or (sync_sieint_endtransfer_i = '1') then
                 if (is_ocp = '1') then
                   if nbytes_r = to_unsigned(0, nbytes_r'length) then
-                    st <= C_STATUS;
+                    st <= T_STATUS;
                   else
-                    st <= C_DATA;
+                    st <= T_DATA;
                   end if;
                 else
                   st <= T_REPLAY_REQ;
@@ -605,7 +605,7 @@ begin
               pend_valid <= '0';
               st <= T_IDLE;
 
-            when C_DATA =>
+            when T_DATA =>
               -- New SETUP mid-transfer: host abandoned (USB 2.0 Sec 8.5.3).
               if (new_setup_c = '1') or (sync_vbus_valid_i = '0') then
                 st       <= T_TRAP;
@@ -618,13 +618,13 @@ begin
                 end if;
               elsif st_end_c = '1' then
                 if (zlp_phase_r = '0') and (zlp_owed_c = '1') then
-                  st <= C_DATA;               -- emit terminating ZLP first
+                  st <= T_DATA;               -- emit terminating ZLP first
                 else
-                  st <= C_STATUS;
+                  st <= T_STATUS;
                 end if;
               end if;
 
-            when C_STATUS =>
+            when T_STATUS =>
               if (new_setup_c = '1') or (sync_vbus_valid_i = '0') then
                 st       <= T_TRAP;
                 cap_done <= '0';
@@ -719,7 +719,7 @@ begin
               rx_word_index_r <= rx_word_index_r + 1;
             end if;
           end if;
-          if (st_end_c = '1') and (st = C_DATA) and (xfer_dir_in_r = '0') then
+          if (st_end_c = '1') and (st = T_DATA) and (xfer_dir_in_r = '0') then
             rx_total_r    <= unsigned(sync_sieint_rx_nbytes_i);
             rx_end_seen_r <= '1';
             if unsigned(sync_sieint_rx_nbytes_i) = 0 then
@@ -935,7 +935,7 @@ begin
         '0' when (claim_q = '1') and (tx_in_data_c = '1')
                                   and (tx_launch_ready_c = '0') else
         -- SETUP stays active so it can supersede a NAKed OUT transfer.
-        '0' when (claim_q = '1') and (st = C_DATA)
+        '0' when (claim_q = '1') and (st = T_DATA)
                                   and (xfer_dir_in_r = '0')
                                   and (sync_sieint_epinfo_setup_i = '0')
                                   and (fifo_data_out_nak_r = '1') else
@@ -948,8 +948,8 @@ begin
         epinfo_sync_disabled_dma when (fwd = '1')     else '0';
 
     epinfo_sync_toggle_o <=
-        in_data_toggle_r       when (claim_q = '1') and (st = C_DATA)   else
-        '1'                    when (claim_q = '1') and (st = C_STATUS) else
+        in_data_toggle_r       when (claim_q = '1') and (st = T_DATA)   else
+        '1'                    when (claim_q = '1') and (st = T_STATUS) else
         epinfo_sync_toggle_dma when (fwd = '1')                         else '0';
 
     epinfo_sync_stall_o <=
@@ -966,7 +966,7 @@ begin
 
     epinfo_sync_nbytes_o <=
         (others => '0')
-            when (claim_q = '1') and ((st = C_STATUS) or (zlp_phase_r = '1')) else
+            when (claim_q = '1') and ((st = T_STATUS) or (zlp_phase_r = '1')) else
         std_logic_vector(resize(tx_response_bytes_r, TXNBYTES_BITS))
             when (claim_q = '1') and (tx_in_data_c = '1')                     else
         std_logic_vector(nbytes_r)   when (claim_q = '1') else
@@ -1003,7 +1003,7 @@ begin
           severity error;
 
         -- A claim is never owned before the full 8-byte SETUP has been captured.
-        assert not (((st = C_DATA) or (st = C_STATUS)) and (cap_done = '0'))
+        assert not (((st = T_DATA) or (st = T_STATUS)) and (cap_done = '0'))
           report "post_sync_arb: claim asserted before SETUP capture complete"
           severity error;
 
