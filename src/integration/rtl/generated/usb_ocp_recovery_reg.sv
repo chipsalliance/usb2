@@ -242,6 +242,16 @@ module usb_ocp_recovery_reg (
             struct packed{
                 logic [7:0] next;
                 logic load_next;
+            } DEV_STATUS;
+            struct packed{
+                logic [15:0] next;
+                logic load_next;
+            } REC_REASON_CODE;
+        } DEVICE_STATUS_0;
+        struct packed{
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
             } RESET_CTRL;
             struct packed{
                 logic [7:0] next;
@@ -266,6 +276,20 @@ module usb_ocp_recovery_reg (
                 logic load_next;
             } ACTIVATE_REC_IMG;
         } RECOVERY_CTRL;
+        struct packed{
+            struct packed{
+                logic [3:0] next;
+                logic load_next;
+            } DEV_REC_STATUS;
+            struct packed{
+                logic [3:0] next;
+                logic load_next;
+            } REC_IMG_INDEX;
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
+            } VENDOR_SPECIFIC_STATUS;
+        } RECOVERY_STATUS;
         struct packed{
             struct packed{
                 logic next;
@@ -383,6 +407,14 @@ module usb_ocp_recovery_reg (
         struct packed{
             struct packed{
                 logic [7:0] value;
+            } DEV_STATUS;
+            struct packed{
+                logic [15:0] value;
+            } REC_REASON_CODE;
+        } DEVICE_STATUS_0;
+        struct packed{
+            struct packed{
+                logic [7:0] value;
             } RESET_CTRL;
             struct packed{
                 logic [7:0] value;
@@ -402,6 +434,17 @@ module usb_ocp_recovery_reg (
                 logic [7:0] value;
             } ACTIVATE_REC_IMG;
         } RECOVERY_CTRL;
+        struct packed{
+            struct packed{
+                logic [3:0] value;
+            } DEV_REC_STATUS;
+            struct packed{
+                logic [3:0] value;
+            } REC_IMG_INDEX;
+            struct packed{
+                logic [7:0] value;
+            } VENDOR_SPECIFIC_STATUS;
+        } RECOVERY_STATUS;
         struct packed{
             struct packed{
                 logic value;
@@ -792,6 +835,48 @@ module usb_ocp_recovery_reg (
     end
     assign hwif_out.PROT_CAP_3.HEARTBEAT_PERIOD.value = field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value;
     assign hwif_out.PROT_CAP_3.RESERVED_31_24.value = 8'h0;
+    // Field: usb_ocp_recovery_reg.DEVICE_STATUS_0.DEV_STATUS
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.DEVICE_STATUS_0.DEV_STATUS.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.DEVICE_STATUS_0 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.DEVICE_STATUS_0.DEV_STATUS.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
+            load_next_c = '1;
+        end
+        field_combo.DEVICE_STATUS_0.DEV_STATUS.next = next_c;
+        field_combo.DEVICE_STATUS_0.DEV_STATUS.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.DEVICE_STATUS_0.DEV_STATUS.value <= 8'h1;
+        end else if(field_combo.DEVICE_STATUS_0.DEV_STATUS.load_next) begin
+            field_storage.DEVICE_STATUS_0.DEV_STATUS.value <= field_combo.DEVICE_STATUS_0.DEV_STATUS.next;
+        end
+    end
+    assign hwif_out.DEVICE_STATUS_0.DEV_STATUS.value = field_storage.DEVICE_STATUS_0.DEV_STATUS.value;
+    // Field: usb_ocp_recovery_reg.DEVICE_STATUS_0.REC_REASON_CODE
+    always_comb begin
+        automatic logic [15:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.DEVICE_STATUS_0.REC_REASON_CODE.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.DEVICE_STATUS_0 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.DEVICE_STATUS_0.REC_REASON_CODE.value & ~decoded_wr_biten[31:16]) | (decoded_wr_data[31:16] & decoded_wr_biten[31:16]);
+            load_next_c = '1;
+        end
+        field_combo.DEVICE_STATUS_0.REC_REASON_CODE.next = next_c;
+        field_combo.DEVICE_STATUS_0.REC_REASON_CODE.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.DEVICE_STATUS_0.REC_REASON_CODE.value <= 16'h0;
+        end else if(field_combo.DEVICE_STATUS_0.REC_REASON_CODE.load_next) begin
+            field_storage.DEVICE_STATUS_0.REC_REASON_CODE.value <= field_combo.DEVICE_STATUS_0.REC_REASON_CODE.next;
+        end
+    end
+    assign hwif_out.DEVICE_STATUS_0.REC_REASON_CODE.value = field_storage.DEVICE_STATUS_0.REC_REASON_CODE.value;
     // Field: usb_ocp_recovery_reg.DEVICE_RESET.RESET_CTRL
     always_comb begin
         automatic logic [7:0] next_c;
@@ -937,6 +1022,69 @@ module usb_ocp_recovery_reg (
     end
     assign hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.value = field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value;
     assign hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.swmod = decoded_reg_strb.RECOVERY_CTRL && decoded_req_is_wr;
+    // Field: usb_ocp_recovery_reg.RECOVERY_STATUS.DEV_REC_STATUS
+    always_comb begin
+        automatic logic [3:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.RECOVERY_STATUS.DEV_REC_STATUS.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.RECOVERY_STATUS && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.RECOVERY_STATUS.DEV_REC_STATUS.value & ~decoded_wr_biten[3:0]) | (decoded_wr_data[3:0] & decoded_wr_biten[3:0]);
+            load_next_c = '1;
+        end
+        field_combo.RECOVERY_STATUS.DEV_REC_STATUS.next = next_c;
+        field_combo.RECOVERY_STATUS.DEV_REC_STATUS.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.RECOVERY_STATUS.DEV_REC_STATUS.value <= 4'h0;
+        end else if(field_combo.RECOVERY_STATUS.DEV_REC_STATUS.load_next) begin
+            field_storage.RECOVERY_STATUS.DEV_REC_STATUS.value <= field_combo.RECOVERY_STATUS.DEV_REC_STATUS.next;
+        end
+    end
+    assign hwif_out.RECOVERY_STATUS.DEV_REC_STATUS.value = field_storage.RECOVERY_STATUS.DEV_REC_STATUS.value;
+    // Field: usb_ocp_recovery_reg.RECOVERY_STATUS.REC_IMG_INDEX
+    always_comb begin
+        automatic logic [3:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.RECOVERY_STATUS.REC_IMG_INDEX.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.RECOVERY_STATUS && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.RECOVERY_STATUS.REC_IMG_INDEX.value & ~decoded_wr_biten[7:4]) | (decoded_wr_data[7:4] & decoded_wr_biten[7:4]);
+            load_next_c = '1;
+        end
+        field_combo.RECOVERY_STATUS.REC_IMG_INDEX.next = next_c;
+        field_combo.RECOVERY_STATUS.REC_IMG_INDEX.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.RECOVERY_STATUS.REC_IMG_INDEX.value <= 4'h0;
+        end else if(field_combo.RECOVERY_STATUS.REC_IMG_INDEX.load_next) begin
+            field_storage.RECOVERY_STATUS.REC_IMG_INDEX.value <= field_combo.RECOVERY_STATUS.REC_IMG_INDEX.next;
+        end
+    end
+    assign hwif_out.RECOVERY_STATUS.REC_IMG_INDEX.value = field_storage.RECOVERY_STATUS.REC_IMG_INDEX.value;
+    // Field: usb_ocp_recovery_reg.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.RECOVERY_STATUS && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.value & ~decoded_wr_biten[15:8]) | (decoded_wr_data[15:8] & decoded_wr_biten[15:8]);
+            load_next_c = '1;
+        end
+        field_combo.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.next = next_c;
+        field_combo.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.value <= 8'h0;
+        end else if(field_combo.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.load_next) begin
+            field_storage.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.value <= field_combo.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.next;
+        end
+    end
+    assign hwif_out.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.value = field_storage.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.value;
     // Field: usb_ocp_recovery_reg.HW_STATUS.TEMP_CRITICAL
     always_comb begin
         automatic logic [0:0] next_c;
@@ -1253,9 +1401,9 @@ module usb_ocp_recovery_reg (
     assign readback_array[7][31:0] = (decoded_reg_strb.DEVICE_ID_3 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_3.DATA_15_12.next : '0;
     assign readback_array[8][31:0] = (decoded_reg_strb.DEVICE_ID_4 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_4.DATA_19_16.next : '0;
     assign readback_array[9][31:0] = (decoded_reg_strb.DEVICE_ID_5 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_5.DATA_23_20.next : '0;
-    assign readback_array[10][7:0] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_0.DEV_STATUS.next : '0;
+    assign readback_array[10][7:0] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? field_storage.DEVICE_STATUS_0.DEV_STATUS.value : '0;
     assign readback_array[10][15:8] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_0.PROT_ERROR.next : '0;
-    assign readback_array[10][31:16] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_0.REC_REASON_CODE.next : '0;
+    assign readback_array[10][31:16] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? field_storage.DEVICE_STATUS_0.REC_REASON_CODE.value : '0;
     assign readback_array[11][15:0] = (decoded_reg_strb.DEVICE_STATUS_1 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_1.HEARTBEAT.next : '0;
     assign readback_array[11][23:16] = (decoded_reg_strb.DEVICE_STATUS_1 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_1.VENDOR_STATUS_LENGTH.next : '0;
     assign readback_array[11][31:24] = (decoded_reg_strb.DEVICE_STATUS_1 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_1.VENDOR_STATUS_0.next : '0;
@@ -1281,9 +1429,9 @@ module usb_ocp_recovery_reg (
     assign readback_array[27][15:8] = (decoded_reg_strb.RECOVERY_CTRL && !decoded_req_is_wr) ? field_storage.RECOVERY_CTRL.REC_IMG_SEL.value : '0;
     assign readback_array[27][23:16] = (decoded_reg_strb.RECOVERY_CTRL && !decoded_req_is_wr) ? field_storage.RECOVERY_CTRL.ACTIVATE_REC_IMG.value : '0;
     assign readback_array[27][31:24] = (decoded_reg_strb.RECOVERY_CTRL && !decoded_req_is_wr) ? 8'h0 : '0;
-    assign readback_array[28][3:0] = (decoded_reg_strb.RECOVERY_STATUS && !decoded_req_is_wr) ? hwif_in.RECOVERY_STATUS.DEV_REC_STATUS.next : '0;
-    assign readback_array[28][7:4] = (decoded_reg_strb.RECOVERY_STATUS && !decoded_req_is_wr) ? hwif_in.RECOVERY_STATUS.REC_IMG_INDEX.next : '0;
-    assign readback_array[28][15:8] = (decoded_reg_strb.RECOVERY_STATUS && !decoded_req_is_wr) ? hwif_in.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.next : '0;
+    assign readback_array[28][3:0] = (decoded_reg_strb.RECOVERY_STATUS && !decoded_req_is_wr) ? field_storage.RECOVERY_STATUS.DEV_REC_STATUS.value : '0;
+    assign readback_array[28][7:4] = (decoded_reg_strb.RECOVERY_STATUS && !decoded_req_is_wr) ? field_storage.RECOVERY_STATUS.REC_IMG_INDEX.value : '0;
+    assign readback_array[28][15:8] = (decoded_reg_strb.RECOVERY_STATUS && !decoded_req_is_wr) ? field_storage.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.value : '0;
     assign readback_array[28][31:16] = (decoded_reg_strb.RECOVERY_STATUS && !decoded_req_is_wr) ? 16'h0 : '0;
     assign readback_array[29][0:0] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? field_storage.HW_STATUS.TEMP_CRITICAL.value : '0;
     assign readback_array[29][1:1] = (decoded_reg_strb.HW_STATUS && !decoded_req_is_wr) ? field_storage.HW_STATUS.SOFT_ERR.value : '0;

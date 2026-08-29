@@ -27,7 +27,6 @@ ${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_pkg.sv
 ${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_ctrl_decode.sv
 ${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_rb_adapter.sv
 ${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_cms_fifo.sv
-${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_fsm.sv
 ${USB_COMPILE_DIR}/../../src/integration/rtl/usb_ocp_recovery_top.sv
 
 // Top-tb

@@ -12,7 +12,6 @@
 //   A3 : usb_ocp_recovery_rb_adapter + peakrdl-generated usb_ocp_recovery
 //        (regblock from third_party/usb2/systemrdl/usb_ocp_recovery_reg.rdl)
 //   A4 : usb_ocp_recovery_cms_fifo    (SV)
-//   A5 : usb_ocp_recovery_fsm         (SV)
 //
 // Clock / Reset:
 //   Single clock `clk`, synchronous active-low `rst_ni`.
@@ -93,16 +92,10 @@ module usb_ocp_recovery_top
   input  logic [191:0]            device_id_in,
 
   //----------------------------------------------------------------------------
-  // SoC trigger / ack and recovery sideband.
+  // Recovery data-plane sideband.
   //----------------------------------------------------------------------------
-  input  logic                    rec_trigger,
-  input  logic                    soc_boot_ack,
-  output logic                    recovery_active,
   output logic                    payload_available,
-  output logic                    recovery_image_activated,
-  output logic                    boot_req,
-  output logic                    device_reset_req,
-  output logic                    fatal_err
+  output logic                    recovery_image_activated
 );
 
   //////////////////////////////////////////////////////////////////////////////
@@ -178,52 +171,23 @@ module usb_ocp_recovery_top
   logic                       ext_fifo_aperture_access;
   logic                       ext_fifo_data_aperture_access;
 
-  // --- A3 <-> A5 sideband ---
-  logic                       device_reset_wr;
-  logic [7:0]                 device_reset_ctrl;
-  logic [7:0]                 device_reset_forced;
-  logic [7:0]                 device_reset_iface;
-  logic                       recovery_ctrl_wr;
-  logic                       recovery_ctrl_wr_cms;
-  logic                       recovery_ctrl_wr_img_sel;
-  logic                       recovery_ctrl_wr_activate;
-  logic [7:0]                 recovery_ctrl_cms;
-  logic [7:0]                 recovery_ctrl_img_sel;
-  logic [7:0]                 recovery_ctrl_activate;
-  logic                       firmware_activate_clear_q;
   // OCP Recovery v1.1 Sec 9.2 defines PROTOCOL_ERROR clear-on-read for the
   // Recovery Agent USB command. The control decoder pulses this only after a
   // completed USB DEVICE_STATUS read; firmware cpuif reads are non-destructive.
   logic                       proto_err_rd_pulse;
-  // OCP Recovery v1.1 Sec 9.1: an access to an unsupported OCP command code
-  // pulses this so the FSM sets DEVICE_STATUS.PROTOCOL_ERROR = 0x01.
-  logic                       unsupported_cmd_pulse;
-
-  logic [7:0]                 device_status_out;
-  logic [7:0]                 device_status_protocol_err_out;
-  logic [15:0]                device_status_reason_out;
-  logic [7:0]                 recovery_status_out;
-  logic [7:0]                 recovery_vendor_status_out;
-  logic [7:0]                 hw_status_out;
-  logic [7:0]                 hw_status_vendor_out;
-  logic [7:0]                 hw_status_ctemp_out;
-  logic [7:0]                 hw_status_vendor_len_out;
+  logic [7:0]                 protocol_error_q;
 
   // --- A4 status (image push not used in EP0-only mode but A4 still drives) ---
-  logic                       image_push_active;
   logic                       image_push_done;
   logic                       fifo_overflow;
-  logic                       image_ready;
-  logic                       fifo_reset_pulse;
   logic                       batch_aborted;
-  logic [31:0]                image_size;
-  logic [31:0]                bytes_pushed;
 
   // --- INDIRECT_FIFO_* values from A4 (cms_fifo) into the A3 regblock.
   //     CTRL fields are stored read-back mirrors. STATUS and DATA are
   //     storage-less live hwif views of cms_fifo. ---
   logic [7:0]                 fifo_ctrl_cms;
   logic                       fifo_ctrl_reset;
+  logic                       fifo_region_reset;
   logic [31:0]                fifo_ctrl_image_size;
   logic [31:0]                fifo_status_word_0;
   logic [31:0]                fifo_status_word_1;
@@ -239,9 +203,7 @@ module usb_ocp_recovery_top
   // EXT in-flight gating: once EXT is granted, hold off subsequent EXT
   // grants until its ack lands. This protects multi-cycle cms_fifo accesses
   // while the upstream AHB transaction holds wr/rd high awaiting completion.
-  // Without the gate, a held-high EXT
-  // request would be re-issued to A3/A4 each cycle and side-effecting pulses
-  // such as recovery_ctrl_wr and device_reset_wr would fire repeatedly.
+  // Without the gate, a held-high EXT request would be re-issued to A3/A4.
   // USB side already pulses rb_wr per word from ctrl_decode and is
   // intentionally not gated to preserve its 1-cycle ack semantics.
   //////////////////////////////////////////////////////////////////////////////
@@ -451,17 +413,6 @@ module usb_ocp_recovery_top
     usb_vendor_next                 = usb_rb_wdata[7:0];
     usb_vendor_we                   = 1'b0;
 
-    device_reset_wr              = 1'b0;
-    device_reset_ctrl            = usb_rb_wdata[7:0];
-    device_reset_forced          = usb_rb_wdata[15:8];
-    device_reset_iface           = usb_rb_wdata[23:16];
-    recovery_ctrl_wr_cms         = 1'b0;
-    recovery_ctrl_wr_img_sel     = 1'b0;
-    recovery_ctrl_wr_activate    = 1'b0;
-    recovery_ctrl_cms            = usb_rb_wdata[7:0];
-    recovery_ctrl_img_sel        = usb_rb_wdata[15:8];
-    recovery_ctrl_activate       = usb_rb_wdata[23:16];
-
     unique case (usb_rb_cmd)
       OCP_CMD_PROT_CAP: begin
         usb_hw_cmd_len     = OCP_LEN_PROT_CAP;
@@ -508,8 +459,11 @@ module usb_ocp_recovery_top
         usb_hw_cmd_len     = OCP_LEN_DEVICE_STATUS;
         usb_hw_host_ro_cmd = 1'b1;
         if (usb_rb_offset == 16'd0) begin
-          usb_hw_rdata = {device_status_reason_out,
-                          device_status_protocol_err_out, device_status_out};
+          usb_hw_rdata = {
+            rb_hwif_out.DEVICE_STATUS_0.REC_REASON_CODE.value,
+            protocol_error_q,
+            rb_hwif_out.DEVICE_STATUS_0.DEV_STATUS.value
+          };
         end else if (usb_rb_offset < 16'd16) begin
           usb_hw_rdata = '0;
         end else begin
@@ -525,7 +479,6 @@ module usb_ocp_recovery_top
           usb_device_reset_ctrl_we   = usb_rb_wstrb[0];
           usb_device_reset_forced_we = usb_rb_wstrb[1];
           usb_device_reset_iface_we  = usb_rb_wstrb[2];
-          device_reset_wr            = |usb_rb_wstrb[2:0];
         end
       end
       OCP_CMD_RECOVERY_CTRL: begin
@@ -537,15 +490,17 @@ module usb_ocp_recovery_top
           usb_recovery_ctrl_cms_we        = usb_rb_wstrb[0];
           usb_recovery_ctrl_img_sel_we    = usb_rb_wstrb[1];
           usb_recovery_ctrl_activate_we   = usb_rb_wstrb[2];
-          recovery_ctrl_wr_cms            = usb_rb_wstrb[0];
-          recovery_ctrl_wr_img_sel        = usb_rb_wstrb[1];
-          recovery_ctrl_wr_activate       = usb_rb_wstrb[2];
         end
       end
       OCP_CMD_RECOVERY_STATUS: begin
         usb_hw_cmd_len     = OCP_LEN_RECOVERY_STATUS;
         usb_hw_host_ro_cmd = 1'b1;
-        usb_hw_rdata       = {16'h0, recovery_vendor_status_out, recovery_status_out};
+        usb_hw_rdata       = {
+          16'h0,
+          rb_hwif_out.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.value,
+          rb_hwif_out.RECOVERY_STATUS.REC_IMG_INDEX.value,
+          rb_hwif_out.RECOVERY_STATUS.DEV_REC_STATUS.value
+        };
       end
       OCP_CMD_HW_STATUS: begin
         usb_hw_cmd_len     = OCP_LEN_HW_STATUS;
@@ -629,17 +584,22 @@ module usb_ocp_recovery_top
      .cpuif_rd_data   (cpuif_rd_data),
      .cpuif_wr_ack    (cpuif_wr_ack),
      .cpuif_wr_err    (cpuif_wr_err),
-     .unsupported_cmd_pulse            (unsupported_cmd_pulse)
-   );
+      .unsupported_cmd_pulse            ()
+    );
 
-  // Firmware writes zero to the standard RECOVERY_CTRL activation field after
-  // verifying the drained image. Delay cpuif swmod one cycle so the updated
-  // field value is valid when the FSM recognizes that device-side clear.
+  // OCP Recovery v1.1 Sec 9.1 defines PROTOCOL_ERROR as a USB Recovery Agent
+  // transport error. Recovery progress and status publication are firmware-owned.
   always_ff @(posedge clk) begin
     if (!rst_ni) begin
-      firmware_activate_clear_q <= 1'b0;
+      protocol_error_q <= OCP_PROTOCOL_ERROR_NONE;
     end else begin
-      firmware_activate_clear_q <= rb_hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.swmod;
+      if (usb_protocol_error_set
+          && (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)) begin
+        protocol_error_q <= OCP_PROTOCOL_ERROR_UNSUPPORTED_COMMAND;
+      end
+      if (proto_err_rd_pulse) begin
+        protocol_error_q <= OCP_PROTOCOL_ERROR_NONE;
+      end
     end
   end
 
@@ -649,13 +609,6 @@ module usb_ocp_recovery_top
   // OCP command aperture). Same-domain (dev_axi_aclk) registered field value; no
   // synchronizer needed.
   assign rec_ocp_path_disable = rb_hwif_out.CALIPTRA_CTRL.OCP_PATH_DISABLE.value;
-
-  // Only USB hardware-interface writes produce OCP command FSM triggers.
-  // Firmware cpuif writes update field storage but do not trigger the recovery
-  // FSM. The explicit firmware activation path above is the sole exception.
-  assign recovery_ctrl_wr = recovery_ctrl_wr_cms
-                          | recovery_ctrl_wr_img_sel
-                          | recovery_ctrl_wr_activate;
 
   assign cpuif_wr_strb = { |cpuif_wr_biten[31:24],
                            |cpuif_wr_biten[23:16],
@@ -733,9 +686,8 @@ module usb_ocp_recovery_top
     // endpoint through hwif_out. Its RDL hw=r properties make the stored values
     // visible without permitting a hardware write.
 
-    // USB Recovery Agent writes use the hardware interface. The generated
-    // field storage remains readable and writable by firmware through cpuif,
-    // but only the USB endpoint emits recovery FSM trigger pulses.
+    // USB Recovery Agent writes use the hardware interface. Firmware owns
+    // recovery progress through cpuif-visible field storage.
     rb_hwif_in.DEVICE_RESET.RESET_CTRL.next       = usb_device_reset_ctrl_next;
     rb_hwif_in.DEVICE_RESET.RESET_CTRL.we         = usb_device_reset_ctrl_we;
     rb_hwif_in.DEVICE_RESET.FORCED_RECOVERY.next  = usb_device_reset_forced_next;
@@ -764,11 +716,9 @@ module usb_ocp_recovery_top
     rb_hwif_in.DEVICE_ID_4.DATA_19_16.next                 = device_id_in[159:128];
     rb_hwif_in.DEVICE_ID_5.DATA_23_20.next                 = device_id_in[191:160];
 
-    // DEVICE_STATUS_0: byte 0 = DEV_STATUS, byte 1 = PROT_ERROR, bytes 2-3
-    // = REC_REASON_CODE (16b).  All other DEVICE_STATUS_x regs remain at 0.
-    rb_hwif_in.DEVICE_STATUS_0.DEV_STATUS.next      = device_status_out;
-    rb_hwif_in.DEVICE_STATUS_0.PROT_ERROR.next      = device_status_protocol_err_out;
-    rb_hwif_in.DEVICE_STATUS_0.REC_REASON_CODE.next = device_status_reason_out;
+    // DEVICE_STATUS_0 byte 1 is hardware-owned. Device status and recovery
+    // reason are firmware-owned cpuif storage.
+    rb_hwif_in.DEVICE_STATUS_0.PROT_ERROR.next = protocol_error_q;
 
     // CALIPTRA_CTRL.OCP_PATH_DISABLE (emergency-fallback path-disable control):
     // software write-enable gated by rb_is_ext so only EXT/firmware writes
@@ -782,16 +732,10 @@ module usb_ocp_recovery_top
     // relocated out of the non-spec INDIRECT_FIFO_STATUS byte-0 bits. Driven
     // from the live cms_fifo sticky signals (region_reset_q via fifo_ctrl_reset,
     // overflow_q via fifo_overflow, image_done_q via image_push_done).
-    rb_hwif_in.CALIPTRA_STATUS.REGION_RESET.next = fifo_ctrl_reset;
+    rb_hwif_in.CALIPTRA_STATUS.REGION_RESET.next = fifo_region_reset;
     rb_hwif_in.CALIPTRA_STATUS.OVERFLOW.next     = fifo_overflow;
     rb_hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next   = image_push_done;
     rb_hwif_in.CALIPTRA_STATUS.BATCH_ABORTED.next = batch_aborted;
-
-    // RECOVERY_STATUS byte 0 (low nibble = device status, high nibble =
-    // image index) + byte 1 (vendor).
-    rb_hwif_in.RECOVERY_STATUS.DEV_REC_STATUS.next         = recovery_status_out[3:0];
-    rb_hwif_in.RECOVERY_STATUS.REC_IMG_INDEX.next          = recovery_status_out[7:4];
-    rb_hwif_in.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.next = recovery_vendor_status_out;
 
     // INDIRECT_FIFO_CTRL read-back: cms_fifo is the live owner and drives the
     // mirrored regblock copy. CTRL_0 byte0 = CMS, byte1 bit0 = region-reset
@@ -911,17 +855,14 @@ module usb_ocp_recovery_top
      .ext_cpuif_wr_data   (cpuif_wr_data),
      .ext_cpuif_wr_strb   (cpuif_wr_strb),
 
-     .image_push_active (image_push_active),
-     .image_push_done   (image_push_done),
-     .fifo_overflow     (fifo_overflow),
-     .payload_available (payload_available),
-     .fifo_reset_pulse  (fifo_reset_pulse),
-     .batch_aborted     (batch_aborted),
-     .image_size        (image_size),
-     .bytes_pushed      (bytes_pushed),
-     .fifo_abort_i      (rec_ctrl_xfer_abort),
-     .fifo_ctrl_cms        (fifo_ctrl_cms),
-     .fifo_ctrl_reset      (fifo_ctrl_reset),
+      .image_push_done   (image_push_done),
+      .fifo_overflow     (fifo_overflow),
+      .payload_available (payload_available),
+      .batch_aborted     (batch_aborted),
+      .fifo_abort_i      (rec_ctrl_xfer_abort),
+      .fifo_ctrl_cms        (fifo_ctrl_cms),
+      .fifo_ctrl_reset      (fifo_ctrl_reset),
+      .fifo_region_reset    (fifo_region_reset),
      .fifo_ctrl_image_size (fifo_ctrl_image_size),
      .fifo_status_word_0   (fifo_status_word_0),
      .fifo_status_word_1   (fifo_status_word_1),
@@ -930,57 +871,6 @@ module usb_ocp_recovery_top
       .fifo_status_word_4   (fifo_status_word_4),
       .fifo_data_peek       (fifo_data_peek)
     );
-
-  //////////////////////////////////////////////////////////////////////////////
-  // A5 : recovery state machine
-  //////////////////////////////////////////////////////////////////////////////
-
-  usb_ocp_recovery_fsm u_a5_fsm (
-    .clk             (clk),
-    .rst_ni          (rst_ni),
-
-    .rec_trigger     (rec_trigger),
-    .soc_boot_ack    (soc_boot_ack),
-
-    .device_reset_wr                  (device_reset_wr),
-    .device_reset_ctrl                (device_reset_ctrl),
-    .device_reset_forced              (device_reset_forced),
-    .device_reset_iface               (device_reset_iface),
-    .recovery_ctrl_wr                 (recovery_ctrl_wr),
-    .recovery_ctrl_wr_cms             (recovery_ctrl_wr_cms),
-    .recovery_ctrl_wr_img_sel         (recovery_ctrl_wr_img_sel),
-    .recovery_ctrl_cms                (recovery_ctrl_cms),
-    .recovery_ctrl_img_sel            (recovery_ctrl_img_sel),
-    .recovery_ctrl_activate           (recovery_ctrl_activate),
-    .firmware_activate_clear          (firmware_activate_clear_q
-                                       && (rb_hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.value == 8'h00)),
-    .proto_err_rd_pulse               (proto_err_rd_pulse),
-    .unsupported_cmd_set              (unsupported_cmd_pulse | usb_protocol_error_set),
-
-    .image_push_active (image_push_active),
-    .image_push_done   (image_push_done),
-    .fifo_overflow     (fifo_overflow),
-    .fifo_abort_i      (rec_ctrl_xfer_abort),
-    .fifo_reset_pulse_i(fifo_reset_pulse),
-    .image_size        (image_size),
-    .bytes_pushed      (bytes_pushed),
-
-    .device_status_out              (device_status_out),
-    .device_status_protocol_err_out (device_status_protocol_err_out),
-    .device_status_reason_out       (device_status_reason_out),
-    .recovery_status_out            (recovery_status_out),
-    .recovery_vendor_status_out     (recovery_vendor_status_out),
-    .hw_status_out                  (hw_status_out),
-    .hw_status_vendor_out           (hw_status_vendor_out),
-    .hw_status_ctemp_out            (hw_status_ctemp_out),
-    .hw_status_vendor_len_out       (hw_status_vendor_len_out),
-
-    .recovery_active  (recovery_active),
-    .image_ready      (image_ready),
-    .boot_req         (boot_req),
-    .device_reset_req (device_reset_req),
-    .fatal_err        (fatal_err)
-  );
 
   assign recovery_image_activated =
       (rb_hwif_out.RECOVERY_CTRL.ACTIVATE_REC_IMG.value == 8'h0F);
@@ -1006,6 +896,10 @@ module usb_ocp_recovery_top
       if (cpuif_req_block) begin
         assert (!cpuif_req)
           else $error("usb_ocp_recovery_top: blocked EXT fifo access still fired cpuif");
+      end
+      if ($past(rst_ni) && $past(proto_err_rd_pulse)) begin
+        assert (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)
+          else $error("usb_ocp_recovery_top: protocol error did not clear on completed USB DEVICE_STATUS read");
       end
     end
   end

@@ -86,7 +86,6 @@ module usb_ocp_recovery_cms_fifo #(
   output logic        image_push_done,
   output logic        fifo_overflow,
   output logic        payload_available,
-  output logic        fifo_reset_pulse,
   output logic        batch_aborted,
   output logic [31:0] image_size,
   output logic [31:0] bytes_pushed,
@@ -96,6 +95,7 @@ module usb_ocp_recovery_cms_fifo #(
   // Regblock control/status values and live FIFO head.
   output logic [7:0]  fifo_ctrl_cms,
   output logic        fifo_ctrl_reset,
+  output logic        fifo_region_reset,
   output logic [31:0] fifo_ctrl_image_size,
   output logic [31:0] fifo_status_word_0,
   output logic [31:0] fifo_status_word_1,
@@ -119,6 +119,7 @@ module usb_ocp_recovery_cms_fifo #(
   logic [31:0] accepted_push_count_q;
   logic        overflow_q;
   logic        region_reset_q;
+  logic        region_reset_pulse_q;
   logic        image_done_q;
   logic        image_push_active_q;
   logic        payload_available_q;
@@ -361,6 +362,7 @@ module usb_ocp_recovery_cms_fifo #(
       accepted_push_count_q <= '0;
       overflow_q          <= 1'b0;
       region_reset_q      <= 1'b0;
+      region_reset_pulse_q <= 1'b0;
       image_done_q        <= 1'b0;
       image_push_active_q <= 1'b0;
       payload_available_q <= 1'b0;
@@ -374,6 +376,7 @@ module usb_ocp_recovery_cms_fifo #(
         ext_status_snapshot_q[i] <= '0;
       end
     end else begin
+      region_reset_pulse_q <= 1'b0;
       if (fifo_clear || fifo_becomes_empty || (fifo_empty && !push_accept)) begin
         payload_available_q <= 1'b0;
       end else if (fifo_becomes_full || terminal_image_push) begin
@@ -456,6 +459,7 @@ module usb_ocp_recovery_cms_fifo #(
           accepted_push_count_q <= '0;
           overflow_q          <= 1'b0;
           region_reset_q      <= 1'b1;
+          region_reset_pulse_q <= 1'b1;
           image_done_q        <= 1'b0;
           image_push_active_q <= 1'b0;
           usb_status_snapshot_vld_q <= 1'b0;
@@ -470,6 +474,7 @@ module usb_ocp_recovery_cms_fifo #(
           accepted_push_count_q <= '0;
           overflow_q          <= 1'b0;
           region_reset_q      <= 1'b1;
+          region_reset_pulse_q <= 1'b1;
           image_done_q        <= 1'b0;
           image_push_active_q <= 1'b0;
           usb_status_snapshot_vld_q <= 1'b0;
@@ -559,13 +564,13 @@ module usb_ocp_recovery_cms_fifo #(
     image_push_done   = image_done_q;
     fifo_overflow     = overflow_q;
     payload_available = payload_available_q;
-    fifo_reset_pulse  = fifo_flush;
     batch_aborted     = batch_aborted_q;
     image_size        = {image_size_q[29:0], 2'b00};
     bytes_pushed      = {accepted_push_count_q[29:0], 2'b00};
 
     fifo_ctrl_cms        = fifo_cms_q;
-    fifo_ctrl_reset      = region_reset_q;
+    fifo_ctrl_reset      = region_reset_pulse_q;
+    fifo_region_reset    = region_reset_q;
     fifo_ctrl_image_size = image_size_q;
 
     fifo_status_word_0 = ext_fifo_status_snapshot_use ? ext_status_snapshot_q[0] : fifo_status_live_word_0;

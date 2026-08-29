@@ -301,21 +301,8 @@ module ip_xxx_3516_hs_mem_wrapper
     // accessed via an AHB sub-decoder taking off the existing
     // dev_axi -> AHB path.
  
-    // Sideband inputs (SoC -> recovery FSM)
-    input                       rec_trigger,
-    input                       soc_boot_ack,
- 
-    // Sideband outputs (recovery FSM -> SoC)
-    output                      rec_active,
+    // Recovery data-plane status outputs.
     output                      payload_available,
-    output                      boot_req,
-    output                      device_reset_req,
-    output                      fatal_err,
-    // ----------------------------------------------------------------
-    // OCP Recovery v1.1 status pins (architecture proposal 3.7)
-    // Driven by usb_ocp_recovery_fsm via wrapper sideband nets.
-    // ----------------------------------------------------------------
-    output wire                 ocp_recovery_available,
     output wire                 ocp_firmware_activated
     );
 
@@ -1054,17 +1041,8 @@ module ip_xxx_3516_hs_mem_wrapper
         // Static capability tie-offs (from parameters)
         .device_id_in (REC_DEVICE_ID_DEFAULT),
 
-        // Sideband
-        .rec_trigger      (rec_trigger),
-        .soc_boot_ack     (soc_boot_ack),
-        .recovery_active  (rec_active),
+        // Recovery data-plane state
         .payload_available(payload_available),
-        .recovery_image_activated(ocp_firmware_activated),
-        .boot_req         (boot_req),
-        .device_reset_req (device_reset_req),
-        .fatal_err        (fatal_err)
+        .recovery_image_activated(ocp_firmware_activated)
     );
-
-    // Legacy top-level status pins: summary view of the recovery FSM.
-    assign ocp_recovery_available = rec_active;
 endmodule
