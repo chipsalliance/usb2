@@ -28,7 +28,7 @@ entity usb_ocp_recovery_post_sync_arb is
     hresetn  : in  std_logic;
 
     sync_busreset : in std_logic;
-    sync_vbus_valid_i : in std_logic;
+    sync_usbreg_dev_connect_i : in std_logic;
 
     sync_sieint_epinfo_req_i    : in  std_logic;
     sync_sieint_epinfo_epnr_i   : in  std_logic_vector(3 downto 0);
@@ -409,11 +409,11 @@ begin
     ctrl_xfer_done <= rx_drain_done_r when (xfer_dir_in_r = '0') else
                       (sync_sieint_endtransfer_i and tx_launch_ready_c)
                         when (st = T_DATA) or (st = T_STATUS) else '0';
-    ctrl_xfer_abort <= '1' when ((st = T_DATA) or (st = T_STATUS))
-                                and (xfer_dir_in_r = '0')
-                                and ((new_setup_c = '1') or (sync_busreset = '1')
-                                     or (sync_vbus_valid_i = '0'))
-                       else '0';
+    ctrl_xfer_abort <= '1' when (sync_usbreg_dev_connect_i = '0')
+                                or (((st = T_DATA) or (st = T_STATUS))
+                                    and (xfer_dir_in_r = '0')
+                                    and ((new_setup_c = '1') or (sync_busreset = '1')))
+                        else '0';
 
     rec_claim_status <= claim_q;
 
@@ -446,14 +446,25 @@ begin
         status_end_pend_r   <= '0';
         fifo_data_out_nak_r <= '0';
       elsif rising_edge(hclk) then
-        if sync_busreset = '1' then
+        if (sync_busreset = '1') or (sync_usbreg_dev_connect_i = '0') then
           st         <= T_IDLE;
+          cap_rxdata    <= (others => '0');
+          cap_rx_nbytes <= (others => '0');
+          cap_epnr      <= (others => '0');
+          cap_epdir     <= '0';
           cap_done   <= '0';
           end_seen   <= '0';
           succ_seen  <= '0';
           sr_sent    <= '0';
           sp_sent    <= '0';
           pend_valid <= '0';
+          pend_setup <= '0';
+          pend_epnr  <= (others => '0');
+          pend_epdir <= '0';
+          xfer_dir_in_r <= '0';
+          nbytes_r      <= (others => '0');
+          tx_response_bytes_r <= (others => '0');
+          tx_response_known_r <= '0';
           in_data_toggle_r <= '1';
           zlp_phase_r      <= '0';
           status_end_pend_r <= '0';
@@ -607,15 +618,12 @@ begin
 
             when T_DATA =>
               -- New SETUP mid-transfer: host abandoned (USB 2.0 Sec 8.5.3).
-              if (new_setup_c = '1') or (sync_vbus_valid_i = '0') then
+              if new_setup_c = '1' then
                 st       <= T_TRAP;
                 cap_done <= '0';
                 end_seen <= '0';
                 sr_sent  <= '0';
                 sp_sent  <= '0';
-                if sync_vbus_valid_i = '0' then
-                  st <= T_IDLE;
-                end if;
               elsif st_end_c = '1' then
                 if (zlp_phase_r = '0') and (zlp_owed_c = '1') then
                   st <= T_DATA;               -- emit terminating ZLP first
@@ -625,15 +633,12 @@ begin
               end if;
 
             when T_STATUS =>
-              if (new_setup_c = '1') or (sync_vbus_valid_i = '0') then
+              if new_setup_c = '1' then
                 st       <= T_TRAP;
                 cap_done <= '0';
                 end_seen <= '0';
                 sr_sent  <= '0';
                 sp_sent  <= '0';
-                if sync_vbus_valid_i = '0' then
-                  st <= T_IDLE;
-                end if;
               elsif ((st_end_c = '1') or (status_end_pend_r = '1'))
                     and (rx_count_r = to_unsigned(0, rx_count_r'length)) then
                 st <= T_IDLE;

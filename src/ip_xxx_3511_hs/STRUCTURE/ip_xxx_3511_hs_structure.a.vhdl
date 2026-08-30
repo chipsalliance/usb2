@@ -279,7 +279,7 @@ component usb_ocp_recovery_post_sync_arb
     hclk     : in  std_logic;
     hresetn  : in  std_logic;
     sync_busreset : in std_logic;
-    sync_vbus_valid_i : in std_logic;
+    sync_usbreg_dev_connect_i : in std_logic;
 
     sync_sieint_epinfo_req_i    : in  std_logic;
     sync_sieint_epinfo_epnr_i   : in  std_logic_vector(3 downto 0);
@@ -1556,7 +1556,7 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     hclk          => hclk,
     hresetn       => hresetn,
     sync_busreset => sync_busreset,
-    sync_vbus_valid_i => sync_VBusDebounced,
+    sync_usbreg_dev_connect_i => sync_usbreg_dev_connect,
 
     -- Synchronizer hclk-side outputs (arbiter inputs).
     sync_sieint_epinfo_req_i    => sync_sieint_epinfo_req_s,
