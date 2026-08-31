@@ -39,8 +39,13 @@ register interfaces, Hub control, DMA operation, and AHB access operate in
 the `hclk` domain. A dedicated clock-domain bridge transfers control, status,
 event, context, and payload information between the two domains.
 
+## Detailed Architecture
 
-[![USB Two-Port Compound Device Block Diagram](USB_uArch_Detailed_Block_Diagram.svg)]
+The following diagram provides a detailed view of the USB compound device architecture, including its functional partitioning, internal connectivity, and main interfaces.
+
+![USB Two-Port Compound Device Block Diagram](USB_uArch_Detailed_Block_Diagram.svg)
+
+The following sections describe the role, connectivity, and operational behavior of each block shown in the diagram.
 
 ---
 
