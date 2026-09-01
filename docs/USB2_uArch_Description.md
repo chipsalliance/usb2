@@ -49,6 +49,726 @@ The following sections describe the role, connectivity, and operational behavior
 
 ---
 
+## Top-Level Interfaces
+
+Unless otherwise stated, the dimensions and behavior described in this
+section refer to the default JANUS configuration defined in the preceding
+Top-Level Configuration Generics section.
+
+Generic expressions are retained where they provide useful integration
+information.
+
+### Interface Overview
+
+The JANUS top-level exposes interfaces for:
+
+- system clock, reset, and power-management coordination;
+- connection to an external USB 2.0 PHY through UTMI or ULPI;
+- independent AHB control of the embedded Hub, DEV0, and DEV1;
+- external AHB access to the Hub Descriptor RAM and the DEV0 and DEV1
+  Endpoint RAMs;
+- native connection to the three external RAM macros or memory models;
+- independent DEV0 and DEV1 interrupt reporting;
+- static configuration and testability;
+- USB frame timing and internal USB DMA write-access observation.
+
+DEV0 and DEV1 expose structurally equivalent control, Endpoint RAM, and
+interrupt interfaces. The `dev0_` and `dev1_` prefixes identify the target
+software-controlled USB function.
+
+UTMI and ULPI are alternative PHY interfaces. The selected PHY clock is used
+as `pie_clk` by the shared USB Protocol and Interface Engine.
+
+---
+
+### Top-Level Interface Diagram
+
+The following diagram groups the JANUS top-level ports by functional
+category. Input groups are shown on the left side of the IP boundary, while
+output and mixed-direction interface groups are shown on the right side.
+
+images/janus_top_level_interface.png
+
+---
+
+### Interface Categories
+
+| Category | Interfaces | Purpose |
+|---|---|---|
+| System integration | Clock, reset, clock request, wake-up, VBUS, and analog control | Connects JANUS to the system clocking, reset, power-management, and analog-control infrastructure. |
+| USB PHY | UTMI and ULPI | Connects the shared USB PIE to an external USB 2.0 PHY. |
+| Host control | Hub, DEV0, and DEV1 AHB register-control interfaces | Allows an external system master to configure and monitor the three USB functions. |
+| External memory access | Hub Descriptor RAM and DEV0/DEV1 Endpoint RAM AHB interfaces | Allows an external system master to initialize, inspect, and update the USB memories. |
+| Native memory | Hub Descriptor RAM and DEV0/DEV1 Endpoint RAM native interfaces | Connects JANUS to the three external RAM macros or memory models. |
+| Interrupt and observation | DEV0/DEV1 IRQ and FIQ, frame toggle, and USB DMA write-access observation | Reports software-device events and exposes selected internal timing and memory-write activity. |
+| Configuration and test | Hub configuration, self-powered indication, and DFT controls | Provides static integration configuration and test support. |
+
+---
+
+### Common Interface Conventions
+
+Unless otherwise stated:
+
+- AHB-facing interfaces operate in the `hclk` domain.
+- AHB slave front-ends and AHB-to-memory adapters are reset by
+  `ahbs_resetn`.
+- USB functional logic in the system-side clock domain is reset by
+  `hresetn`.
+- DEV0 and DEV1 interfaces are structurally equivalent and use the `dev0_`
+  and `dev1_` prefixes.
+- Native RAM chip-select outputs are active high.
+- Native RAM write-enable outputs are active low.
+- Native RAM write-selection masks are active high.
+- AHB slave interfaces return the two-bit `OKAY` response.
+- Unsupported or unimplemented register and memory addresses do not
+  generate an AHB error response.
+- AHB signals containing `_dma_` in their names remain AHB slave-interface
+  signals. The naming is inherited from the internal `ahb_dma_slave` module
+  and does not identify an external DMA master.
+
+---
+
+### Clock-Domain Summary
+
+| Domain | Clock | Main Functions |
+|---|---|---|
+| System-side domain | `hclk` | AHB front-ends, DEV0/DEV1 register interfaces, shared Endpoint Data Manager, memory adapters, Hub control, and top-level control logic |
+| USB protocol domain | `pie_clk` | Shared USB PIE, packet processing, USB bus-event control, PHY-side protocol logic, and VBUS debounce |
+| UTMI PHY mode | `utmi_clk` | Selected as `pie_clk` when UTMI mode is active |
+| ULPI PHY mode | `ulpi_clk` | Selected as `pie_clk` when ULPI mode is active |
+
+---
+
+## System Integration Interfaces
+
+The system integration interfaces connect JANUS to the surrounding clock,
+reset, power-management, and analog-control infrastructure.
+
+### Clock and Reset Interface
+
+JANUS provides two independent active-low top-level resets:
+
+- `hresetn` resets the USB functional logic in the `hclk` domain;
+- `ahbs_resetn` resets the AHB-facing front-ends, AHB-to-memory adapters,
+  and the Hub Control Register.
+
+Both resets are used as asynchronous reset inputs by the corresponding
+`hclk`-domain logic. No reset-deassertion synchronizer is present at these
+top-level boundaries. The integration environment must therefore ensure
+that reset release satisfies the required recovery and removal timing
+relative to `hclk`.
+
+Before being applied to the USB protocol domain, `hresetn` passes through a
+two-stage reset synchronizer clocked by `pie_clk`. The PIE-domain reset
+therefore uses asynchronous assertion and synchronous deassertion.
+
+The resulting PIE reset is generated as:
+
+```text
+reset_n = sync_ss_reset_n OR async_disable
+```
+
+During normal functional operation, `async_disable` must remain low.
+
+In normal mode, `pie_clk` is selected by the synchronized PHY mode supplied
+by the DEV0 register-control path:
+
+```text
+phy_mode = 0 -> pie_clk = utmi_clk
+phy_mode = 1 -> pie_clk = ulpi_clk
+```
+
+In test mode, clock selection depends on the enabled PHY-support generics:
+
+```text
+C_UTMI_SUPPORT = TRUE
+  -> pie_clk = utmi_clk
+
+otherwise, if C_ULPI_SUPPORT = TRUE
+  -> pie_clk = ulpi_clk
+```
+
+UTMI has priority when both PHY interfaces are enabled and `testmode` is
+asserted.
+
+| Signal | Direction | Width | Active Level | Description |
+|---|---:|---:|---|---|
+| `hclk` | Input | 1 | Rising edge | Main system-side clock. It clocks the AHB slave interfaces, DEV0 and DEV1 register interfaces, shared Endpoint Data Manager, memory-access adapters, Hub-control logic, and top-level control processes. |
+| `hresetn` | Input | 1 | Active low | Asynchronous reset input for the `hclk`-domain USB functional logic. Its deassertion is synchronized before entering the `pie_clk` domain. |
+| `ahbs_resetn` | Input | 1 | Active low | Asynchronous reset input for the AHB slave front-ends, AHB-to-memory adapters, and Hub Control Register. |
+| `utmi_clk` | Input | 1 | Rising edge | Clock supplied by the UTMI PHY. It is selected as `pie_clk` in normal UTMI mode or when UTMI has priority in test mode. |
+| `ulpi_clk` | Input | 1 | Rising edge | Clock supplied by the ULPI PHY. It is selected as `pie_clk` in normal ULPI mode or in test mode when UTMI support is disabled. |
+| `sys_utmi_clkin_lock` | Input | 1 | Active high | Indicates that the UTMI input clock is available and stable. It qualifies the UTMI clock-status and low-power transition logic. |
+
+The reset distribution is summarized below:
+
+```text
+hresetn
+  -> asynchronous reset of hclk-domain USB functional logic
+  -> two-stage reset synchronization in the pie_clk domain
+  -> reset_n for usb_pie_1
+
+ahbs_resetn
+  -> asynchronous reset of AHB slave front-ends
+  -> asynchronous reset of AHB-to-memory adapters
+  -> asynchronous reset of the Hub Control Register
+
+async_disable
+  -> DFT-specific override of selected asynchronous reset and wake-up paths
+```
+
+---
+
+### Clock Request and Wake-Up Interface
+
+This interface coordinates USB clock availability and wake-up behavior with
+the surrounding system power-management logic.
+
+`usb_needclk` is generated by the top-level Clock, Reset, and Power-Control
+logic. Its behavior depends on the selected PHY mode, current USB activity,
+clock-shutdown state, availability of asynchronous low-power indications,
+and pending internal wake-up requests.
+
+| Signal | Direction | Width | Active Level | Description |
+|---|---:|---:|---|---|
+| `usb_needclk` | Output | 1 | Active high | Requests that the USB clock remain available or be restarted. |
+| `sys_donotwakeup_n` | Input | 1 | Active low | When low, inhibits USB clock and PHY wake-up requests, forces `usb_needclk` low, and requests UTMI suspend. |
+| `sys_dev_wakeup_n` | Input | 1 | Active low | External system wake-up request. A low value contributes directly to the internal `clock_on` request. |
+| `sys_utmi_clkin_lock` | Input | 1 | Active high | Qualifies UTMI clock availability and the associated low-power control logic. |
+
+In UTMI mode, `usb_needclk` remains asserted while one or more of the
+following conditions is present:
+
+- internal USB activity requires the clock;
+- the controlled UTMI clock-shutdown interval has not completed;
+- asynchronous low-power line-state interpretation is not yet available;
+- an internal wake-up request remains pending.
+
+In ULPI mode, the same general conditions apply except that the
+UTMI-specific clock-shutdown counter is not part of the request condition.
+
+The top-level wake-up logic can detect changes in the USB line state and ULPI
+low-power interrupt indications. A pending wake-up request remains asserted
+until the USB clock is running and the PIE has left the low-power state.
+
+---
+
+### VBUS and Analog Control Interface
+
+This interface connects JANUS to the USB VBUS-detection and external
+analog-control logic.
+
+`USB_VBus` is supplied to `usb_pie_1`. The PIE exports the corresponding
+VBUS-valid state as `pie_vbusvalid`. Top-level logic debounces that state in
+the `pie_clk` domain before transferring the filtered result to the `hclk`
+domain as `sync_VBusDebounced`.
+
+The functional path is:
+
+```text
+USB_VBus
+  -> usb_pie_1
+  -> pie_vbusvalid
+  -> VBUS debounce in pie_clk domain
+  -> VBusDebounced
+  -> usb_synchronizer_1
+  -> sync_VBusDebounced
+```
+
+`avalid` and `sessend` provide additional analog and session-status inputs
+inherited from the original USB IP. They are synchronized before being used
+by the DEV0 and DEV1 register and interrupt logic.
+
+| Signal | Direction | Width | Active Level | Description |
+|---|---:|---:|---|---|
+| `USB_VBus` | Input | 1 | Active high | External VBUS-present indication supplied to the shared USB PIE. |
+| `vbuscomp_on` | Output | 1 | Active high | Enables the external analog VBUS comparator function. |
+| `chrg_vbus` | Output | 1 | Active high | Requests charging of VBUS through the external PHY or analog subsystem. |
+| `dischrg_vbus` | Output | 1 | Active high | Requests discharging of VBUS through the external PHY or analog subsystem. |
+| `avalid` | Input | 1 | Active high | Analog A-valid status input, identified in the RTL as `ADPPROBE`. |
+| `sessend` | Input | 1 | Active high | Session-end status input, identified in the RTL as `ADPSENSE`. |
+
+The `vbuscomp_on`, `chrg_vbus`, and `dischrg_vbus` controls originate from
+the DEV0 USB Register Controller. `vbuscomp_on` also qualifies the VBUS-valid
+sampling used by the debounce logic.
+
+The presence of `avalid`, `sessend`, `chrg_vbus`, and `dischrg_vbus`
+reflects capabilities inherited from the original USB IP. Their active use
+depends on the selected PHY and the system-level power architecture.
+
+---
+
+## USB PHY Interfaces
+
+JANUS supports external USB PHY connectivity through UTMI or ULPI.
+
+The available PHY implementations are controlled by `C_UTMI_SUPPORT` and
+`C_ULPI_SUPPORT`. When both interfaces are enabled, the active PHY mode is
+selected through the DEV0 USB register-control path.
+
+Only one PHY interface is active at a time. The selected PHY clock becomes
+the shared `pie_clk`.
+
+### UTMI PHY Interface
+
+The UTMI interface connects the shared USB PIE to an external USB 2.0 UTMI
+PHY.
+
+> **Implementation note:** The UTMI receive and transmit paths are registered
+> in the `pie_clk` domain. PHY operating controls are generated by the PIE
+> bus-event logic according to the current USB speed and bus state.
+
+#### UTMI Receive Path
+
+| Signal | Direction | Width | Description |
+|---|---:|---:|---|
+| `utmi_rxdata[7:0]` | Input | 8 | Receive-data bus from the UTMI PHY. |
+| `utmi_rxvalid` | Input | 1 | Indicates that `utmi_rxdata[7:0]` contains valid receive data. |
+| `utmi_rxactive` | Input | 1 | Indicates that USB packet reception is in progress. |
+| `utmi_rxerror` | Input | 1 | Indicates an error in the currently received USB packet. |
+| `utmi_linestate[1:0]` | Input | 2 | Current single-ended USB line state. Bit 0 is used as the internal `D+` state and bit 1 as the internal `D-` state. |
+
+A received byte is accepted by the packet-processing logic when
+`utmi_rxvalid` and `utmi_rxactive` are high and `utmi_rxerror` is low.
+
+#### UTMI Transmit Path
+
+| Signal | Direction | Width | Description |
+|---|---:|---:|---|
+| `utmi_txdata[7:0]` | Output | 8 | Transmit-data bus from the shared USB PIE to the UTMI PHY. |
+| `utmi_txvalid` | Output | 1 | Indicates that valid transmit data is present on `utmi_txdata[7:0]`. |
+| `utmi_txready` | Input | 1 | Indicates that the UTMI PHY has accepted the current transmit byte and is ready for the next byte. |
+
+During USB packet and test-packet transmission, `utmi_txdata[7:0]` remains
+stable until the PHY asserts `utmi_txready`.
+
+#### UTMI PHY Controls
+
+| Signal | Direction | Width | Active Level or Encoding | Description |
+|---|---:|---:|---|---|
+| `utmi_reset` | Output | 1 | Active high | Resets the external UTMI PHY. It is generated by the top-level reset-extension logic. |
+| `utmi_suspendm` | Output | 1 | Active low | Controls PHY suspend. A low value requests suspend. |
+| `utmi_xcvrselect` | Output | 1 | Encoded | Selects the UTMI transceiver. The current RTL drives zero for High-Speed operation and one for Full-Speed operation. |
+| `utmi_termselect` | Output | 1 | Encoded | Selects the PHY termination mode. The current RTL drives zero during normal High-Speed operation and one during Full-Speed operation and selected reset, chirp, suspend, and resume states. |
+| `utmi_opmode[1:0]` | Output | 2 | Encoded | Selects the PHY operating mode. The PIE uses `00` for normal operation, `01` while disconnected, and `10` during non-encoded signaling states. |
+
+`utmi_suspendm` is generated by top-level clock, reset, and wake-up logic
+rather than being a direct copy of the PIE suspend state. This allows the PHY
+to remain active while clock shutdown or wake-up handling is still in
+progress.
+
+#### Vendor-Specific UTMI Register Access
+
+| Signal | Direction | Width | Active Level or Encoding | Description |
+|---|---:|---:|---|---|
+| `utmi_vcontrol[3:0]` | Output | 4 | Encoded | Carries bits `[3:0]` of the software-programmed PHY address during a vendor-specific UTMI access. |
+| `utmi_vcontrolloadm` | Output | 1 | Active low | Initiates or loads a vendor-specific PHY control operation. |
+| `utmi_vstatus[7:0]` | Input | 8 | Encoded | Vendor-specific PHY status or read-data input returned to the software-visible PHY access path. |
+
+When no vendor-specific access is active, `utmi_vcontrol[3:0]` is zero and
+`utmi_vcontrolloadm` remains deasserted high.
+
+---
+
+### ULPI PHY Interface
+
+The ULPI interface connects the shared USB PIE to an external USB 2.0 ULPI
+PHY.
+
+The top level exposes separate receive-data, transmit-data, and
+transmit-enable signals. When connected to a conventional bidirectional ULPI
+data bus, the integration wrapper must implement the required I/O direction
+control.
+
+| Signal | Direction | Width | Active Level or Encoding | Description |
+|---|---:|---:|---|---|
+| `ulpi_clk` | Input | 1 | Rising edge | Clock supplied by the ULPI PHY. It becomes `pie_clk` when ULPI mode is selected. |
+| `ulpi_rxdata[7:0]` | Input | 8 | Encoded | Data received from the ULPI PHY. Depending on the operating state, it carries USB packet data, RX commands, PHY-register read data, or low-power indications. |
+| `ulpi_txdata[7:0]` | Output | 8 | Encoded | Data transmitted toward the ULPI PHY, including USB packet data, transmit commands, and PHY-register commands. |
+| `ulpi_txenable` | Output | 1 | Active high | Enables JANUS to drive the external ULPI data bus. |
+| `ulpi_dir` | Input | 1 | Encoded | Indicates the current bus direction. Low allows JANUS to drive the data bus; high indicates that the PHY is driving the bus. |
+| `ulpi_stp` | Output | 1 | Active high | ULPI stop and control output. |
+| `ulpi_nxt` | Input | 1 | Active high | ULPI handshake input used to qualify transmitted or received information. |
+| `ulpi_ddr_sel` | Input | 1 | Encoded | Selects the low-power indication mapping on `ulpi_rxdata[7:0]`. It does not select the normal ULPI packet-transfer mode. |
+
+During ULPI low-power operation, asynchronous line-state and wake-up
+information is interpreted according to the following mapping:
+
+| `ulpi_ddr_sel` | Line-State Bits | Wake-Up Interrupt Bit |
+|---:|---|---:|
+| `0` | `ulpi_rxdata[1:0]` | `ulpi_rxdata[3]` |
+| `1` | `ulpi_rxdata[5:4]` | `ulpi_rxdata[7]` |
+
+These asynchronous values are accepted only after `ulpi_dir` has remained
+high through the internal synchronization stages and the USB clock has been
+detected as stopped.
+
+> **Verification note:** The ULPI path is structurally implemented by the
+> RTL. Supported and validated configurations should be documented
+> separately from this interface definition.
+
+---
+
+## Host-Control AHB Interfaces
+
+JANUS exposes three independent AHB register-control ports:
+
+- one for the embedded Hub;
+- one for DEV0;
+- one for DEV1.
+
+All three ports use separate instances of the common `usb_ahb_slave`
+front-end.
+
+### Common Register-Control AHB Behavior
+
+The three register-control interfaces have the following behavior:
+
+- 32-bit write and read data;
+- four-bit word address corresponding directly to `HADDR[5:2]`;
+- 16 addressable register words over a 64-byte window;
+- an active transfer is recognized when `HTRANS[1]` is high;
+- no inserted wait states;
+- `HREADYOUT` permanently asserted;
+- `HRESP[1:0]` permanently returns `OKAY`.
+
+Unsupported or unimplemented register addresses return zero or the
+block-specific default value and do not generate an AHB error response.
+
+### Hub Control AHB Slave Interface
+
+The Hub Control interface allows an external system master to access the Hub
+Control Register.
+
+| Signal | Direction | Width | Description |
+|---|---:|---:|---|
+| `hub_ahbs_haddr[5:2]` | Input | 4 | Word-aligned Hub register address. |
+| `hub_ahbs_htrans[1:0]` | Input | 2 | AHB transfer type. Bit 1 identifies an active `NONSEQ` or `SEQ` transfer. |
+| `hub_ahbs_hwrite` | Input | 1 | Transfer direction: high for write and low for read. |
+| `hub_ahbs_hwdata[31:0]` | Input | 32 | AHB write-data bus. |
+| `hub_ahbs_hsel` | Input | 1 | Hub Control AHB slave-select input. |
+| `hub_ahbs_hreadyin` | Input | 1 | AHB transfer-ready input used to qualify an active transfer. |
+| `hub_ahbs_hrdata[31:0]` | Output | 32 | AHB read-data bus. |
+| `hub_ahbs_hreadyout` | Output | 1 | AHB slave-ready output. Permanently asserted. |
+| `hub_ahbs_hresp[1:0]` | Output | 2 | AHB transfer response. Permanently returns `OKAY`. |
+
+The Hub register definition is described separately in the Programming Model
+section.
+
+### Software-Device Control AHB Slave Interfaces
+
+DEV0 and DEV1 provide structurally equivalent AHB interfaces for accessing
+their independent control and status registers.
+
+| DEV0 Signal | DEV1 Signal | Direction | Width | Description |
+|---|---|---:|---:|---|
+| `dev0_ahbs_haddr[5:2]` | `dev1_ahbs_haddr[5:2]` | Input | 4 | Word-aligned register address. |
+| `dev0_ahbs_htrans[1:0]` | `dev1_ahbs_htrans[1:0]` | Input | 2 | AHB transfer type. Bit 1 identifies an active `NONSEQ` or `SEQ` transfer. |
+| `dev0_ahbs_hwrite` | `dev1_ahbs_hwrite` | Input | 1 | Transfer direction: high for write and low for read. |
+| `dev0_ahbs_hwdata[31:0]` | `dev1_ahbs_hwdata[31:0]` | Input | 32 | AHB write-data bus. |
+| `dev0_ahbs_hsel` | `dev1_ahbs_hsel` | Input | 1 | Slave-select input for the corresponding device register interface. |
+| `dev0_ahbs_hreadyin` | `dev1_ahbs_hreadyin` | Input | 1 | AHB transfer-ready input used to qualify an active transfer. |
+| `dev0_ahbs_hrdata[31:0]` | `dev1_ahbs_hrdata[31:0]` | Output | 32 | AHB read-data bus from the corresponding device register interface. |
+| `dev0_ahbs_hreadyout` | `dev1_ahbs_hreadyout` | Output | 1 | AHB slave-ready output. Permanently asserted. |
+| `dev0_ahbs_hresp[1:0]` | `dev1_ahbs_hresp[1:0]` | Output | 2 | AHB response. Permanently returns `OKAY`. |
+
+DEV0 and DEV1 maintain independent register state. Their register
+definitions are described separately in the Programming Model section.
+
+---
+
+## External Memory Interfaces
+
+JANUS uses three external memories:
+
+- one Hub Descriptor RAM;
+- one DEV0 Endpoint RAM;
+- one DEV1 Endpoint RAM.
+
+Each memory has:
+
+- an AHB slave interface for external system access;
+- a native RAM interface connected to the physical memory;
+- an internal USB-side requester.
+
+The internal USB requester and the external AHB interface share the physical
+memory port.
+
+### Common RAM AHB Behavior
+
+All three external RAM interfaces use separate instances of
+`ahb_dma_slave`.
+
+The common behavior is:
+
+- byte-addressed AHB transfers;
+- byte, half-word, and word access support;
+- `HSIZE[1:0]` interpreted by the current RTL;
+- `HSIZE[2]` not used by the implemented size decoder;
+- `HBURST[2:0]` exposed at the boundary but not used by the current RTL;
+- internal USB access given priority over external AHB access;
+- `HREADYOUT` deasserted when the physical RAM port is unavailable;
+- `HRESP[1:0]` permanently set to `OKAY`.
+
+For DEV0 and DEV1, the internal requester is the shared Endpoint Data
+Manager. For the Hub Descriptor RAM, the internal requester is the read-only
+Hub EP0 path.
+
+The `_dma_` substring in the top-level signal names is inherited from the
+legacy internal module name. These ports remain AHB slave interfaces.
+
+### Hub Descriptor RAM AHB Slave Interface
+
+This interface allows an external system master to initialize, read, and
+update the memory used by the Hub EP0 control path.
+
+| Signal | Direction | Width | Description |
+|---|---:|---:|---|
+| `hub_desc_ahbs_dma_haddr[RAM_ADDRWIDTH+4:0]` | Input | `RAM_ADDRWIDTH + 5` | Byte-addressed AHB address used by the memory adapter. |
+| `hub_desc_ahbs_dma_htrans[1:0]` | Input | 2 | AHB transfer type. Bit 1 identifies an active `NONSEQ` or `SEQ` transfer. |
+| `hub_desc_ahbs_dma_hwrite` | Input | 1 | Transfer direction: high for write and low for read. |
+| `hub_desc_ahbs_dma_hwdata[AHB_DATAWIDTH-1:0]` | Input | `AHB_DATAWIDTH` | AHB write-data bus. |
+| `hub_desc_ahbs_dma_hsel` | Input | 1 | Hub Descriptor RAM AHB slave-select input. |
+| `hub_desc_ahbs_dma_hreadyin` | Input | 1 | AHB transfer-ready input used to qualify a new transfer. |
+| `hub_desc_ahbs_dma_hrdata[AHB_DATAWIDTH-1:0]` | Output | `AHB_DATAWIDTH` | AHB read-data bus. |
+| `hub_desc_ahbs_dma_hreadyout` | Output | 1 | AHB ready output. It may be deasserted while the RAM is owned by the Hub EP0 path. |
+| `hub_desc_ahbs_dma_hresp[1:0]` | Output | 2 | AHB transfer response. Permanently returns `OKAY`. |
+| `hub_desc_ahbs_dma_hsize[2:0]` | Input | 3 | AHB transfer size. Byte, half-word, and word accesses are supported through `HSIZE[1:0]`. |
+| `hub_desc_ahbs_dma_hburst[2:0]` | Input | 3 | AHB burst type. Exposed at the boundary but not used by the current RTL. |
+
+The internal Hub EP0 requester accesses the Hub Descriptor RAM in read-only
+mode.
+
+### Software-Device Endpoint RAM AHB Slave Interfaces
+
+DEV0 and DEV1 provide independent and structurally equivalent AHB ports for
+external access to their Endpoint RAMs.
+
+| DEV0 Signal | DEV1 Signal | Direction | Width | Description |
+|---|---|---:|---:|---|
+| `dev0_ahbs_dma_haddr[RAM_ADDRWIDTH+4:0]` | `dev1_ahbs_dma_haddr[RAM_ADDRWIDTH+4:0]` | Input | `RAM_ADDRWIDTH + 5` | Byte-addressed AHB address used by the memory adapter. |
+| `dev0_ahbs_dma_htrans[1:0]` | `dev1_ahbs_dma_htrans[1:0]` | Input | 2 | AHB transfer type. Bit 1 identifies an active `NONSEQ` or `SEQ` transfer. |
+| `dev0_ahbs_dma_hwrite` | `dev1_ahbs_dma_hwrite` | Input | 1 | Transfer direction: high for write and low for read. |
+| `dev0_ahbs_dma_hwdata[AHB_DATAWIDTH-1:0]` | `dev1_ahbs_dma_hwdata[AHB_DATAWIDTH-1:0]` | Input | `AHB_DATAWIDTH` | AHB write-data bus. |
+| `dev0_ahbs_dma_hsel` | `dev1_ahbs_dma_hsel` | Input | 1 | AHB slave-select input for the corresponding Endpoint RAM. |
+| `dev0_ahbs_dma_hreadyin` | `dev1_ahbs_dma_hreadyin` | Input | 1 | AHB transfer-ready input used to qualify a new transfer. |
+| `dev0_ahbs_dma_hrdata[AHB_DATAWIDTH-1:0]` | `dev1_ahbs_dma_hrdata[AHB_DATAWIDTH-1:0]` | Output | `AHB_DATAWIDTH` | AHB read-data bus. |
+| `dev0_ahbs_dma_hreadyout` | `dev1_ahbs_dma_hreadyout` | Output | 1 | AHB ready output. It may be deasserted while the internal Endpoint Data Manager owns the RAM. |
+| `dev0_ahbs_dma_hresp[1:0]` | `dev1_ahbs_dma_hresp[1:0]` | Output | 2 | AHB transfer response. Permanently returns `OKAY`. |
+| `dev0_ahbs_dma_hsize[2:0]` | `dev1_ahbs_dma_hsize[2:0]` | Input | 3 | AHB transfer size. Byte, half-word, and word accesses are supported through `HSIZE[1:0]`. |
+| `dev0_ahbs_dma_hburst[2:0]` | `dev1_ahbs_dma_hburst[2:0]` | Input | 3 | AHB burst type. Exposed at the boundary but not used by the current RTL. |
+
+---
+
+### Common Native RAM Behavior
+
+The three native RAM interfaces share the following conventions:
+
+- synchronous operation relative to `hclk`;
+- active-high chip select;
+- active-low write enable;
+- word-addressed native address;
+- active-high write-selection mask;
+- chip select retained as required by the adapter read-data timing.
+
+Internal USB memory requests have priority over external AHB requests.
+
+### Hub Descriptor RAM Native Interface
+
+| Signal | Direction | Width | Description |
+|---|---:|---:|---|
+| `hub_desc_mem_q[RAM_DATAWIDTH-1:0]` | Input | `RAM_DATAWIDTH` | Read-data bus from the Hub Descriptor RAM. |
+| `hub_desc_mem_d[RAM_DATAWIDTH-1:0]` | Output | `RAM_DATAWIDTH` | Write-data bus to the Hub Descriptor RAM. Hub EP0 requests are read-only, so writes originate from the external AHB interface. |
+| `hub_desc_mem_cs` | Output | 1 | Active-high RAM chip select. |
+| `hub_desc_mem_a[RAM_ADDRWIDTH-1:0]` | Output | `RAM_ADDRWIDTH` | Native RAM word address. |
+| `hub_desc_mem_web_out` | Output | 1 | Active-low write enable. Low identifies a write; high identifies a read. |
+| `hub_desc_mem_bsel[RAM_DATAWIDTH-1:0]` | Output | `RAM_DATAWIDTH` | Active-high write-selection mask derived from the access size and address. |
+
+### Software-Device Endpoint RAM Native Interfaces
+
+DEV0 and DEV1 use independent native memory ports.
+
+| DEV0 Signal | DEV1 Signal | Direction | Width | Description |
+|---|---|---:|---:|---|
+| `dev0_mem_q[RAM_DATAWIDTH-1:0]` | `dev1_mem_q[RAM_DATAWIDTH-1:0]` | Input | `RAM_DATAWIDTH` | Read-data bus from the corresponding Endpoint RAM. |
+| `dev0_mem_d[RAM_DATAWIDTH-1:0]` | `dev1_mem_d[RAM_DATAWIDTH-1:0]` | Output | `RAM_DATAWIDTH` | Write-data bus to the corresponding Endpoint RAM. |
+| `dev0_mem_cs` | `dev1_mem_cs` | Output | 1 | Active-high RAM chip select. |
+| `dev0_mem_a[RAM_ADDRWIDTH-1:0]` | `dev1_mem_a[RAM_ADDRWIDTH-1:0]` | Output | `RAM_ADDRWIDTH` | Native RAM word address. |
+| `dev0_mem_web_out` | `dev1_mem_web_out` | Output | 1 | Active-low write enable. Low identifies a write; high identifies a read. |
+| `dev0_mem_bsel[RAM_DATAWIDTH-1:0]` | `dev1_mem_bsel[RAM_DATAWIDTH-1:0]` | Output | `RAM_DATAWIDTH` | Active-high write-selection mask identifying the affected part of the RAM word. |
+
+With the default configuration, each native RAM interface provides:
+
+- 64-bit read and write data;
+- a 15-bit native word address;
+- a 64-bit write-selection mask;
+- an individually addressable capacity of 256 KiB.
+
+---
+
+## Interrupt and Observation Interfaces
+
+### Software-Device Interrupt Interfaces
+
+DEV0 and DEV1 independently generate one standard interrupt request and one
+fast interrupt request.
+
+Each device can report:
+
+- frame events;
+- device-level events;
+- endpoint events.
+
+Each event source has independent status, enable, and routing control. A
+routing value of zero selects IRQ; a routing value of one selects FIQ.
+
+The outputs are active-high and level-sensitive. An output remains asserted
+while at least one enabled and pending event is routed to that output.
+
+| DEV0 Signal | DEV1 Signal | Direction | Width | Description |
+|---|---|---:|---:|---|
+| `dev0_usb_irq` | `dev1_usb_irq` | Output | 1 | Active-high standard interrupt request. |
+| `dev0_usb_fiq` | `dev1_usb_fiq` | Output | 1 | Active-high fast interrupt request. |
+
+DEV0 and DEV1 maintain independent interrupt status, enable, and routing
+state.
+
+---
+
+### USB Frame Timing Output
+
+`USB_FrameToggle` toggles once per USB frame in Full-Speed mode and once per
+microframe in High-Speed mode:
+
+- Full-Speed: one transition every 1 ms;
+- High-Speed: one transition every 125 us.
+
+Because the output toggles rather than pulses, its complete waveform
+frequency is:
+
+- 500 Hz in Full-Speed mode;
+- 4 kHz in High-Speed mode.
+
+| Signal | Direction | Width | Description |
+|---|---:|---:|---|
+| `USB_FrameToggle` | Output | 1 | Frame or microframe timing toggle generated by the shared USB PIE. Its transition interval depends on the current USB speed. |
+
+> **Debug note:** The internal timer can continue to generate transitions in
+> the absence of a valid SOF. Valid SOF reception realigns the timer near the
+> expected interval boundary.
+
+`USB_FrameToggle` must not be interpreted as a fixed 1 kHz clock.
+
+---
+
+### USB DMA Write-Access Observation Interface
+
+These outputs expose the write qualification and selected DWORD lanes of the
+shared internal USB DMA access before the request is routed toward the Hub,
+DEV0, or DEV1 resource.
+
+The outputs do not identify the selected USB function, target resource,
+address, write data, or transfer completion.
+
+| Signal | Direction | Width | Active Level | Description |
+|---|---:|---:|---|---|
+| `usb_dma_dword_selection[1:0]` | Output | 2 | Active high | Identifies the selected 32-bit portions of the internal RAM word. With the default 64-bit RAM, bit 0 selects bits `[31:0]` and bit 1 selects bits `[63:32]`. |
+| `usb_dma_write_access` | Output | 1 | Active high | Indicates an active write request from the shared Endpoint Data Manager. |
+
+---
+
+## Static Configuration and Test Interfaces
+
+### Hub and Device Configuration Interface
+
+| Signal | Direction | Width | Active Level | Description |
+|---|---:|---:|---|---|
+| `USB_EnableHub` | Input | 1 | Active high | Enables the externally controlled Hub operating mode. After two-stage synchronization in the `hclk` domain, the signal is ORed with the software-controlled Hub-enable register. |
+| `USB_self_powered` | Input | 1 | Active high | Defines the Self Powered status returned in bit 0 of the Hub standard Device `GET_STATUS` response. High reports self-powered operation; low reports bus-powered operation. |
+
+`USB_self_powered` is consumed by the Hub EP0 Request Handler when generating
+the standard Device `GET_STATUS` response. It should be treated as a static
+integration input or held stable while the request is processed.
+
+---
+
+### Testability Interface
+
+| Signal | Direction | Width | Active Level | Description |
+|---|---:|---:|---|---|
+| `async_disable` | Input | 1 | Active high | DFT control that modifies selected asynchronous reset and wake-up paths. It must remain low during normal functional operation. |
+| `testmode` | Input | 1 | Active high | Selects test-mode PIE clock behavior. Clock selection is based on the enabled PHY-support generics rather than the runtime PHY mode. |
+| `tcb_clkgate_se` | Input | 1 | Active high | Test-infrastructure clock-gating placeholder. The signal is exposed at the top-level boundary but is not consumed by the current RTL. |
+
+When `testmode` is high:
+
+- `utmi_clk` is selected if `C_UTMI_SUPPORT` is `TRUE`;
+- otherwise, `ulpi_clk` is selected if `C_ULPI_SUPPORT` is `TRUE`.
+
+UTMI has priority when both PHY interfaces are enabled.
+
+`async_disable` affects selected reset and low-power control paths and should
+be driven only by the intended DFT infrastructure.
+
+`tcb_clkgate_se` may be tied to its inactive value in the current
+implementation.
+
+---
+
+## Integration Requirements and Constraints
+
+The following requirements apply at the JANUS top-level boundary:
+
+- `hresetn` and `ahbs_resetn` control different portions of the IP and must
+  both be provided by the integration environment.
+- Both resets are used asynchronously in the `hclk` domain.
+- No internal reset-deassertion synchronizer is present for `hresetn` or
+  `ahbs_resetn` at the `hclk`-domain boundary.
+- Reset deassertion must satisfy the applicable recovery and removal timing
+  requirements relative to `hclk`.
+- `hresetn` is internally synchronized before entering the `pie_clk` domain.
+- `sys_donotwakeup_n` and `sys_dev_wakeup_n` are used directly by the
+  top-level power-control logic and are not internally synchronized.
+- Asynchronous system-control inputs require appropriate integration-level
+  CDC handling or timing qualification.
+- `USB_self_powered` should normally be treated as a static configuration
+  input.
+- UTMI and ULPI are alternative PHY interfaces and require consistent PHY
+  mode and clock selection.
+- Native RAM chip selects are active high.
+- Native RAM write enables are active low.
+- Internal USB memory requests have priority over external AHB accesses.
+- RAM AHB interfaces may introduce wait states through `HREADYOUT`.
+- RAM AHB `HBURST[2:0]` inputs are not used by the current RTL.
+- AHB slave interfaces always return `OKAY`.
+- `async_disable` is test-only and must remain low during normal operation.
+- `tcb_clkgate_se` is unused by the current RTL.
+- Configurations differing from the documented JANUS defaults require
+  dedicated elaboration and functional validation.
+
+---
+
+## Complete Top-Level Signal Index
+
+| Signal or Prefix | Category | Interface |
+|---|---|---|
+| `hclk`, `hresetn`, `ahbs_resetn` | System integration | Clock and Reset |
+| `usb_needclk`, `sys_donotwakeup_n`, `sys_dev_wakeup_n`, `sys_utmi_clkin_lock` | System integration | Clock Request and Wake-Up |
+| `USB_VBus`, `vbuscomp_on`, `chrg_vbus`, `dischrg_vbus`, `avalid`, `sessend` | System integration | VBUS and Analog Control |
+| `utmi_*` | USB PHY | UTMI |
+| `ulpi_*` | USB PHY | ULPI |
+| `hub_ahbs_*` | Host control | Hub Control AHB |
+| `dev0_ahbs_*`, `dev1_ahbs_*` | Host control | Software-Device Control AHB |
+| `hub_desc_ahbs_dma_*` | External memory access | Hub Descriptor RAM AHB |
+| `dev0_ahbs_dma_*`, `dev1_ahbs_dma_*` | External memory access | Endpoint RAM AHB |
+| `hub_desc_mem_*` | Native memory | Hub Descriptor RAM |
+| `dev0_mem_*`, `dev1_mem_*` | Native memory | Endpoint RAM |
+| `dev0_usb_irq`, `dev0_usb_fiq`, `dev1_usb_irq`, `dev1_usb_fiq` | Interrupt | Software-Device Interrupts |
+| `USB_FrameToggle` | Observation | Frame Timing |
+| `usb_dma_dword_selection`, `usb_dma_write_access` | Observation | USB DMA Write Access |
+| `USB_EnableHub`, `USB_self_powered` | Static configuration | Hub and Device Configuration |
+| `async_disable`, `testmode`, `tcb_clkgate_se` | Test | Testability |
+
 ## Main RTL Blocks
 
 ### USB 2.0 UTMI or ULPI PHY
