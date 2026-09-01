@@ -1,3 +1,117 @@
+# JANUS USB 2.0 Compound Device IP
+
+## Architecture, Integration, and Operational Guide
+
+JANUS implements a USB 2.0 compound device composed of one embedded two-port
+Hub and two software-controlled downstream devices, DEV0 and DEV1.
+
+The three USB functions share one USB Protocol and Interface Engine and one
+Endpoint Data Manager, while using different endpoint implementations:
+
+```text
+Embedded Hub
+  Hardware-managed EP0 and EP1 IN
+  External Descriptor RAM
+
+DEV0 and DEV1
+  Software-controlled register interfaces
+  Independent Endpoint RAMs
+```
+
+This document is intended as an architectural, integration, and debug guide.
+It describes how to navigate the RTL, connect the IP, understand its control
+and data paths, and follow representative USB transactions in simulation.
+
+## Document Structure
+
+### 1. Introduction
+
+Defines the JANUS scope, USB function mapping, terminology, and distinction
+between the hardware-managed Hub and the RAM-based software devices.
+
+### 2. Detailed Architecture Diagram
+
+Provides the main visual reference for the complete architecture, including
+the shared PIE and DMA, clock-domain crossing, Hub subsystem, DEV0/DEV1
+subsystems, routing logic, AHB interfaces, and external RAMs.
+
+### 3. Top-Level Configuration Generics
+
+Describes the parameters controlling PHY support, endpoint resources,
+buffering capabilities, memory widths, memory capacity, and address
+generation.
+
+### 4. Top-Level Interfaces
+
+Documents the external integration boundary, including clocks, resets,
+power-management controls, UTMI and ULPI, AHB interfaces, native RAM
+interfaces, interrupts, observation outputs, and test controls.
+
+### 5. RTL Block Descriptions
+
+Explains the role, connectivity, and architectural ownership of each major
+RTL block and of the functional logic implemented directly in the top level.
+
+### 6. Internal Functional Interfaces
+
+Describes the main control, endpoint-context, payload, and memory interfaces
+between the internal blocks, including signal names, widths, directions, and
+routing behavior.
+
+### 7. Operational Flows
+
+Follows representative USB transactions through the architecture:
+
+- standard and descriptor requests to Hub EP0;
+- Hub Class requests to Hub EP0;
+- Hub Status Change transfers on EP1 IN;
+- control transfers to DEV0 or DEV1;
+- Bulk IN and Bulk OUT transfers to DEV0 or DEV1.
+
+The flows identify the participating blocks, context lookups, memory
+accesses, response paths, runtime-state updates, and principal signals useful
+for simulation debug.
+
+## Suggested Reading Paths
+
+```text
+Integration:
+  Configuration Generics -> Top-Level Interfaces -> Architecture Diagram
+
+RTL development:
+  Architecture Diagram -> Block Descriptions -> Functional Interfaces
+
+Verification and debug:
+  Architecture Diagram -> Operational Flows -> Debug Observability
+```
+
+## Diagram Conventions
+
+```text
+Solid block:
+  Instantiated RTL component
+
+Dashed block:
+  Top-level logic or functional aggregation
+
+Stacked blocks:
+  Independent DEV0 and DEV1 instances
+
+Function 0:
+  Embedded Hub
+
+Function 1:
+  DEV0, connected to Hub Port 1
+
+Function 2:
+  DEV1, connected to Hub Port 2
+```
+
+Some diagram connections represent functional paths rather than every
+intermediate RTL net. The detailed block and interface sections provide the
+corresponding implementation-level references.
+
+
 ## Architecture Overview
 
 The IP implements a USB 2.0 compound device composed of:
