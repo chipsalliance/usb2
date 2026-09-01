@@ -2420,3 +2420,2272 @@ Hub Status Change notification:
 
 ```text
 hub_port_connect
+
+
+# Operational Flows
+
+The previous sections describe the JANUS architecture from a structural
+perspective: RTL blocks, clock domains, functional interfaces, endpoint
+contexts, external memories, and top-level routing.
+
+This final section describes how those elements cooperate during
+representative USB transactions.
+
+The objective is not limited to reproducing the protocol sequence observed
+by the USB host. Each flow also identifies:
+
+- the block that recognizes and initiates each operation;
+- the function-selection and endpoint-context lookup sequence;
+- the control and payload paths used by the transaction;
+- the location in which request, context, and payload information is stored;
+- the block responsible for request-specific processing;
+- the mechanism used to prepare the next USB transfer stage;
+- the endpoint-state updates performed after transaction completion;
+- the principal RTL signals and states useful during simulation debug.
+
+These flows are intended to support:
+
+- architectural understanding;
+- RTL navigation;
+- directed verification development;
+- waveform analysis and debug;
+- integration of the external RAMs and AHB control paths;
+- future modification or extension of the IP.
+
+## Common Transaction Model
+
+All USB transactions enter JANUS through the shared USB Protocol and
+Interface Engine.
+
+At a high level, each transaction follows this sequence:
+
+```text
+USB token and packet reception
+  -> function address matching
+  -> selected-function identification
+  -> endpoint-context lookup
+  -> function-specific context or memory access
+  -> payload transfer or request processing
+  -> USB response generation
+  -> endpoint runtime-state update
+```
+
+The PIE receives the effective enable, current address, and temporary address
+of all three USB functions:
+
+```text
+Function 0: Embedded Hub
+Function 1: DEV0
+Function 2: DEV1
+```
+
+After accepting a token, the PIE generates `pie_dev_selected` to identify the
+target function.
+
+The selected-function indication crosses `usb_synchronizer_1` and becomes
+`sync_pie_dev_selected` in the `hclk` domain.
+
+Top-level selected-function logic then controls:
+
+- Hub versus software-device access selection;
+- DEV0 versus DEV1 Endpoint RAM selection;
+- the function context presented to `usb_dma_1`;
+- SETUP-event routing;
+- DMA endpoint-state update routing;
+- grant and read-data response selection.
+
+The PIE and Endpoint Data Manager use a common transaction and endpoint
+interface for all three USB functions. The implementation behind that
+interface is function-dependent.
+
+```text
+Embedded Hub
+
+Endpoint runtime context:
+  usb_ep_config_handler_1
+
+EP0 SETUP storage and request decode:
+  hub_ep0_handler_1
+
+Hub and port class behavior:
+  usb_app_hw_hub_1
+
+Descriptors, decode tables, and stored responses:
+  Hub Descriptor RAM
+
+Hub Status Change EP1 IN payload:
+  usb_app_hw_hub_1
+```
+
+```text
+DEV0 and DEV1
+
+Device control and compact endpoint state:
+  usb_reg_if_1 / usb_reg_if_2
+
+Detailed endpoint context:
+  DEV0 / DEV1 Endpoint RAM
+
+SETUP, TX, and RX payload storage:
+  DEV0 / DEV1 Endpoint RAM
+
+Control-request interpretation and response preparation:
+  External software or control agent through AHB
+```
+
+The operational descriptions therefore distinguish between:
+
+- processing common to all USB functions;
+- hardware-managed Hub operations;
+- software-managed DEV0 and DEV1 operations;
+- endpoint-context reads and runtime-state updates;
+- control paths and payload paths.
+
+## Flow Description Convention
+
+Each operational flow follows this sequence whenever applicable:
+
+```text
+1. USB request acceptance
+2. Function and endpoint selection
+3. Endpoint-context lookup
+4. Request or payload transfer
+5. Function-specific processing
+6. Preparation of the next USB stage
+7. USB response or data transfer
+8. Completion and runtime-state update
+```
+
+Signal names refer to the RTL names described in the architecture and
+functional-interface sections.
+
+Some top-level glue logic is represented functionally:
+
+- SETUP-event routing may be shown as a direct function-specific notification
+  even when the RTL uses an intermediate pending flag;
+- Hub connection may be shown as a functional PIE input even though it
+  contributes to both the function-enable vector and the synchronized
+  upstream-connect path;
+- selected-function context and RAM routing may be described as one
+  architectural operation even when several combinational assignments and
+  muxes implement the path.
+
+These simplifications preserve the implemented behavior while avoiding
+unnecessary repetition of intermediate top-level nets.
+
+## Covered Operational Flows
+
+The representative flows described below are:
+
+1. the common Hub EP0 SETUP reception and decoding flow;
+2. a standard control request to Hub EP0;
+3. a descriptor request to Hub EP0;
+4. a Hub Class request to Hub EP0;
+5. a Hub Status Change Interrupt IN transfer on Hub EP1;
+6. a control transfer to DEV0 or DEV1;
+7. a Bulk IN transfer to DEV0 or DEV1;
+8. a Bulk OUT transfer to DEV0 or DEV1.
+
+---
+
+# Common Hub EP0 SETUP Reception and Decode
+
+The embedded Hub implements EP0 entirely in hardware.
+
+All Hub standard, descriptor, and Hub Class requests initially use the same
+SETUP reception and decoding sequence.
+
+The flow is divided into four phases:
+
+```text
+1. Hub EP0 context lookup
+2. Eight-byte SETUP packet reception and storage
+3. Autonomous Setup Decode Table lookup
+4. EP0 request and transfer-context preparation
+```
+
+The main blocks involved are:
+
+```text
+usb_pie_1
+  USB token, packet, and handshake processing
+
+usb_dma_1
+  EP0 context lookup and SETUP payload transfer
+
+hub_ep0_handler_1
+  SETUP storage and request decoding
+
+usb_ep_config_handler_1
+  Hub EP0 runtime-context storage
+
+hub_desc_ahb_dma_slave
+  Hub Descriptor RAM access arbitration and adaptation
+
+Hub Descriptor RAM
+  Device link and Setup Decode Table storage
+```
+
+## Hub EP0 Context Lookup
+
+When the host sends a SETUP token to the current or temporary Hub address:
+
+1. `usb_pie_1` decodes the token address and endpoint number.
+2. The PIE compares the token address with the current and temporary address
+   of every enabled USB function.
+3. The Hub is selected as function index `0`.
+4. The PIE identifies endpoint `0` and a SETUP transaction.
+5. The PIE generates the endpoint-context request:
+
+```text
+pie_epinfo_req
+pie_epinfo_epnr[3:0] = 0
+pie_epinfo_epdir
+pie_epinfo_setup = 1
+pie_dev_selected = 0
+```
+
+6. The endpoint request and selected-function index cross
+   `usb_synchronizer_1`.
+7. Top-level selected-function logic supplies the predefined Hub context
+   mapping to `usb_dma_1`.
+8. `usb_dma_1` generates a context read through Hub address region `11`.
+9. The Hub Function Resource Decoder routes the request to
+   `usb_ep_config_handler_1`.
+10. `usb_ep_config_handler_1` returns the encoded Hub EP0 OUT context.
+11. `usb_dma_1` decodes the returned context.
+12. The corresponding `epinfo_*` information crosses back to the PIE.
+
+The returned information includes:
+
+```text
+Endpoint valid
+Endpoint active
+Endpoint disabled
+Endpoint STALL state
+Endpoint toggle
+Transfer byte count
+Maximum-packet information
+Endpoint attributes
+```
+
+The PIE uses this context to determine whether the SETUP transaction can be
+accepted.
+
+## SETUP Packet Reception
+
+After the SETUP token is accepted, the host transmits the eight-byte SETUP
+data packet.
+
+The payload path is:
+
+```text
+USB Host
+  -> USB PHY
+  -> usb_pie_1
+  -> usb_synchronizer_1
+  -> usb_dma_1
+  -> usb_fs_mux_1
+  -> Hub Function Resource Decoder
+  -> hub_ep0_handler_1
+```
+
+The sequence is:
+
+1. `usb_pie_1` receives the DATA0 packet.
+2. The PIE validates the packet PID, length, and CRC.
+3. The payload, byte count, and receive-valid information cross
+   `usb_synchronizer_1`.
+4. `usb_dma_1` recognizes the transaction as SETUP through:
+
+```text
+sync_sieint_epinfo_setup = 1
+```
+
+5. The Endpoint Data Manager applies SETUP-specific handling:
+   - the transfer size is forced to eight bytes;
+   - the SETUP storage location is selected;
+   - the transaction is distinguished from a normal EP0 OUT transaction.
+6. `usb_dma_1` generates a write through the Shared Endpoint Access
+   interface.
+7. `usb_fs_mux_1` selects the Hub function path.
+8. The Hub Function Resource Decoder selects address region `00`.
+9. The request is presented to `hub_ep0_handler_1`.
+10. `upd_dma_addr[14]` qualifies the internal SETUP storage area.
+
+## SETUP Packet Storage
+
+`hub_ep0_handler_1` stores the received packet in:
+
+```text
+setup_bytes[63:0]
+```
+
+The SETUP packet is stored inside the EP0 handler.
+
+It is not stored in the Hub Descriptor RAM.
+
+The operation can be summarized as:
+
+```text
+usb_dma_1
+  -> upd_dma_req_ep0
+  -> upd_dma_write
+  -> upd_dma_wdata
+  -> setup_bytes[63:0]
+```
+
+For a 64-bit internal data path, the complete SETUP packet can be written in
+one transfer.
+
+For a 32-bit internal data path, the packet is written as two 32-bit words.
+
+After the packet has been accepted and validated, the PIE transmits the USB
+ACK and generates:
+
+```text
+pie_epinfo_setup_received
+```
+
+The event crosses into the `hclk` domain as:
+
+```text
+sync_sieint_setup_received
+```
+
+## Hub SETUP Decode Activation
+
+In the implemented RTL, `sync_sieint_setup_received` does not directly drive
+the Setup Decode FSM.
+
+Top-level logic converts the single-cycle event into the persistent pending
+indication:
+
+```text
+usbreg_setup_to_decode[0]
+```
+
+The request-completion mechanism is:
+
+```text
+SETUP packet received
+  -> usbreg_setup_to_decode[0] set
+
+SETUP decode completed
+  -> ep0_setupdone[0] asserted
+  -> usbreg_setup_to_decode[0] cleared
+```
+
+The index `[0]` identifies the only hardware-controlled USB function in the
+current integration, the embedded Hub.
+
+The architecture diagram may intentionally represent this mechanism as:
+
+```text
+SETUP received
+  -> Hub EP0 Request Handler
+```
+
+This representation is a functional simplification. The RTL implements a
+pending flag and completion acknowledgement around the EP0 handler.
+
+When `hub_ep0_handler_1` is idle and observes:
+
+```text
+usbreg_setup_to_decode[0] = 1
+```
+
+the handler begins the autonomous Hub Setup Decode Table lookup.
+
+## Autonomous Hub Descriptor RAM Access
+
+During SETUP decoding, `hub_ep0_handler_1` becomes the active internal
+requester of the Hub Descriptor RAM.
+
+The interface is:
+
+```text
+ep0_mem_req
+ep0_mem_addr[11:0]
+ep0_mem_gnt
+ep0_mem_rdata[RAM_DATAWIDTH-1:0]
+```
+
+The path is:
+
+```text
+hub_ep0_handler_1
+  -> ep0_mem_*
+  -> hub_desc_ahb_dma_slave
+  -> Hub Descriptor RAM
+```
+
+The handler's access is read-only.
+
+`hub_desc_ahb_dma_slave` gives the internal EP0 request priority over an
+external AHB request to the same RAM.
+
+The Setup Decode FSM uses the following main states:
+
+```text
+IDLE
+READ_DEV_LINK
+READ_SETUP_LSB
+READ_SETUP_MASK_LSB
+READ_SETUP_MSB
+READ_SETUP_MASK_MSB
+SETUP_DONE
+```
+
+## Device-Link Lookup
+
+The first RAM lookup is performed in:
+
+```text
+READ_DEV_LINK
+```
+
+The handler reads the device-link entry associated with the selected
+hardware-controlled function:
+
+```text
+C_DEV_LINK_START + device index
+```
+
+In the current integration:
+
+```text
+device index = 0
+```
+
+The returned word contains a reference to the first entry in the Hub Setup
+Decode Table.
+
+The handler obtains the next address from:
+
+```text
+ep0_mem_rdata[11:0]
+```
+
+and proceeds to the first Setup Decode Table entry.
+
+The start address of the decode table is therefore defined by the Descriptor
+RAM contents rather than being hardcoded in the EP0 handler.
+
+## Lower SETUP Comparison
+
+In:
+
+```text
+READ_SETUP_LSB
+```
+
+the handler reads the first comparison word of the current table entry.
+
+The handler:
+
+1. stores the comparison value;
+2. compares the lower portion of the received SETUP packet with the table
+   pattern;
+3. retains the partial match result;
+4. advances to `READ_SETUP_MASK_LSB`.
+
+In:
+
+```text
+READ_SETUP_MASK_LSB
+```
+
+the handler reads the associated mask and request metadata.
+
+Conceptually, the comparison is:
+
+```text
+received SETUP field AND table mask
+  compared with
+table comparison value
+```
+
+The table entry also supplies:
+
+```text
+setup_request[6:0]
+setup_last
+setup_data_buffer[7:0]
+```
+
+- `setup_request[6:0]` identifies the internal operation represented by the
+  entry.
+- `setup_last` identifies the final entry in the current decode list.
+- `setup_data_buffer[7:0]` identifies the response or data-buffer reference.
+
+If the lower comparisons succeed, the FSM continues with the upper part of
+the SETUP packet.
+
+If the comparison fails:
+
+- the handler advances to the next table entry when `setup_last = 0`;
+- the handler terminates the lookup with no valid request when
+  `setup_last = 1`.
+
+The next-entry operation updates the RAM address according to the table-entry
+layout and restarts the comparison sequence.
+
+## Upper SETUP Comparison
+
+In:
+
+```text
+READ_SETUP_MSB
+```
+
+the handler reads the upper comparison information.
+
+This phase also determines the effective response length.
+
+If the table entry specifies a response length smaller than the `wLength`
+received from the host, the smaller value is selected.
+
+Conceptually:
+
+```text
+effective response length =
+  minimum(received wLength, table-defined maximum response length)
+```
+
+The selected length is retained for the subsequent EP0 context generation.
+
+The FSM then enters:
+
+```text
+READ_SETUP_MASK_MSB
+```
+
+where the upper SETUP fields are compared using the table-defined mask.
+
+If the lower and upper comparisons both succeed, the request is considered
+decoded.
+
+The handler then:
+
+```text
+retains setup_request[6:0]
+retains setup_data_buffer[7:0]
+prepares the transfer direction
+prepares the transfer byte count
+asserts ep0_in_active when required
+asserts ep0_out_active when required
+asserts ep0_setupdone[0]
+```
+
+If the upper comparison fails:
+
+- the handler advances to the next entry when another entry is available;
+- the handler clears the request code and completes the lookup when the
+  current entry is the last entry.
+
+The FSM enters `SETUP_DONE` and then returns to `IDLE`.
+
+## Decode Result
+
+A successful lookup produces two groups of information.
+
+### Request-Semantic Information
+
+```text
+setup_request[6:0]
+ep0_wvalue[15:0]
+ep0_windex[15:0]
+```
+
+These values identify:
+
+- the internal request to be executed;
+- the original SETUP `wValue`;
+- the original SETUP `wIndex`.
+
+They are consumed by:
+
+- the standard-request logic inside `hub_ep0_handler_1`;
+- `usb_app_hw_hub_1` for Hub and Port class requests.
+
+### EP0 Transfer-Context Information
+
+```text
+ep0_setupdone[0]
+ep0_out_active
+ep0_in_active
+ep0_outin_nbytes[C_EPNBYTEWIDTH-1:0]
+ep0_setup_dir
+ep0_data_buffer[7:0]
+```
+
+These signals define the EP0 state required for the subsequent DATA or
+STATUS stage.
+
+When `ep0_setupdone[0]` is asserted,
+`usb_ep_config_handler_1` captures the prepared information into its Hub EP0
+runtime-context registers.
+
+The Endpoint Data Manager does not receive `ep0_setupdone[0]` directly.
+
+SETUP decode completion therefore does not cause `usb_dma_1` to start the
+next transfer.
+
+The next operation begins only when the host sends the next USB token and the
+PIE requests the updated EP0 context.
+
+## Hub EP0 Response-Source Selection
+
+During a subsequent DMA-initiated EP0 response read,
+`upd_dma_addr[13:12]` selects one of three mutually exclusive response
+sources:
+
+```text
+00:
+  Standard-request response generated by hub_ep0_handler_1
+
+01:
+  Hub Class response generated by usb_app_hw_hub_1
+
+1x:
+  Descriptor or stored response read from the Hub Descriptor RAM
+```
+
+The EP0 handler therefore performs two distinct roles:
+
+```text
+During SETUP decoding:
+  Active requester of the Hub Descriptor RAM
+
+During an EP0 IN data stage:
+  Passive EP0 response gateway and response-source mux
+```
+
+## Primary Debug Observability
+
+The principal signals and states for the common Hub SETUP flow are:
+
+```text
+PIE:
+  pie_dev_selected
+  pie_epinfo_req
+  pie_epinfo_epnr
+  pie_epinfo_epdir
+  pie_epinfo_setup
+  pie_epinfo_setup_received
+
+Clock-Domain Bridge:
+  sync_pie_dev_selected
+  sync_sieint_epinfo_req
+  sync_sieint_epinfo_setup
+  sync_sieint_setup_received
+
+Endpoint Data Manager:
+  dma_state
+  dma_dma_req
+  dma_dma_write
+  dma_dma_addr
+  dma_dma_wdata
+  dma_dma_gnt
+  dma_dma_rdata
+
+Hub EP0 Request Handler:
+  setup_bytes
+  usbreg_setup_to_decode
+  ep0_mem_access_state
+  setup_decode_state
+  ep0_mem_req
+  ep0_mem_addr
+  ep0_mem_gnt
+  ep0_mem_rdata
+  setup_request
+  setup_data_buffer
+  ep0_setupdone
+  ep0_in_active
+  ep0_out_active
+  ep0_outin_nbytes
+```
+
+A valid common Hub SETUP flow should show:
+
+```text
+Function 0 selected
+  -> Hub EP0 OUT context read
+  -> eight-byte SETUP packet written
+  -> SETUP-received event
+  -> decode pending set
+  -> device-link read
+  -> Setup Decode Table browsing
+  -> request match
+  -> EP0 context prepared
+  -> ep0_setupdone asserted
+```
+
+---
+
+# Standard Control Request to Hub EP0
+
+After a successful Setup Decode Table lookup, `hub_ep0_handler_1` evaluates
+`setup_request[6:0]`.
+
+Supported standard requests handled by the EP0 handler include:
+
+```text
+SET_ADDRESS
+SET_CONFIGURATION
+GET_CONFIGURATION
+GET_INTERFACE
+GET_STATUS for Device
+GET_STATUS for Interface
+GET_STATUS for Endpoint
+SET_FEATURE for Device
+SET_FEATURE for Endpoint
+CLEAR_FEATURE for Device
+CLEAR_FEATURE for Endpoint
+```
+
+The handler uses the original SETUP fields stored in `setup_bytes[63:0]`
+together with current device and endpoint state.
+
+Relevant state sources include:
+
+```text
+Current Hub configuration state
+Remote-wakeup enable state
+Endpoint STALL state from usb_ep_config_handler_1
+USB_self_powered
+Original wValue and wIndex fields
+```
+
+## State-Changing Standard Requests
+
+For state-changing standard requests, the handler generates the corresponding
+control effects.
+
+Examples include:
+
+```text
+SET_ADDRESS
+  -> assert ep0_new_address
+  -> provide ep0_address[6:0]
+
+SET_CONFIGURATION
+  -> update the Hub configured state
+  -> update the corresponding endpoint configuration state
+
+SET_FEATURE(Device)
+  -> enable remote wake-up
+  -> apply supported test-mode behavior where applicable
+
+CLEAR_FEATURE(Device)
+  -> disable remote wake-up
+
+SET_FEATURE(Endpoint)
+  -> set endpoint STALL
+
+CLEAR_FEATURE(Endpoint)
+  -> clear endpoint STALL
+  -> request endpoint toggle reset
+```
+
+These effects are generated when SETUP decoding completes.
+
+## Short Standard-Request Response Generation
+
+For a standard request requiring a short IN response, the EP0 handler builds
+the complete response internally.
+
+The response is constructed combinationally in:
+
+```text
+setup_data[31:0]
+```
+
+The response can combine:
+
+- current dynamic state;
+- static integration configuration;
+- protocol-defined constant values;
+- reserved fields hardcoded to zero.
+
+For example:
+
+```text
+GET_STATUS(Endpoint)
+
+bit 0:
+  Current endpoint STALL state
+
+bits 15:1:
+  Zero
+```
+
+At SETUP decode completion, the generated value is stored in:
+
+```text
+setup_bytes[31:0]
+```
+
+The lower portion of the original SETUP storage is therefore reused as the
+registered standard-response container.
+
+The stored response is exposed to the Endpoint Data Manager as:
+
+```text
+std_req_data[31:0]
+```
+
+The value is a snapshot of the state evaluated when the request was decoded.
+
+The response is not reconstructed when `usb_dma_1` later reads it.
+
+Although the response container is 32 bits wide, the currently supported
+short standard responses normally contain one or two meaningful bytes.
+
+## Standard Control Read Data Stage
+
+When the host sends the subsequent IN token:
+
+1. The PIE selects the Hub and requests the EP0 IN context.
+2. `usb_dma_1` reads the updated context through Hub region `11`.
+3. `usb_ep_config_handler_1` returns the registered EP0 IN context.
+4. The context identifies:
+   - EP0 IN as active;
+   - the transfer byte count;
+   - the standard-response source.
+5. `usb_dma_1` generates a response-data read through Hub region `00`.
+6. Inside `hub_ep0_handler_1`, address bits `[13:12] = 00` select:
+
+```text
+std_req_data[31:0]
+```
+
+7. The response is returned through `upd_dma_rdata_ep0`.
+8. The Endpoint Data Manager transfers the response through
+   `usb_synchronizer_1`.
+9. The PIE transmits the DATA packet.
+10. The host returns the handshake.
+11. The PIE reports transaction completion and success.
+12. `usb_dma_1` updates the Hub EP0 runtime context.
+
+During this data read, `hub_ep0_handler_1` is passive with respect to
+transaction initiation.
+
+`usb_dma_1` is the active requester.
+
+## Standard Control Write Without a Data Stage
+
+For requests whose complete meaning is contained in the SETUP packet, no
+separate DATA OUT payload is required.
+
+Examples include:
+
+```text
+SET_ADDRESS
+SET_CONFIGURATION
+SET_FEATURE
+CLEAR_FEATURE
+```
+
+The EP0 handler:
+
+1. decodes the request;
+2. applies or initiates the required state update;
+3. prepares EP0 IN for a zero-length status stage;
+4. transfers the updated EP0 context to
+   `usb_ep_config_handler_1`.
+
+When the host sends the status-stage IN token:
+
+1. The PIE requests the updated Hub EP0 IN context.
+2. `usb_dma_1` reads the context through Hub region `11`.
+3. The context indicates an active zero-length EP0 IN transaction.
+4. The PIE transmits the zero-length DATA packet.
+5. Transfer completion updates the Hub EP0 runtime state.
+
+The EP0 handler prepares the status-stage context.
+
+The PIE executes the actual USB status-stage transaction.
+
+No supported Hub request requiring a separate DATA OUT payload has been
+identified in the current implementation.
+
+## Standard Request Debug Sequence
+
+A valid standard-request flow should show:
+
+```text
+Common Hub SETUP flow
+  -> standard request identified
+  -> current state evaluated
+  -> action or short response prepared
+  -> ep0_setupdone asserted
+  -> EP0 context captured
+  -> next host token
+  -> standard response or zero-length status transaction
+  -> EP0 state updated
+```
+
+---
+
+# Descriptor Request to Hub EP0
+
+`GET_DESCRIPTOR` uses the common Hub SETUP reception and decode-table lookup.
+
+The descriptor response is not stored in the 32-bit standard-response
+container.
+
+The descriptor is stored in the external Hub Descriptor RAM.
+
+The matching Setup Decode Table entry supplies the response or data-buffer
+reference used to locate the descriptor.
+
+After identifying the descriptor request, `hub_ep0_handler_1`:
+
+1. retains the descriptor request code;
+2. retains the descriptor data-buffer reference;
+3. limits the effective response length using:
+   - the received `wLength`;
+   - the length defined by the table entry;
+4. marks EP0 IN active;
+5. supplies the effective transfer byte count;
+6. supplies the descriptor data-buffer selection;
+7. asserts `ep0_setupdone[0]`.
+
+`usb_ep_config_handler_1` captures the resulting EP0 IN context.
+
+## Descriptor Data Read
+
+When the host sends the first descriptor IN token:
+
+1. The PIE selects the Hub.
+2. The PIE requests the Hub EP0 IN context.
+3. `usb_dma_1` reads the context through Hub region `11`.
+4. The context indicates that the payload resides in the Descriptor RAM or
+   stored-response region.
+5. `usb_dma_1` generates a payload read through Hub region `00`.
+6. Inside `hub_ep0_handler_1`, address bits `[13:12] = 1x` select the
+   Descriptor RAM response path.
+7. The handler translates the DMA payload address into:
+
+```text
+ep0_mem_addr[11:0]
+```
+
+8. The handler asserts `ep0_mem_req`.
+9. `hub_desc_ahb_dma_slave` grants the internal read access to the physical
+   Descriptor RAM port.
+10. The Hub Descriptor RAM returns the selected word.
+11. The RAM adapter returns the word through `ep0_mem_rdata`.
+12. The EP0 handler forwards the word through `upd_dma_rdata_ep0`.
+13. `usb_dma_1` selects the required bytes.
+14. The data crosses `usb_synchronizer_1`.
+15. The PIE transmits the descriptor DATA packet.
+16. The host returns the handshake.
+17. The PIE reports completion.
+18. `usb_dma_1` updates the remaining byte count and payload position.
+
+For a descriptor larger than one maximum-size packet, the endpoint remains
+active and the same context and payload-read sequence repeats for each
+subsequent IN token.
+
+The operational ownership during the descriptor data stage is:
+
+```text
+usb_dma_1
+  Initiates each descriptor-data read
+
+hub_ep0_handler_1
+  Performs address adaptation, request forwarding,
+  and response-source selection
+
+hub_desc_ahb_dma_slave
+  Arbitrates the Descriptor RAM port
+
+Hub Descriptor RAM
+  Stores the descriptor payload
+```
+
+This differs from the SETUP decode phase:
+
+```text
+SETUP decode:
+  hub_ep0_handler_1 autonomously initiates the RAM reads
+
+Descriptor DATA stage:
+  usb_dma_1 initiates the RAM reads
+  hub_ep0_handler_1 acts as a passive gateway
+```
+
+## Descriptor Status Stage
+
+After the final descriptor DATA packet:
+
+1. The host sends the zero-length OUT status transaction.
+2. The PIE requests the Hub EP0 OUT context.
+3. `usb_dma_1` returns the prepared endpoint state.
+4. The PIE accepts and validates the zero-length OUT packet.
+5. Transfer completion updates the Hub EP0 context.
+6. The control transfer terminates.
+
+## Primary Debug Observability
+
+The principal signals for a descriptor transfer are:
+
+```text
+SETUP decode:
+  setup_bytes
+  setup_decode_state
+  setup_request
+  setup_data_buffer
+  ep0_outin_nbytes
+  ep0_setupdone
+
+Descriptor payload access:
+  dma_dma_addr
+  dma_dma_req
+  upd_dma_addr
+  upd_dma_req_ep0
+  ep0_mem_access_state
+  ep0_mem_req
+  ep0_mem_addr
+  ep0_mem_gnt
+  ep0_mem_rdata
+  upd_dma_rdata_ep0
+
+PIE transmit path:
+  epinfo_sync_txdata
+  epinfo_sync_txdata_valid
+  sync_sieint_txdatafetched
+  sync_sieint_endtransfer
+  sync_sieint_success
+```
+
+A valid descriptor flow should show:
+
+```text
+Common Hub SETUP flow
+  -> descriptor request matched
+  -> descriptor buffer selected
+  -> EP0 IN context activated
+  -> host IN token
+  -> DMA context read
+  -> DMA-driven Descriptor RAM read
+  -> descriptor DATA packet
+  -> byte-count and payload-position update
+  -> final zero-length OUT status stage
+```
+
+---
+
+# Hub Class Request to Hub EP0
+
+Hub and Port class requests use the common Hub SETUP storage and decode-table
+lookup flow.
+
+The Setup Decode Table identifies the request as a Hub Class operation and
+provides the internal request code.
+
+At decode completion, `hub_ep0_handler_1` exports:
+
+```text
+ep0_setupdone
+ep0_request[6:0]
+ep0_wvalue[15:0]
+ep0_windex[15:0]
+```
+
+These signals are consumed by `usb_app_hw_hub_1`.
+
+The Hub controller:
+
+1. checks whether `ep0_request[6:0]` identifies a supported Hub or Port class
+   request;
+2. interprets `ep0_wvalue[15:0]`;
+3. selects the target downstream port using `ep0_windex[15:0]`;
+4. reads or updates the selected Hub or port state;
+5. generates a state change or response as required.
+
+The downstream-port mapping is:
+
+```text
+wIndex = 1
+  -> Hub Port 1
+  -> DEV0
+
+wIndex = 2
+  -> Hub Port 2
+  -> DEV1
+```
+
+## Hub Class State-Changing Requests
+
+Representative state-changing operations include:
+
+```text
+SET_FEATURE(PORT_RESET)
+  -> assert hub_port_reset for the selected port
+  -> set the selected port enable state
+  -> update the corresponding reset-change state
+
+CLEAR_FEATURE(PORT_ENABLE)
+  -> clear the selected port enable state
+
+CLEAR_FEATURE(C_PORT_CONNECTION)
+  -> clear the selected connection-change indication
+
+CLEAR_FEATURE(C_PORT_RESET)
+  -> clear the selected reset-change indication
+```
+
+The decoded Hub or Port operation is executed by `usb_app_hw_hub_1`, not by
+the EP0 handler.
+
+The EP0 handler remains responsible for preparing the control-transfer
+context, including the subsequent status stage.
+
+## Hub Class Read Requests
+
+For Hub or Port status reads, `usb_app_hw_hub_1` constructs:
+
+```text
+ep0_class_rdata[RAM_DATAWIDTH-1:0]
+```
+
+The response is derived from the current Hub and downstream-port state.
+
+When the host sends the subsequent EP0 IN token:
+
+1. The PIE requests the updated Hub EP0 IN context.
+2. `usb_dma_1` reads the context through Hub region `11`.
+3. The context identifies the Hub Class response source.
+4. `usb_dma_1` requests the response through Hub region `00`.
+5. Inside `hub_ep0_handler_1`, address bits `[13:12] = 01` select:
+
+```text
+ep0_class_rdata
+```
+
+6. The EP0 handler forwards the selected response combinationally.
+7. `usb_dma_1` transfers the response through the Clock-Domain Bridge.
+8. The PIE transmits the Hub EP0 IN DATA packet.
+9. The host returns the handshake.
+10. Transfer completion updates the Hub EP0 context.
+
+`ep0_class_rdata` is not stored by `hub_ep0_handler_1`.
+
+The Hub controller owns the state from which the response is generated.
+
+The EP0 handler acts as the response-source selector during the DMA read.
+
+The connected implementation supports one response word.
+`ep0_class_addr[3:0]` is not connected in the current top-level integration.
+
+## Hub Class Debug Sequence
+
+The principal signals are:
+
+```text
+Hub EP0 Request Handler:
+  setup_bytes
+  setup_request
+  ep0_setupdone
+  ep0_request
+  ep0_wvalue
+  ep0_windex
+  ep0_data_buffer
+
+Hub Controller:
+  ep0_setupdone
+  ep0_request
+  ep0_wvalue
+  ep0_windex
+  ep0_class_rdata
+  hub_port_connect
+  hub_port_enable
+  hub_port_reset
+
+Response path:
+  upd_dma_req_ep0
+  upd_dma_addr[13:12]
+  upd_dma_rdata_ep0
+```
+
+A valid Hub Class flow should show:
+
+```text
+Common Hub SETUP flow
+  -> Hub Class request identified
+  -> ep0_setupdone
+  -> request dispatched to usb_app_hw_hub_1
+  -> Hub or port state evaluated or updated
+  -> EP0 context activated
+  -> Hub Class response or zero-length status stage
+```
+
+---
+
+# Hub Status Change EP1 IN Transfer
+
+Hub EP1 IN is an Interrupt IN endpoint.
+
+Hub EP1 does not receive USB control requests.
+
+The host periodically polls the endpoint to determine whether Hub or
+downstream-port status has changed.
+
+The report payload is generated directly by `usb_app_hw_hub_1`.
+
+## Status-Change Detection
+
+The Hub controller monitors state associated with the two downstream ports,
+including:
+
+```text
+Connection state and connection change
+Port enable state
+Suspend state and suspend change
+Reset state and reset change
+```
+
+When a reportable condition becomes pending, the Hub controller:
+
+1. updates its internal Hub or port change state;
+2. updates the Hub Status Change bitmap;
+3. asserts `hub_epin_enable_buffer`;
+4. supplies `hub_epin_buffer_size[6:0]`;
+5. provides the related EP1 IN control signals to
+   `usb_ep_config_handler_1`.
+
+The Context Control interface is:
+
+```text
+hub_epin_stall
+hub_epin_clear_buffer
+hub_epin_enable_buffer
+hub_epin_buffer_size[6:0]
+```
+
+Top-level logic maps these signals to the single non-control hardware
+endpoint entry:
+
+```text
+ep_stall[0]
+ep_clear_buffer[0]
+ep_enable_buffer[0]
+ep_buffer_size[6:0]
+```
+
+`usb_ep_config_handler_1` consequently records Hub EP1 IN as active when a
+status-change report is available.
+
+## Host Poll of Hub EP1 IN
+
+When the host sends an IN token to Hub endpoint 1:
+
+1. The PIE matches the Hub address.
+2. The PIE selects function index `0`.
+3. The PIE identifies endpoint `1`, direction IN.
+4. The PIE generates an endpoint-context request.
+5. The request crosses `usb_synchronizer_1`.
+6. `usb_dma_1` reads Hub EP1 IN context through Hub region `11`.
+7. `usb_ep_config_handler_1` returns:
+   - active state;
+   - disabled state;
+   - STALL state;
+   - byte count;
+   - toggle-related state;
+   - endpoint attributes.
+8. `usb_dma_1` returns the decoded context to the PIE.
+
+The PIE selects the USB response according to that context:
+
+```text
+Endpoint inactive:
+  NAK
+
+Endpoint stalled:
+  STALL
+
+Endpoint active:
+  Continue with the Interrupt IN DATA transaction
+```
+
+## Hub EP1 IN Payload Read
+
+If the endpoint is active:
+
+1. `usb_dma_1` generates a payload read through Hub region `01`.
+2. The Hub Function Resource Decoder asserts:
+
+```text
+upd_dma_req_ep_hub
+```
+
+3. `upd_dma_addr[4:2]` is presented as:
+
+```text
+hub_epin_addr[2:0]
+```
+
+4. `usb_app_hw_hub_1` returns:
+
+```text
+hub_epin_gnt
+hub_epin_rdata[RAM_DATAWIDTH-1:0]
+```
+
+5. The top-level response is returned as:
+
+```text
+upd_dma_gnt_ep_noram
+upd_dma_rdata_ep_noram[RAM_DATAWIDTH-1:0]
+```
+
+6. `usb_dma_1` selects the required status-change data.
+7. The payload crosses `usb_synchronizer_1`.
+8. The PIE transmits the Interrupt IN DATA packet.
+9. The host acknowledges the packet.
+10. The PIE reports transfer completion.
+11. `usb_dma_1` updates the Hub EP1 IN context through Hub region `11`.
+12. The Hub controller and Context Manager release or rearm the current
+    report through the EP1 IN Context Control interface.
+
+This payload path bypasses `hub_ep0_handler_1`.
+
+It does not use a payload RAM.
+
+The two response paths generated by `usb_app_hw_hub_1` are therefore
+distinct:
+
+```text
+Hub Class response on EP0 IN:
+  usb_app_hw_hub_1
+  -> ep0_class_rdata
+  -> hub_ep0_handler_1
+  -> usb_dma_1
+  -> usb_pie_1
+
+Hub Status Change report on EP1 IN:
+  usb_app_hw_hub_1
+  -> hub_epin_rdata
+  -> usb_dma_1
+  -> usb_pie_1
+```
+
+## Primary Debug Observability
+
+The principal signals for Hub EP1 IN are:
+
+```text
+Port state:
+  hub_port_connect
+  hub_port_enable
+  hub_port_reset
+  hub_port_status_change
+
+EP1 IN Context Control:
+  hub_epin_stall
+  hub_epin_clear_buffer
+  hub_epin_enable_buffer
+  hub_epin_buffer_size
+
+Context lookup:
+  sync_sieint_epinfo_epnr
+  sync_sieint_epinfo_epdir
+  upd_dma_req_config
+  upd_dma_rdata_config
+  epinfo_sync_active
+  epinfo_sync_stall
+  epinfo_sync_nbytes
+
+Payload access:
+  upd_dma_req_ep_hub
+  hub_epin_req
+  hub_epin_addr
+  hub_epin_gnt
+  hub_epin_rdata
+  upd_dma_gnt_ep_noram
+  upd_dma_rdata_ep_noram
+```
+
+A valid Hub Status Change flow should show:
+
+```text
+Port change detected
+  -> Hub status-change bitmap updated
+  -> EP1 IN context activated
+  -> host polls EP1 IN
+  -> context lookup
+  -> direct Hub-controller payload read
+  -> Interrupt IN DATA packet
+  -> report and endpoint context updated
+```
+
+---
+
+# Control Transfer to DEV0 or DEV1
+
+DEV0 and DEV1 implement EP0 through software-visible registers and their
+respective Endpoint RAMs.
+
+The hardware transfers the SETUP packet into the selected Endpoint RAM and
+reports the event through the corresponding `usb_reg_if`.
+
+The SETUP request is interpreted and serviced by software or by an external
+control agent through the AHB interfaces.
+
+The following description uses `DEVx` to represent DEV0 or DEV1.
+
+## Initial Device Conditions
+
+After a downstream port reset:
+
+1. `hub_port_reset[0]` or `hub_port_reset[1]` is routed to the corresponding
+   software-device reset path.
+2. The selected `usb_reg_if` receives the reset event.
+3. The current and temporary USB addresses return to zero.
+4. Reset status and change information is recorded.
+5. EP0 and the Endpoint RAM must contain valid initialization before the
+   device can complete enumeration.
+
+The effective enable supplied to the PIE is:
+
+```text
+DEVx effective enable =
+  DEVx local function enable
+  AND
+  corresponding Hub port enable
+```
+
+The downstream soft-connect state is separate from the local function
+enable:
+
+```text
+DEV0 soft connect
+  -> hub_port_connect[0]
+
+DEV1 soft connect
+  -> hub_port_connect[1]
+```
+
+Soft connect allows the Hub to report downstream connection before the
+software-device function becomes eligible for PIE selection.
+
+## DEVx EP0 Context Lookup
+
+When the host sends a SETUP token to DEVx EP0:
+
+1. The PIE compares the token address with the DEVx current and temporary
+   addresses.
+2. The PIE verifies the effective DEVx enable.
+3. The PIE selects:
+   - function index `1` for DEV0;
+   - function index `2` for DEV1.
+4. The selected-function indication crosses `usb_synchronizer_1`.
+5. Top-level logic selects the corresponding DEVx Function Context:
+   - Endpoint List base;
+   - data-buffer base;
+   - endpoint skip state;
+   - buffer-in-use state;
+   - endpoint toggle state;
+   - SETUP-pending state.
+6. The PIE requests the EP0 OUT context.
+7. `usb_dma_1` calculates the EP0 context address.
+8. `usb_fs_mux_1` selects the software-device RAM path.
+9. Top-level RAM routing selects:
+   - `ahb_dma_slave_1` for DEV0;
+   - `ahb_dma_slave_2` for DEV1.
+10. The selected adapter reads EP0 context from the corresponding Endpoint
+    RAM.
+11. `usb_dma_1` decodes the context.
+12. The context crosses back to the PIE.
+13. The PIE determines whether the SETUP transaction can be accepted.
+
+## DEVx SETUP Packet Storage
+
+After the SETUP token is accepted:
+
+1. The host transmits the eight-byte DATA0 packet.
+2. The PIE validates the packet.
+3. The received data and byte count cross `usb_synchronizer_1`.
+4. `usb_dma_1` recognizes the SETUP transaction.
+5. The DMA selects the SETUP buffer described by the DEVx EP0 context.
+6. The RAM write passes through:
+   - `usb_fs_mux_1`;
+   - DEV0/DEV1 RAM routing;
+   - the selected `ahb_dma_slave`.
+7. The eight-byte SETUP packet is written into the selected DEVx Endpoint
+   RAM.
+8. The PIE sends the ACK.
+9. The SETUP-received event crosses the Clock-Domain Bridge.
+10. Top-level logic routes the event to:
+    - `usb_reg_if_1` for DEV0;
+    - `usb_reg_if_2` for DEV1.
+
+The selected Register Controller then:
+
+```text
+sets usbreg_setup
+captures sieint_usbaddress[6:0]
+copies the received address into current and temporary address state
+initializes EP0 OUT and EP0 IN toggle state
+updates the related event and interrupt state
+```
+
+Unlike the embedded Hub, DEV0 and DEV1 do not execute a hardware Setup Decode
+Table lookup.
+
+The request remains stored in the Endpoint RAM until software reads and
+interprets it.
+
+## Software SETUP-Pending Protection
+
+`usbreg_setup` remains asserted until software clears the flag.
+
+Top-level logic selects the pending indication of the current function and
+presents it to `usb_dma_1` as:
+
+```text
+usbreg_setup_to_dma
+```
+
+While the selected software device has an uncleared SETUP request,
+`usb_dma_1` modifies the EP0 context returned to the PIE:
+
+```text
+epinfo_active = 0
+epinfo_stall  = 0
+```
+
+The PIE consequently returns NAK to subsequent EP0 transactions.
+
+This prevents the host from advancing the control transfer before software
+has:
+
+- read the SETUP packet;
+- decoded the request;
+- prepared any response payload;
+- updated the EP0 context;
+- applied any required state change;
+- cleared the SETUP-pending indication.
+
+## Software Request Processing
+
+The external control agent uses the DEVx AHB interfaces to:
+
+1. detect the SETUP event or interrupt;
+2. read the eight-byte SETUP packet from the DEVx Endpoint RAM;
+3. decode:
+   - `bmRequestType`;
+   - `bRequest`;
+   - `wValue`;
+   - `wIndex`;
+   - `wLength`;
+4. determine the required DATA or STATUS stage;
+5. apply required register changes;
+6. write a response payload when required;
+7. update EP0 IN or EP0 OUT context;
+8. clear the SETUP-pending bit.
+
+The control and memory paths are distinct:
+
+```text
+DEVx Control AHB
+  -> usb_ahb_slave_x
+  -> usb_reg_if_x
+```
+
+```text
+DEVx Endpoint RAM AHB
+  -> ahb_dma_slave_x
+  -> DEVx Endpoint RAM
+```
+
+Software-visible device state is controlled through `usb_reg_if_x`.
+
+The SETUP packet, detailed endpoint context, and response payload are stored
+in the DEVx Endpoint RAM.
+
+## DEVx Control Read
+
+For a control request with an IN data stage, software:
+
+1. reads and decodes the SETUP packet;
+2. determines the response length;
+3. writes the response payload into the DEVx Endpoint RAM;
+4. programs the EP0 IN context with:
+   - active state;
+   - byte count;
+   - response-buffer address;
+   - maximum-packet information;
+   - required endpoint attributes;
+5. clears the SETUP-pending flag.
+
+When the host sends the next IN token:
+
+1. The PIE selects DEVx.
+2. The PIE requests the EP0 IN context.
+3. `usb_dma_1` reads the context from the selected Endpoint RAM.
+4. The DMA returns the context to the PIE.
+5. If EP0 IN is active, the DMA calculates the response-buffer address.
+6. `usb_dma_1` reads the response payload from the selected Endpoint RAM.
+7. The payload crosses `usb_synchronizer_1`.
+8. The PIE transmits the DATA packet.
+9. The host returns the handshake.
+10. The PIE reports completion and success.
+11. `usb_dma_1` updates:
+    - the remaining byte count;
+    - endpoint active state;
+    - payload-buffer position;
+    - buffer selection;
+    - endpoint toggle;
+    - endpoint interrupt state.
+
+For a multi-packet control response, the same context and payload flow
+repeats for each subsequent IN token.
+
+After the final data packet, the host sends the zero-length OUT status
+transaction through the same PIE, DMA, and selected Endpoint RAM path.
+
+## DEVx Control Write Without a Data Stage
+
+For a control write whose complete meaning is contained in the SETUP packet:
+
+1. Software reads and decodes the SETUP packet.
+2. Software applies the requested state change.
+3. Software configures EP0 IN for the zero-length status stage.
+4. Software clears the SETUP-pending flag.
+5. The host sends the status-stage IN token.
+6. The PIE requests EP0 IN context.
+7. `usb_dma_1` returns the prepared zero-length active context.
+8. The PIE transmits the zero-length DATA packet.
+9. Transfer completion updates the EP0 state.
+
+## DEVx Control Write With a DATA OUT Stage
+
+The DEV0 and DEV1 RAM-based endpoint model can support a control transfer
+with a separate DATA OUT payload.
+
+In that case:
+
+1. Software reads and decodes the SETUP packet.
+2. Software allocates a receive buffer in the DEVx Endpoint RAM.
+3. Software programs EP0 OUT with:
+   - active state;
+   - expected byte count;
+   - receive-buffer address;
+   - required endpoint attributes.
+4. Software clears the SETUP-pending flag.
+5. The host sends an OUT token and DATA packet.
+6. The PIE requests and evaluates EP0 OUT context.
+7. The PIE receives and validates the DATA packet.
+8. `usb_dma_1` stores the payload in the selected Endpoint RAM.
+9. Transfer-completion state and endpoint interrupt state notify software.
+10. Software reads and processes the received payload.
+11. Software prepares EP0 IN for the zero-length status stage.
+12. The PIE executes the final status transaction.
+
+This general control-OUT storage path is possible for DEV0 and DEV1 because
+their endpoint contexts and control payloads are RAM based.
+
+No equivalent Hub control-OUT payload use case has been identified in the
+hardware Hub implementation.
+
+## DEVx `SET_ADDRESS`
+
+Each DEVx Register Controller maintains:
+
+```text
+Current USB address
+Temporary USB address
+```
+
+During `SET_ADDRESS`:
+
+1. The SETUP packet is received at the current address.
+2. Software writes the assigned address into the temporary-address field.
+3. The PIE receives both current and temporary addresses.
+4. The temporary address allows the PIE to recognize the function during the
+   address transition.
+5. A subsequent valid SETUP transaction received at the new address causes
+   `usb_reg_if_x` to copy the received address into both current and
+   temporary address state.
+
+## Primary Debug Observability
+
+The principal signals for a DEVx control transfer are:
+
+```text
+Function selection:
+  pie_dev_selected
+  sync_pie_dev_selected
+  usbreg_deviceenabled
+  pie_dev_addr
+  pie_dev_addr_tmp
+
+Selected Function Context:
+  dma_ep_list_start
+  dma_data_buffer_start
+  dma_ep_skip_selected
+  dma_ep_bufinuse_selected
+  dma_epinfo_toggle
+  usbreg_setup_to_dma
+
+Endpoint RAM path:
+  ahb_dma_addr
+  ahb_dma_req
+  ahb_dma_write
+  ahb_dma_wdata
+  dev0_dma_req / dev1_dma_req
+  dev0_dma_gnt / dev1_dma_gnt
+  dev0_dma_rdata / dev1_dma_rdata
+
+Register state:
+  usbreg_setup / dev1_usbreg_setup
+  usbreg_usbaddress / dev1_usbreg_usbaddress
+  usbreg_usbaddress_tmp / dev1_usbreg_usbaddress_tmp
+
+DMA endpoint-state updates:
+  dma_clear_toggle
+  dma_set_toggle
+  dma_set_int
+  dma_clear_skip
+  dma_physepnr
+  dma_skip_ep
+```
+
+A valid DEVx control flow should show:
+
+```text
+DEVx selected
+  -> EP0 OUT context read from DEVx Endpoint RAM
+  -> SETUP packet written to DEVx Endpoint RAM
+  -> setup_received routed to usb_reg_if_x
+  -> SETUP-pending state asserted
+  -> EP0 returns NAK while software processes the request
+  -> software prepares the next EP0 stage
+  -> software clears SETUP pending
+  -> next host token uses the updated Endpoint RAM context
+```
+
+---
+
+# DEV0 or DEV1 Bulk Transfer
+
+Bulk transfers use non-control endpoint contexts and payload buffers stored
+entirely in the selected DEV0 or DEV1 Endpoint RAM.
+
+The shared PIE and Endpoint Data Manager execute the USB transaction.
+
+The external control agent prepares or consumes the payload using the DEVx
+Endpoint RAM AHB interface.
+
+Before Bulk traffic begins, the external control agent must configure an
+endpoint context containing the required fields, including:
+
+```text
+Endpoint active state
+Endpoint type
+Endpoint direction
+Maximum packet size
+Transfer byte count
+Payload-buffer address
+Data-toggle state
+Buffer-selection state
+Interrupt control
+```
+
+The flows below assume that:
+
+- the selected software-device function is enabled;
+- the corresponding Hub downstream port is enabled;
+- the endpoint context is initialized;
+- the payload buffer is allocated.
+
+## Common Bulk Endpoint Context Lookup
+
+For every Bulk IN or Bulk OUT token:
+
+1. The PIE matches the DEVx address.
+2. The PIE selects DEV0 or DEV1.
+3. The PIE decodes the endpoint number and direction.
+4. `pie_dev_selected` crosses `usb_synchronizer_1`.
+5. Top-level logic selects the DEVx Function Context.
+6. The PIE generates the endpoint-context request.
+7. `usb_dma_1` calculates the addressed Endpoint List entry.
+8. `usb_fs_mux_1` selects the software-device RAM path.
+9. DEV0/DEV1 RAM routing selects the corresponding `ahb_dma_slave`.
+10. The selected adapter reads the endpoint context.
+11. `usb_dma_1` decodes the returned context.
+12. The endpoint information crosses the Clock-Domain Bridge.
+13. The PIE determines the resulting USB behavior.
+
+The returned context includes:
+
+```text
+active
+disabled
+STALL state
+data toggle
+endpoint attributes
+available or expected byte count
+maximum-packet information
+payload-buffer reference
+```
+
+---
+
+# Bulk IN Transfer to DEV0 or DEV1
+
+A Bulk IN transfer moves data from the selected DEVx Endpoint RAM to the USB
+host.
+
+## Software Preparation
+
+Before the host sends the IN token, the external control agent:
+
+1. allocates a TX buffer in the DEVx Endpoint RAM;
+2. writes the TX payload into the buffer;
+3. programs the Bulk IN endpoint context;
+4. writes the payload-buffer address;
+5. writes the transfer byte count;
+6. configures maximum-packet and endpoint attributes;
+7. marks the endpoint active;
+8. enables endpoint-completion interrupts if required.
+
+## Host IN Token
+
+When the host sends the IN token:
+
+1. The PIE matches the DEVx address.
+2. The PIE selects the target software device.
+3. The PIE identifies the endpoint number and IN direction.
+4. The PIE requests the endpoint context.
+5. `usb_dma_1` reads the context from the selected Endpoint RAM.
+6. The context is returned to the PIE.
+
+The PIE evaluates the returned state:
+
+```text
+Endpoint inactive:
+  NAK
+
+Endpoint stalled:
+  STALL
+
+Endpoint disabled:
+  Endpoint-disabled behavior
+
+Endpoint active:
+  Continue with TX payload fetch
+```
+
+## TX Payload Address Generation
+
+For an active endpoint, `usb_dma_1` obtains the payload reference from the
+endpoint context.
+
+The DMA generates the effective payload address using:
+
+```text
+Selected data-buffer base
+  +
+Endpoint buffer reference
+  +
+Current transfer offset
+```
+
+The selected data-buffer base originates from the corresponding
+`usb_reg_if`.
+
+The payload reference and current transfer state originate from the endpoint
+context stored in the DEVx Endpoint RAM.
+
+## TX Payload Fetch
+
+The payload-fetch sequence is:
+
+1. `usb_dma_1` generates a RAM read.
+2. `usb_fs_mux_1` selects the software-device RAM path.
+3. Top-level DEV0/DEV1 RAM routing selects the correct adapter.
+4. The selected `ahb_dma_slave` drives the native Endpoint RAM interface.
+5. The selected Endpoint RAM returns the payload word.
+6. `usb_dma_1` selects the required bytes.
+7. The DMA provides:
+
+```text
+epinfo_sync_txdata[USB_DATAWIDTH-1:0]
+epinfo_sync_txdata_valid
+```
+
+8. The payload crosses `usb_synchronizer_1`.
+9. The PIE transmits the DATA packet using:
+   - the selected data toggle;
+   - the available byte count;
+   - the maximum-packet information.
+10. The PIE reports each consumed data word through the TX-data-fetched
+    indication.
+
+## Completion and Runtime-State Update
+
+After the host handshake:
+
+1. The PIE reports transfer completion and success.
+2. `usb_dma_1` updates the endpoint context in the DEVx Endpoint RAM.
+3. The update can include:
+   - remaining byte count;
+   - payload-buffer position;
+   - endpoint active state;
+   - buffer-selection state.
+4. The DMA generates the required compact-state updates:
+   - toggle set or clear;
+   - endpoint interrupt set;
+   - skip-state update;
+   - buffer-in-use update.
+5. Top-level logic routes the update strobes to the selected `usb_reg_if`.
+6. The selected Register Controller updates its compact endpoint state.
+7. DEV0 or DEV1 IRQ/FIQ can be asserted according to the programmed
+   interrupt-enable and routing state.
+
+For a transfer larger than one maximum-size packet, the endpoint remains
+active and the procedure repeats on subsequent IN tokens until the byte
+count is exhausted.
+
+## Primary Debug Observability
+
+The principal Bulk IN signals are:
+
+```text
+PIE:
+  pie_dev_selected
+  pie_epinfo_req
+  pie_epinfo_epnr
+  pie_epinfo_epdir
+  pie_txdata_fetched
+  pie_endtransfer
+  pie_success
+
+Selected Function Context:
+  dma_ep_list_start
+  dma_data_buffer_start
+  dma_epinfo_toggle
+  dma_ep_bufinuse_selected
+  dma_ep_skip_selected
+
+Endpoint Data Manager:
+  dma_state
+  epinfo_sync_active
+  epinfo_sync_stall
+  epinfo_sync_nbytes
+  epinfo_sync_maxpacket
+  epinfo_sync_txdata
+  epinfo_sync_txdata_valid
+
+Endpoint RAM path:
+  ahb_dma_addr
+  ahb_dma_req
+  dev0_dma_req / dev1_dma_req
+  dev0_dma_gnt / dev1_dma_gnt
+  dev0_dma_rdata / dev1_dma_rdata
+
+State updates:
+  dma_set_toggle
+  dma_clear_toggle
+  dma_set_int
+  dma_clear_skip
+  dma_physepnr
+```
+
+A valid Bulk IN flow should show:
+
+```text
+DEVx and IN endpoint selected
+  -> endpoint context read
+  -> endpoint active
+  -> TX payload read from selected Endpoint RAM
+  -> DATA packet transmitted
+  -> host handshake
+  -> context, toggle, buffer, and interrupt state updated
+```
+
+---
+
+# Bulk OUT Transfer to DEV0 or DEV1
+
+A Bulk OUT transfer moves data from the USB host into the selected DEVx
+Endpoint RAM.
+
+## Software Preparation
+
+Before the host sends the OUT transaction, the external control agent:
+
+1. allocates an RX buffer in the DEVx Endpoint RAM;
+2. programs the Bulk OUT endpoint context;
+3. writes the receive-buffer address;
+4. writes the expected byte count or available buffer size;
+5. configures maximum-packet and endpoint attributes;
+6. marks the endpoint active;
+7. enables endpoint-completion interrupts if required.
+
+## Host OUT Token
+
+When the host sends the OUT token:
+
+1. The PIE matches the DEVx address.
+2. The PIE selects DEV0 or DEV1.
+3. The PIE identifies the endpoint number and OUT direction.
+4. The PIE requests endpoint context.
+5. `usb_dma_1` reads the context from the selected Endpoint RAM.
+6. The context is returned to the PIE.
+7. The PIE determines whether the endpoint can accept the transaction.
+
+The resulting behavior is:
+
+```text
+Endpoint inactive:
+  NAK
+
+Endpoint stalled:
+  STALL
+
+Endpoint disabled:
+  Endpoint-disabled behavior
+
+Endpoint active:
+  Accept the DATA packet
+```
+
+## RX Payload Reception
+
+For an active endpoint:
+
+1. The host transmits the DATA packet.
+2. The PIE receives the packet.
+3. The PIE validates PID, length, and CRC.
+4. The received payload crosses `usb_synchronizer_1` as:
+
+```text
+sync_sieint_rxdata[USB_DATAWIDTH-1:0]
+sync_sieint_rxdatavalid
+sync_sieint_rx_nbytes[11:0]
+```
+
+5. `usb_dma_1` obtains the RX buffer reference from the endpoint context.
+
+## RX Payload Address Generation
+
+The DMA generates the effective RX address using:
+
+```text
+Selected data-buffer base
+  +
+Endpoint receive-buffer reference
+  +
+Current receive offset
+```
+
+The selected function determines whether DEV0 or DEV1 memory information is
+used.
+
+## RX Payload Store
+
+The payload-store sequence is:
+
+1. `usb_dma_1` generates a RAM write.
+2. `usb_fs_mux_1` selects the software-device RAM path.
+3. Top-level routing selects the DEV0 or DEV1 RAM adapter.
+4. The DMA supplies:
+   - RAM address;
+   - write data;
+   - write indication;
+   - DWORD selection.
+5. The selected `ahb_dma_slave` generates:
+   - native RAM chip select;
+   - native RAM address;
+   - write enable;
+   - write-data mask.
+6. The payload is written into the selected Endpoint RAM.
+7. The PIE sends the required USB handshake.
+
+## Completion and Runtime-State Update
+
+After the received packet has been stored:
+
+1. The PIE reports transfer completion and success.
+2. `usb_dma_1` updates the endpoint context in the DEVx Endpoint RAM.
+3. The update can include:
+   - remaining or received byte count;
+   - receive-buffer position;
+   - endpoint active state;
+   - buffer-selection state.
+4. The DMA updates the selected `usb_reg_if`:
+   - endpoint toggle;
+   - endpoint interrupt state;
+   - buffer-in-use state;
+   - skip state;
+   - NAK-related state where applicable.
+5. The corresponding IRQ or FIQ can notify the external control agent.
+6. The external control agent reads the received payload through the DEVx
+   Endpoint RAM AHB interface.
+7. Software or the external agent rearms the endpoint when another receive
+   buffer is available.
+
+For a multi-packet transfer, the buffer position and remaining byte count are
+updated after every accepted packet.
+
+## Primary Debug Observability
+
+The principal Bulk OUT signals are:
+
+```text
+PIE:
+  pie_dev_selected
+  pie_epinfo_req
+  pie_epinfo_epnr
+  pie_epinfo_epdir
+  pie_rxdata
+  pie_rxdatavalid
+  pie_rx_nbytes
+  pie_endtransfer
+  pie_success
+
+Clock-Domain Bridge:
+  sync_sieint_rxdata
+  sync_sieint_rxdatavalid
+  sync_sieint_rx_nbytes
+  sync_sieint_endtransfer
+  sync_sieint_success
+
+Endpoint Data Manager:
+  dma_state
+  epinfo_sync_active
+  epinfo_sync_stall
+  epinfo_sync_nbytes
+  dma_dma_addr
+  dma_dma_req
+  dma_dma_write
+  dma_dma_wdata
+  dma_word_enable
+
+Endpoint RAM path:
+  ahb_dma_addr
+  ahb_dma_write
+  ahb_dma_wdata
+  usb_dma_dword_selection_int
+  dev0_dma_req / dev1_dma_req
+  dev0_mem_cs / dev1_mem_cs
+  dev0_mem_a / dev1_mem_a
+  dev0_mem_d / dev1_mem_d
+  dev0_mem_web_out / dev1_mem_web_out
+  dev0_mem_bsel / dev1_mem_bsel
+
+State updates:
+  dma_set_toggle
+  dma_clear_toggle
+  dma_set_int
+  dma_clear_skip
+  dma_physepnr
+```
+
+A valid Bulk OUT flow should show:
+
+```text
+DEVx and OUT endpoint selected
+  -> endpoint context read
+  -> endpoint active
+  -> DATA packet received and validated
+  -> payload written into selected Endpoint RAM
+  -> USB handshake
+  -> context, toggle, buffer, and interrupt state updated
+```
+
+---
+
+# Architectural Perspective
+
+From the perspective of the shared USB front end, every transaction follows
+the same high-level sequence:
+
+```text
+USB PIE
+  -> USB Clock-Domain Bridge
+  -> Endpoint Data Manager
+  -> Selected Function
+  -> Endpoint Context
+  -> Payload or Response Resource
+  -> USB PIE
+```
+
+The selected function determines how endpoint state and payload data are
+obtained.
+
+```text
+Embedded Hub
+
+Endpoint runtime context:
+  usb_ep_config_handler_1
+
+EP0 SETUP storage and standard-request processing:
+  hub_ep0_handler_1
+
+Hub and downstream-port class behavior:
+  usb_app_hw_hub_1
+
+Descriptors and stored responses:
+  Hub Descriptor RAM
+
+Hub Status Change EP1 IN payload:
+  usb_app_hw_hub_1
+```
+
+```text
+DEV0
+
+Device control and compact endpoint state:
+  usb_reg_if_1
+
+Detailed endpoint context and payload:
+  DEV0 Endpoint RAM
+
+External request and payload management:
+  DEV0 Control AHB and Endpoint RAM AHB interfaces
+```
+
+```text
+DEV1
+
+Device control and compact endpoint state:
+  usb_reg_if_2
+
+Detailed endpoint context and payload:
+  DEV1 Endpoint RAM
+
+External request and payload management:
+  DEV1 Control AHB and Endpoint RAM AHB interfaces
+```
+
+The shared PIE and Endpoint Data Manager remain largely independent of these
+implementation differences.
+
+Function-selection and top-level routing logic direct each:
+
+- endpoint-context lookup;
+- SETUP event;
+- payload access;
+- runtime-state update;
+- RAM request and response;
+
+toward the resource associated with the selected USB function.
+
+This separation allows the architecture to combine:
+
+- one hardware-managed Hub;
+- two software-managed downstream devices;
+- one shared USB Protocol and Interface Engine;
+- one shared Endpoint Data Manager;
+
+while preserving independent address state, endpoint state, memory contents,
+interrupts, and downstream-port behavior for DEV0 and DEV1.
+
