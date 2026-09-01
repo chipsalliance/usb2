@@ -160,6 +160,18 @@ begin
     constant OCP_RECOVERY_TRANSFER : std_logic_vector(7 downto 0) := x"00";
     constant OCP_INDIRECT_FIFO_DATA : std_logic_vector(7 downto 0) := x"2F";
 
+    -- Conceptual operation:
+    --   T_IDLE accepts normal traffic and traps EP0 SETUP. T_TRAP captures and
+    --   classifies that SETUP while returning the required fabricated SETUP ACK.
+    --   Unclaimed SETUPs traverse T_REPLAY_* so legacy usb_dma receives the
+    --   original request; T_PASS forwards a pending non-EP0 request afterward.
+    --   Claimed OCP transfers own EP0 through T_DATA and T_STATUS, isolating
+    --   their traffic from legacy consumers.
+    --
+    -- hresetn, USB bus reset, or synchronized device disconnect return every
+    -- state to T_IDLE and discard transfer-local capture, replay, and staging
+    -- state. A new EP0 SETUP during T_DATA or T_STATUS abandons the prior
+    -- claimed transfer and re-enters T_TRAP for the replacement SETUP.
     type t_trap_state is (T_IDLE, T_TRAP,
                           T_REPLAY_REQ, T_REPLAY_ALIGN, T_REPLAY_DATA,
                           T_REPLAY_END, T_PASS,
