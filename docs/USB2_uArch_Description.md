@@ -1,8 +1,8 @@
-# JANUS USB 2.0 Compound Device IP
+# USB 2.0 Compound Device IP
 
 ## Architecture, Integration, and Operational Guide
 
-JANUS implements a USB 2.0 compound device composed of one embedded two-port
+The USB 2.0 compound device composed of one embedded two-port
 Hub and two software-controlled downstream devices, DEV0 and DEV1.
 
 The three USB functions share one USB Protocol and Interface Engine and one
