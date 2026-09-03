@@ -311,6 +311,28 @@ end component;
        usb_pie_PACKET_EVENT_TIMEOUT_FS_param : in  std_logic_vector(8 downto 0);
        usb_pie_PACKET_EVENT_TIMEOUT_HS_param : in  std_logic_vector(8 downto 0);
 
+       -- OCP Recovery v1.1 Section 8.5 PIE arbiter surface
+       rec_setup_pkt_vld   : out std_logic;
+       rec_setup_pkt       : out std_logic_vector(63 downto 0);
+       rec_ctrl_out_data   : out std_logic_vector(31 downto 0);
+       rec_ctrl_out_be   : out std_logic_vector(3 downto 0);
+       rec_ctrl_out_vld    : out std_logic;
+       rec_ctrl_out_last   : out std_logic;
+       rec_ctrl_out_rdy    : in  std_logic;
+       rec_ctrl_in_data    : in std_logic_vector(31 downto 0);
+       rec_ctrl_in_be    : in std_logic_vector(3 downto 0);
+       rec_ctrl_in_vld     : in  std_logic;
+       rec_ctrl_in_last    : in  std_logic;
+       rec_ctrl_in_rdy     : out std_logic;
+       rec_ctrl_in_resp_bytes : in std_logic_vector(6 downto 0);
+       rec_ctrl_in_resp_known : in std_logic;
+       rec_ctrl_set_stall  : in  std_logic;
+       rec_ctrl_xfer_done  : out std_logic;
+       rec_ctrl_xfer_abort : out std_logic;
+       rec_ctrl_claim      : out std_logic;
+       rec_ocp_path_disable : in  std_logic;
+       rec_fifo_payload_available : in std_logic;
+
        async_disable:        in    std_logic;
        testmode:        in    std_logic
 
@@ -658,6 +680,28 @@ signal ip_xxx_3511_hs_fpga : std_logic_vector(255 downto 0);
       usb_pie_PACKET_EVENT_TIMEOUT_FS_param => usb_pie_PACKET_EVENT_TIMEOUT_FS_param,
       usb_pie_PACKET_EVENT_TIMEOUT_HS_param => usb_pie_PACKET_EVENT_TIMEOUT_HS_param,
 
+      -- OCP Recovery v1.1 Section 8.5 PIE arbiter surface (passthrough)
+      rec_setup_pkt_vld   => rec_setup_pkt_vld,
+      rec_setup_pkt       => rec_setup_pkt,
+      rec_ctrl_out_data   => rec_ctrl_out_data,
+      rec_ctrl_out_be   => rec_ctrl_out_be,
+      rec_ctrl_out_vld    => rec_ctrl_out_vld,
+      rec_ctrl_out_last   => rec_ctrl_out_last,
+      rec_ctrl_out_rdy    => rec_ctrl_out_rdy,
+      rec_ctrl_in_data    => rec_ctrl_in_data,
+      rec_ctrl_in_be    => rec_ctrl_in_be,
+      rec_ctrl_in_vld     => rec_ctrl_in_vld,
+      rec_ctrl_in_last    => rec_ctrl_in_last,
+      rec_ctrl_in_rdy     => rec_ctrl_in_rdy,
+      rec_ctrl_in_resp_bytes => rec_ctrl_in_resp_bytes,
+      rec_ctrl_in_resp_known => rec_ctrl_in_resp_known,
+      rec_ctrl_set_stall  => rec_ctrl_set_stall,
+      rec_ctrl_xfer_done  => rec_ctrl_xfer_done,
+      rec_ctrl_xfer_abort => rec_ctrl_xfer_abort,
+      rec_ctrl_claim      => rec_ctrl_claim,
+      rec_ocp_path_disable => rec_ocp_path_disable,
+      rec_fifo_payload_available => rec_fifo_payload_available,
+
       async_disable	     => async_disable,
       testmode	             => testmode
 
@@ -902,4 +946,3 @@ configuration ip_xxx_3516_hs_mem_structure_cfg of ip_xxx_3516_hs_mem is
     end for;
   end for;
 end ip_xxx_3516_hs_mem_structure_cfg;
-

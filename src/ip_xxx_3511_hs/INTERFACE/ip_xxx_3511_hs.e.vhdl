@@ -226,6 +226,36 @@ entity ip_xxx_3511_hs is
        usb_pie_PACKET_EVENT_TIMEOUT_FS_param : in  std_logic_vector(8 downto 0);
        usb_pie_PACKET_EVENT_TIMEOUT_HS_param : in  std_logic_vector(8 downto 0);
 
+       -- ------------------------------------------------------------------
+       -- OCP Recovery v1.1 Section 8.5 - post-synchronizer OCP recovery arbiter
+       -- upper-side byte-stream surface (see
+       -- usb_ocp_recovery_post_sync_arb.{e,m}.vhdl).  These are routed
+       -- through ip_xxx_3516_hs_mem.e.vhdl up to the SV wrapper.
+       -- ------------------------------------------------------------------
+       rec_setup_pkt_vld   : out std_logic;
+       rec_setup_pkt       : out std_logic_vector(63 downto 0);
+       rec_ctrl_out_data   : out std_logic_vector(31 downto 0);
+       rec_ctrl_out_be   : out std_logic_vector(3 downto 0);
+       rec_ctrl_out_vld    : out std_logic;
+       rec_ctrl_out_last   : out std_logic;
+       rec_ctrl_out_rdy    : in  std_logic;
+       rec_ctrl_in_data    : in std_logic_vector(31 downto 0);
+       rec_ctrl_in_be    : in std_logic_vector(3 downto 0);
+       rec_ctrl_in_vld     : in  std_logic;
+       rec_ctrl_in_last    : in  std_logic;
+       rec_ctrl_in_rdy     : out std_logic;
+       rec_ctrl_in_resp_bytes : in std_logic_vector(6 downto 0);
+       rec_ctrl_in_resp_known : in std_logic;
+       rec_ctrl_set_stall  : in  std_logic;
+       rec_ctrl_xfer_done  : out std_logic;
+       rec_ctrl_xfer_abort : out std_logic;
+       rec_ctrl_claim      : out std_logic;
+       -- Emergency-fallback path-disable control (see usb_ocp_recovery_post_sync_arb.m.vhdl
+       -- ocp_path_disable_i): firmware-writable via CALIPTRA_CTRL.
+       -- OCP_PATH_DISABLE, EXT/firmware write-only. Reset default '0'.
+       rec_ocp_path_disable : in  std_logic;
+       rec_fifo_payload_available : in std_logic;
+
        -- core testability
        async_disable:        in    std_logic;
        testmode            : in    std_logic -- To be connected by integrator to a tcb test mode pin.
