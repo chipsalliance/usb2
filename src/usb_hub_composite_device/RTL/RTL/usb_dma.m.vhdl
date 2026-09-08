@@ -20,12 +20,12 @@ use IEEE.numeric_std.ALL;
 
 library usb_lib;
 use usb_lib.usb_subcmp_pkg.all;
-use usb_lib.usb_fs_emb_dev_cfg_pkg.all;
 
 entity usb_dma is
 generic(USB_DATAWIDTH      : integer := 8;
         RAM_DATAWIDTH      : integer := 32;
         C_NBPHYSEP         : integer := 14;
+        C_NBDEV_SW         : integer := 1;
         C_DALB             : integer := 22);
 port (
       hclk              : in    std_logic; 
@@ -69,7 +69,7 @@ port (
 
       sync_busreset:              in  std_logic;
       
-      dma_ahb_selected:           out std_logic;
+      dma_skipdev_selected:       out integer range 0 to C_NBDEV_SW-1;
 
       -- from fs_reg module
       usbreg_setup:               in  std_logic;
@@ -134,13 +134,16 @@ signal endtransfer              : std_logic;
 signal epinfo_req_delayed       : std_logic;
 signal skip_ep                  : integer range 0 to C_NBPHYSEP+1;
 signal usbreg_setup_int         : std_logic;
-signal ahb_selected             : std_logic;
+
+signal skip_dev                 : integer range 0 to C_NBDEV_SW-1;
 
 begin
 
   epinfo_req <= sync_sieint_epinfo_req;
   
   usbreg_setup_int <= usbreg_setup;
+  
+  dma_skipdev_selected <= skip_dev;
 
   -----------------------------------------------
   -- MAIN state machine
@@ -149,7 +152,7 @@ begin
   variable var_pointer : integer range 0 to FIFO_NBYTES;
   variable var_data    : std_logic_vector(FIFO_NBYTES*8-1 downto 0);
   variable var_maxpacket : integer range 0 to 3072;
-  variable clear_active: boolean;
+  variable var_clear_active: boolean;
   begin
     if hresetn = '0' then
       dma_state               <= IDLE;
@@ -178,7 +181,7 @@ begin
       dma_set_toggle          <= '0';
       dma_clear_toggle        <= '0';
       epinfo_txdata_valid     <= '0'; 
-
+      skip_dev                <= 0;   
       
     elsif hclk'event and hclk = '1' then
       var_data    := data;
@@ -200,13 +203,18 @@ begin
           dma_write         <= '0';
           word_number       <= 0;
           var_pointer       := 0;
-          clear_active      := FALSE;
+          var_clear_active  := FALSE;
           setup_not_cleared <= usbreg_setup_int;
           if usbreg_ep_skip(skip_ep) = '1' then
-            clear_active := TRUE;
+            var_clear_active := TRUE;
           else
             if skip_ep = C_NBPHYSEP+1 then
               skip_ep <= 0;
+              if skip_dev = C_NBDEV_SW-1 then
+                  skip_dev <= 0;
+              else
+                  skip_dev <= skip_dev + 1;
+              end if;
             else
               skip_ep <= skip_ep + 1;
             end if;
@@ -216,7 +224,7 @@ begin
             dma_req            <= '1';
             dma_write          <= '0';
             dma_state          <= READ_EPINFO;
-          elsif clear_active then
+          elsif var_clear_active then
             dma_req   <= '1';
             dma_write <= '0';
             dma_state <= READ_EPINFO_SKIP;
@@ -1199,8 +1207,6 @@ begin
                                else epinfo_addr;
   dma_wdata <= data(RAM_DATAWIDTH-1 downto 0);
 
-  ahb_selected      <= '1';
-  dma_ahb_selected <= ahb_selected;
   dma_word_enable  <= "11" when RAM_DATAWIDTH = 64 and
                                 (dma_state = CHECK_EPINFO       or
                                  dma_state = FETCH_INEP_DATA    or
