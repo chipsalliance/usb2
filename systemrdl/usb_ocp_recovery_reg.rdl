@@ -910,12 +910,23 @@ addrmap usb_ocp_recovery_reg {
             reset = 1'b0;
         } OCP_PATH_DISABLE[0:0];
         field {
+            name = "OCP Recovery Claim Abort";
+            desc = "Firmware-only write-one request that atomically aborts an in-flight OCP recovery claim. Hardware consumes the request and clears the stored bit after one cycle. This is distinct from OCP_PATH_DISABLE, which persistently disables future OCP claims.";
+            sw = rw;
+            hw = rw;
+            we = true;
+            swwe = true;
+            swmod = true;
+            woset = true;
+            reset = 1'b0;
+        } OCP_CLAIM_ABORT[1:1];
+        field {
             name = "Reserved";
             desc = "Reserved for future Caliptra-specific control bits.";
             sw = r;
             hw = na;
-            reset = 31'h0;
-        } RESERVED_31_1[31:1];
+            reset = 30'h0;
+        } RESERVED_31_2[31:2];
     } CALIPTRA_CTRL @ 0x200;
 
     reg {

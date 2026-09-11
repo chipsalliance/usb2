@@ -29,6 +29,7 @@ entity usb_ocp_recovery_post_sync_arb is
 
     sync_busreset : in std_logic;
     sync_usbreg_dev_connect_i : in std_logic;
+    sync_pie_speed_i : in std_logic_vector(1 downto 0);
 
     sync_sieint_epinfo_req_i    : in  std_logic;
     sync_sieint_epinfo_epnr_i   : in  std_logic_vector(3 downto 0);
@@ -105,8 +106,10 @@ entity usb_ocp_recovery_post_sync_arb is
     ctrl_set_stall  : in  std_logic;
     ctrl_xfer_done  : out std_logic;
     ctrl_xfer_abort : out std_logic;
+    fifo_batch_abort : out std_logic;
 
     ocp_path_disable_i : in  std_logic;
+    ocp_claim_abort_i : in std_logic;
     fifo_payload_available_i : in std_logic;
     rec_claim_status : out std_logic
   );
@@ -422,9 +425,16 @@ begin
                       (sync_sieint_endtransfer_i and tx_launch_ready_c)
                         when (st = T_DATA) or (st = T_STATUS) else '0';
     ctrl_xfer_abort <= '1' when (sync_usbreg_dev_connect_i = '0')
+                                or (ocp_claim_abort_i = '1')
                                 or (((st = T_DATA) or (st = T_STATUS))
-                                    and (xfer_dir_in_r = '0')
                                     and ((new_setup_c = '1') or (sync_busreset = '1')))
+                        else '0';
+    fifo_batch_abort <= '1' when (sync_busreset = '1')
+                                  or (sync_usbreg_dev_connect_i = '0')
+                                  or (ocp_claim_abort_i = '1')
+                                  or ((st = T_DATA) and (xfer_dir_in_r = '0')
+                                      and (cap_rxdata(23 downto 16) = OCP_INDIRECT_FIFO_DATA)
+                                      and (new_setup_c = '1'))
                         else '0';
 
     rec_claim_status <= claim_q;
@@ -458,7 +468,8 @@ begin
         status_end_pend_r   <= '0';
         fifo_data_out_nak_r <= '0';
       elsif rising_edge(hclk) then
-        if (sync_busreset = '1') or (sync_usbreg_dev_connect_i = '0') then
+        if (sync_busreset = '1') or (sync_usbreg_dev_connect_i = '0')
+           or (ocp_claim_abort_i = '1') then
           st         <= T_IDLE;
           cap_rxdata    <= (others => '0');
           cap_rx_nbytes <= (others => '0');

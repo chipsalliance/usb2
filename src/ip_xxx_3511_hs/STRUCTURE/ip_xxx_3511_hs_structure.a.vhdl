@@ -280,6 +280,7 @@ component usb_ocp_recovery_post_sync_arb
     hresetn  : in  std_logic;
     sync_busreset : in std_logic;
     sync_usbreg_dev_connect_i : in std_logic;
+    sync_pie_speed_i : in std_logic_vector(1 downto 0);
 
     sync_sieint_epinfo_req_i    : in  std_logic;
     sync_sieint_epinfo_epnr_i   : in  std_logic_vector(3 downto 0);
@@ -353,7 +354,9 @@ component usb_ocp_recovery_post_sync_arb
     ctrl_set_stall  : in  std_logic;
     ctrl_xfer_done  : out std_logic;
     ctrl_xfer_abort : out std_logic;
+    fifo_batch_abort : out std_logic;
     ocp_path_disable_i : in  std_logic;
+    ocp_claim_abort_i : in std_logic;
     fifo_payload_available_i : in std_logic;
     rec_claim_status : out std_logic
   );
@@ -1110,6 +1113,7 @@ signal awake: std_logic;
 
 signal sync_usbreg_phy_test_mode_change: std_logic;
 signal sync_usbreg_dev_connect : std_logic;
+signal sync_pie_speed : std_logic_vector(1 downto 0);
 signal sync_usbreg_remotewakeup: std_logic;
 signal sync_usbreg_lpmremotewakeup: std_logic;
 
@@ -1337,7 +1341,7 @@ usb_synchronizer_1: usb_synchronizer
               usbreg_lpm_sup          => '0',
               usbreg_lpm_hird_sw      => (others => '0'),
               usbreg_lpm_nyet         => '0',
-              sync_pie_speed          => open,
+              sync_pie_speed          => sync_pie_speed,
               sync_sieint_lpm_hird_hw => open,
               sync_usbreg_frame_number=> open,
               sync_pie_dev_selected   => open,
@@ -1557,6 +1561,7 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     hresetn       => hresetn,
     sync_busreset => sync_busreset,
     sync_usbreg_dev_connect_i => sync_usbreg_dev_connect,
+    sync_pie_speed_i => sync_pie_speed,
 
     -- Synchronizer hclk-side outputs (arbiter inputs).
     sync_sieint_epinfo_req_i    => sync_sieint_epinfo_req_s,
@@ -1636,7 +1641,9 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     ctrl_set_stall  => rec_ctrl_set_stall,
     ctrl_xfer_done  => rec_ctrl_xfer_done,
     ctrl_xfer_abort => rec_ctrl_xfer_abort,
+    fifo_batch_abort => rec_ctrl_fifo_batch_abort,
     ocp_path_disable_i => rec_ocp_path_disable,
+    ocp_claim_abort_i => rec_ocp_claim_abort,
     fifo_payload_available_i => rec_fifo_payload_available,
     rec_claim_status   => rec_ctrl_claim
   );

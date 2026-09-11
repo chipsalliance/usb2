@@ -347,7 +347,14 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_PATH_DISABLE__in_t;
 
     typedef struct packed{
+        logic next;
+        logic we;
+        logic swwe;
+    } usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_CLAIM_ABORT__in_t;
+
+    typedef struct packed{
         usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_PATH_DISABLE__in_t OCP_PATH_DISABLE;
+        usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_CLAIM_ABORT__in_t OCP_CLAIM_ABORT;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__in_t;
 
     typedef struct packed{
@@ -717,7 +724,13 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_PATH_DISABLE__out_t;
 
     typedef struct packed{
+        logic value;
+        logic swmod;
+    } usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_CLAIM_ABORT__out_t;
+
+    typedef struct packed{
         usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_PATH_DISABLE__out_t OCP_PATH_DISABLE;
+        usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_CLAIM_ABORT__out_t OCP_CLAIM_ABORT;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__out_t;
 
     typedef struct packed{

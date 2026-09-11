@@ -87,6 +87,7 @@ module usb_ocp_recovery_cms_fifo #(
   output logic        fifo_overflow,
   output logic        payload_available,
   output logic        batch_aborted,
+  output logic [$clog2(FIFO_DEPTH+1)-1:0] fifo_free_dwords,
   output logic [31:0] image_size,
   output logic [31:0] bytes_pushed,
 
@@ -565,6 +566,7 @@ module usb_ocp_recovery_cms_fifo #(
     fifo_overflow     = overflow_q;
     payload_available = payload_available_q;
     batch_aborted     = batch_aborted_q;
+    fifo_free_dwords  = FIFO_DEPTH_W'(FIFO_DEPTH) - fifo_wdepth;
     image_size        = {image_size_q[29:0], 2'b00};
     bytes_pushed      = {accepted_push_count_q[29:0], 2'b00};
 

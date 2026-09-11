@@ -63,6 +63,7 @@ module usb_ocp_recovery_top
   output logic                    rec_ctrl_set_stall,
   input  logic                    rec_ctrl_xfer_done,
   input  logic                    rec_ctrl_xfer_abort,
+  input  logic                    rec_ctrl_fifo_batch_abort,
 
   // Emergency-fallback path-disable control: mirrors CALIPTRA_CTRL.OCP_PATH_DISABLE
   // (regblock field, EXT/firmware write-only via rb_is_ext/swwe gating -- see
@@ -72,6 +73,7 @@ module usb_ocp_recovery_top
   // dev_axi_aclk, so no synchronizer is needed for this same-domain
   // registered signal.
   output logic                    rec_ocp_path_disable,
+  output logic                    rec_ocp_claim_abort,
 
   //----------------------------------------------------------------------------
   // External register-bus slave (driven by AHB sub-decoder upstream).
@@ -176,11 +178,13 @@ module usb_ocp_recovery_top
   // completed USB DEVICE_STATUS read; firmware cpuif reads are non-destructive.
   logic                       proto_err_rd_pulse;
   logic [7:0]                 protocol_error_q;
+  logic                       ocp_claim_abort_clear;
 
   // --- A4 status (image push not used in EP0-only mode but A4 still drives) ---
   logic                       image_push_done;
   logic                       fifo_overflow;
   logic                       batch_aborted;
+  logic [$clog2(FIFO_DEPTH_DWORDS+1)-1:0] fifo_free_dwords;
 
   // --- INDIRECT_FIFO_* values from A4 (cms_fifo) into the A3 regblock.
   //     CTRL fields are stored read-back mirrors. STATUS and DATA are
@@ -609,6 +613,13 @@ module usb_ocp_recovery_top
   // OCP command aperture). Same-domain (dev_axi_aclk) registered field value; no
   // synchronizer needed.
   assign rec_ocp_path_disable = rb_hwif_out.CALIPTRA_CTRL.OCP_PATH_DISABLE.value;
+  assign rec_ocp_claim_abort = rb_hwif_out.CALIPTRA_CTRL.OCP_CLAIM_ABORT.swmod
+                             && rb_is_ext
+                             && cpuif_req_is_wr
+                             && cpuif_wr_biten[1]
+                             && cpuif_wr_data[1];
+  assign ocp_claim_abort_clear =
+      rb_hwif_out.CALIPTRA_CTRL.OCP_CLAIM_ABORT.value;
 
   assign cpuif_wr_strb = { |cpuif_wr_biten[31:24],
                            |cpuif_wr_biten[23:16],
@@ -727,6 +738,9 @@ module usb_ocp_recovery_top
     // The register itself lives outside the OCP command aperture and is only
     // reachable via the firmware/AXI sub-decoder.
     rb_hwif_in.CALIPTRA_CTRL.OCP_PATH_DISABLE.swwe = rb_is_ext;
+    rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.swwe = rb_is_ext;
+    rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.next = 1'b0;
+    rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.we = ocp_claim_abort_clear;
 
     // CALIPTRA_STATUS (read-only, hw=w): Caliptra-specific sticky FIFO status
     // relocated out of the non-spec INDIRECT_FIFO_STATUS byte-0 bits. Driven
@@ -859,7 +873,8 @@ module usb_ocp_recovery_top
       .fifo_overflow     (fifo_overflow),
       .payload_available (payload_available),
       .batch_aborted     (batch_aborted),
-      .fifo_abort_i      (rec_ctrl_xfer_abort),
+      .fifo_free_dwords  (fifo_free_dwords),
+      .fifo_abort_i      (rec_ctrl_fifo_batch_abort),
       .fifo_ctrl_cms        (fifo_ctrl_cms),
       .fifo_ctrl_reset      (fifo_ctrl_reset),
       .fifo_region_reset    (fifo_region_reset),

@@ -329,8 +329,10 @@ end component;
        rec_ctrl_set_stall  : in  std_logic;
        rec_ctrl_xfer_done  : out std_logic;
        rec_ctrl_xfer_abort : out std_logic;
+       rec_ctrl_fifo_batch_abort : out std_logic;
        rec_ctrl_claim      : out std_logic;
        rec_ocp_path_disable : in  std_logic;
+       rec_ocp_claim_abort : in std_logic;
        rec_fifo_payload_available : in std_logic;
 
        async_disable:        in    std_logic;
@@ -698,8 +700,10 @@ signal ip_xxx_3511_hs_fpga : std_logic_vector(255 downto 0);
       rec_ctrl_set_stall  => rec_ctrl_set_stall,
       rec_ctrl_xfer_done  => rec_ctrl_xfer_done,
       rec_ctrl_xfer_abort => rec_ctrl_xfer_abort,
+      rec_ctrl_fifo_batch_abort => rec_ctrl_fifo_batch_abort,
       rec_ctrl_claim      => rec_ctrl_claim,
       rec_ocp_path_disable => rec_ocp_path_disable,
+      rec_ocp_claim_abort => rec_ocp_claim_abort,
       rec_fifo_payload_available => rec_fifo_payload_available,
 
       async_disable	     => async_disable,
