@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// you may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+`include "usbhsd.rdl"
+`include "usb_hub.rdl"
+
+// FIXME: Enable this include after the Recovery RDL is committed to usb2.
+// `include "usb_ocp_recovery_reg.rdl"
+
+// USB-local map presented by the Combo AXI subordinate port.
+addrmap usb_combo #(
+    longint unsigned DEV0_NBPHYSEP = 14,
+    longint unsigned DEV0_EPUB = 32,
+    longint unsigned DEV0_DAUB = 32,
+    longint unsigned DEV0_DALB = 17,
+    longint unsigned DEV0_EPFIFO_PAGE = 0x0008_0000,
+    longint unsigned DEV0_DATAFIFO_PAGE = 0x0008_0000,
+    longint unsigned DEV0_SINGLE_BUFFER_SUPPORTED = 1,
+    longint unsigned DEV0_DOUBLE_BUFFER_SUPPORTED = 1,
+    longint unsigned DEV0_TOGGLE_REG_READABLE = 1,
+    longint unsigned PLL_ENABLE = 0,
+    longint unsigned UTMI_SUPPORT = 1,
+    longint unsigned ULPI_SUPPORT = 1,
+    longint unsigned DEV0_MINOR_REV = 0,
+    longint unsigned DEV0_MAJOR_REV = 2,
+    longint unsigned HUB_FIFO_WORDS = 172
+) {
+    name = "USB Combo AXI Port";
+    desc = "USB-local map for the Combo AXI subordinate port. DEV0 control/status begins at 0x0000, the future 2 KiB Recovery block is reserved at 0x0800, and the rounded HUB aperture begins at 0x1000. Until Recovery is integrated, its window returns a bus error. Offsets outside these target windows are unmapped and return a bus error.";
+
+    usbhsd #(
+        .NBPHYSEP(DEV0_NBPHYSEP),
+        .EPUB(DEV0_EPUB),
+        .DAUB(DEV0_DAUB),
+        .DALB(DEV0_DALB),
+        .EPFIFO_PAGE(DEV0_EPFIFO_PAGE),
+        .DATAFIFO_PAGE(DEV0_DATAFIFO_PAGE),
+        .SINGLE_BUFFER_SUPPORTED(DEV0_SINGLE_BUFFER_SUPPORTED),
+        .DOUBLE_BUFFER_SUPPORTED(DEV0_DOUBLE_BUFFER_SUPPORTED),
+        .TOGGLE_REG_READABLE(DEV0_TOGGLE_REG_READABLE),
+        .PLL_ENABLE(PLL_ENABLE),
+        .UTMI_SUPPORT(UTMI_SUPPORT),
+        .ULPI_SUPPORT(ULPI_SUPPORT),
+        .MINOR_REV(DEV0_MINOR_REV),
+        .MAJOR_REV(DEV0_MAJOR_REV)
+    ) dev0_csr @ 0x0000;
+
+    // FIXME: Instantiate the 2 KiB Recovery register map here after it lands.
+    // usb_ocp_recovery_reg recovery @ 0x0800;
+
+    usb_hub #(
+        .FIFO_WORDS(HUB_FIFO_WORDS)
+    ) hub @ 0x1000;
+};
