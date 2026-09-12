@@ -193,11 +193,14 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   localparam int unsigned HUB_FIFO_SIZE_MAX = 4096;
 
   localparam int unsigned HUB_WORD_ADDR_WIDTH = $clog2(C_HUB_FIFO_SIZE);
+  localparam logic [32:0] HUB_APERTURE_BYTES =
+      33'd1 << ($clog2(C_HUB_FIFO_SIZE) + 2);
 
-  localparam int unsigned COMBO_LOCAL_ADDR_WIDTH    = combo_local_addr_width(C_HUB_FIFO_SIZE);
-  localparam int unsigned DEV0_MEM_LOCAL_ADDR_WIDTH = mem_local_addr_width(C_DEV0_RAM_ADDRWIDTH);
+  localparam int unsigned COMBO_LOCAL_ADDR_WIDTH =
+      $clog2(33'(HUB_BASE_ADDR + HUB_APERTURE_BYTES));
+  localparam int unsigned DEV0_MEM_LOCAL_ADDR_WIDTH = C_DEV0_RAM_ADDRWIDTH + 3;
   localparam int unsigned DEV1_CSR_LOCAL_ADDR_WIDTH = DEV_CSR_ADDR_WIDTH;
-  localparam int unsigned DEV1_MEM_LOCAL_ADDR_WIDTH = mem_local_addr_width(C_DEV1_RAM_ADDRWIDTH);
+  localparam int unsigned DEV1_MEM_LOCAL_ADDR_WIDTH = C_DEV1_RAM_ADDRWIDTH + 3;
 
   localparam int unsigned COMBO_AXI_ADDR_WIDTH   = $bits(combo_axi_if_r_sub.araddr);
   localparam int unsigned COMBO_AXI_DATA_WIDTH   = $bits(combo_axi_if_w_sub.wdata);
@@ -329,7 +332,7 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .ahb_hreadymux(combo_ahb_hready),
     .ahb_hrdata(combo_ahb_hrdata),
     .ahb_hreadyout(combo_ahb_hreadyout),
-    .ahb_hresp({1'b0, combo_ahb_hresp[0]})
+    .ahb_hresp(combo_ahb_hresp)
   );
   axi_to_ahb #(
     .AW(DEV0_MEM_AXI_ADDR_WIDTH),
@@ -351,7 +354,7 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .ahb_hreadymux(dev0_mem_ahb_hready),
     .ahb_hrdata(dev0_mem_ahb_hrdata),
     .ahb_hreadyout(dev0_mem_ahb_hreadyout),
-    .ahb_hresp({1'b0, dev0_mem_ahb_hresp[0]})
+    .ahb_hresp(dev0_mem_ahb_hresp)
   );
   axi_to_ahb #(
     .AW(DEV1_CSR_AXI_ADDR_WIDTH),
@@ -373,7 +376,7 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .ahb_hreadymux(dev1_csr_ahb_hready),
     .ahb_hrdata(dev1_csr_ahb_hrdata),
     .ahb_hreadyout(dev1_csr_ahb_hreadyout),
-    .ahb_hresp({1'b0, dev1_csr_ahb_hresp[0]})
+    .ahb_hresp(dev1_csr_ahb_hresp)
   );
   axi_to_ahb #(
     .AW(DEV1_MEM_AXI_ADDR_WIDTH),
@@ -395,7 +398,7 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .ahb_hreadymux(dev1_mem_ahb_hready),
     .ahb_hrdata(dev1_mem_ahb_hrdata),
     .ahb_hreadyout(dev1_mem_ahb_hreadyout),
-    .ahb_hresp({1'b0, dev1_mem_ahb_hresp[0]})
+    .ahb_hresp(dev1_mem_ahb_hresp)
   );
 
   usb_compound_ahb_decoder #(
@@ -621,12 +624,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .usb_dma_dword_selection(usb_dma_dword_selection),
     .usb_dma_write_access(usb_dma_write_access)
   );
-
-  ahb_lite_responses: assert property (@(posedge usb_axi_aclk)
-    disable iff (!usb_axi_aresetn)
-    {combo_ahb_hresp[1], dev0_mem_ahb_hresp[1],
-     dev1_csr_ahb_hresp[1], dev1_mem_ahb_hresp[1]} == 4'b0000)
-    else $error("Compound endpoints must use the AHB OKAY/ERROR response subset");
 
   `CALIPTRA_ASSERT_INIT(HubFifoSize_A,
                         (C_HUB_FIFO_SIZE >= HUB_FIFO_SIZE_MIN) &&

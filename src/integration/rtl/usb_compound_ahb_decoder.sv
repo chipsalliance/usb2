@@ -19,7 +19,10 @@ module usb_compound_ahb_decoder
 #(
   parameter int unsigned C_HUB_FIFO_SIZE = 172,
   localparam int unsigned HUB_WORD_ADDR_WIDTH = $clog2(C_HUB_FIFO_SIZE),
-  localparam int unsigned COMBO_LOCAL_ADDR_WIDTH = combo_local_addr_width(C_HUB_FIFO_SIZE)
+  localparam logic [32:0] HUB_APERTURE_BYTES =
+      33'd1 << ($clog2(C_HUB_FIFO_SIZE) + 2),
+  localparam int unsigned COMBO_LOCAL_ADDR_WIDTH =
+      $clog2(33'(HUB_BASE_ADDR + HUB_APERTURE_BYTES))
 ) (
   // ---- Clock and reset ----
   input  logic                               clk,
@@ -77,7 +80,7 @@ module usb_compound_ahb_decoder
   // Address map and AHB response states
   ////////////////////////////////////////////////////////////
 
-  localparam logic [32:0] HUB_ADDR_LIMIT = HUB_BASE_ADDR + hub_aperture_bytes(C_HUB_FIFO_SIZE);
+  localparam logic [32:0] HUB_ADDR_LIMIT = HUB_BASE_ADDR + HUB_APERTURE_BYTES;
 
   localparam logic [1:0] AHB_RESP_OKAY  = 2'b00;
   localparam logic [1:0] AHB_RESP_ERROR = 2'b01;
@@ -175,7 +178,6 @@ module usb_compound_ahb_decoder
       end
 
       // No-hit, multi-hit, and X/Z patterns select no endpoint and retain ERROR.
-      default: ;
     endcase
   end
 
@@ -256,10 +258,12 @@ module usb_compound_ahb_decoder
   always_comb begin : select_response
     combo_hrdata    = '0;
     combo_hreadyout = 1'b1;
-    combo_hresp     = AHB_RESP_OKAY;
+    combo_hresp     = AHB_RESP_ERROR;
 
     unique case (data_phase_select_q)
-      RESP_IDLE: ;
+      RESP_IDLE: begin
+        combo_hresp = AHB_RESP_OKAY;
+      end
 
       RESP_DEV0_CSR: begin
         combo_hrdata    = dev0_csr_hrdata;
@@ -290,7 +294,9 @@ module usb_compound_ahb_decoder
         combo_hresp = AHB_RESP_ERROR;
       end
 
-      default: ;
+      default: begin
+        combo_hresp = AHB_RESP_ERROR;
+      end
     endcase
   end
 
