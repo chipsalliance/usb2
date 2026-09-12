@@ -640,6 +640,18 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   `CALIPTRA_ASSERT_INIT(Dev1MemAxiAddrWidth_A,
                         (DEV1_MEM_AXI_ADDR_WIDTH >= DEV1_MEM_LOCAL_ADDR_WIDTH) &&
                         ($bits(dev1_mem_axi_if_w_sub.awaddr) == DEV1_MEM_AXI_ADDR_WIDTH))
+  `CALIPTRA_ASSERT_INIT(ComboAxiDataWidth_A,
+                        (COMBO_AXI_DATA_WIDTH == 32) &&
+                        ($bits(combo_axi_if_r_sub.rdata) == 32))
+  `CALIPTRA_ASSERT_INIT(Dev0MemAxiDataWidth_A,
+                        (DEV0_MEM_AXI_DATA_WIDTH == 32) &&
+                        ($bits(dev0_mem_axi_if_r_sub.rdata) == 32))
+  `CALIPTRA_ASSERT_INIT(Dev1CsrAxiDataWidth_A,
+                        (DEV1_CSR_AXI_DATA_WIDTH == 32) &&
+                        ($bits(dev1_csr_axi_if_r_sub.rdata) == 32))
+  `CALIPTRA_ASSERT_INIT(Dev1MemAxiDataWidth_A,
+                        (DEV1_MEM_AXI_DATA_WIDTH == 32) &&
+                        ($bits(dev1_mem_axi_if_r_sub.rdata) == 32))
 endmodule : ip_xxx_3511_hs_mem_compound_wrapper
 
 // File contains AI-generated response based on internal company sources
