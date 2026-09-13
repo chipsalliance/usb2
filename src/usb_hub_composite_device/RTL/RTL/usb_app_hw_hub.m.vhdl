@@ -48,6 +48,7 @@ port (
       ep0_wvalue             : in  std_logic_vector(15 downto 0);
       ep0_windex             : in  std_logic_vector(15 downto 0);
       ep0_class_rdata        : out std_logic_vector(C_DATAWIDTH-1 downto 0);
+      ep0_class_stall        : out std_logic;
       
       -- DOWNSTREAM PORTS
       hub_port_connect       : in  std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
@@ -77,6 +78,75 @@ signal hub_status              : t_hub_status;
 
 begin
 
+  PROC_CLASS_STALL : process(ep0_request, ep0_setupdone, ep0_windex, ep0_wvalue)
+  begin --CLASS STALL signal must be high together with ep0_setupdone to prevent active bit from being set.
+      ep0_class_stall <= '0';
+      if ep0_setupdone = '1' then
+        case ep0_request is
+          when C_CLASS_REQ_CLEAR_FEATURE =>
+            if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
+              ep0_class_stall <= '1';
+            elsif to_integer(unsigned(ep0_windex)) /= 0 then  --ClearHubFeature
+              ep0_class_stall <= '1';
+              case to_integer(unsigned(ep0_wvalue)) is
+                when 0  | --Port_Connect
+                     1  | --Port_Enable
+                     2  | --Port_Suspend
+                     3  | --Port_Overcurrent
+                     4  | --Port_Reset
+                     8  | --Port_Power
+                     9  | --Port_Low_speed
+                     16 | --C_Port_Connection
+                     17 | --C_Port_Enable
+                     18 | --C_Port_Suspend
+                     19 | --C_Port_Overcurrent
+                     20 | --C_Port_Reset
+                     21 | --Port_Test
+                     22   --Port_Indicator
+                      =>
+                  ep0_class_stall <= '0';
+                when others =>
+                  null; --Set STALL as request is not supported
+              end case;
+            end if;
+    
+          when C_CLASS_REQ_GET_STATUS =>
+            if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
+              ep0_class_stall <= '1';
+             end if;
+    
+          when C_CLASS_REQ_SET_FEATURE =>
+            if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
+              ep0_class_stall <= '1';
+              case to_integer(unsigned(ep0_wvalue)) is
+                when 0  | --Port_Connect
+                     1  | --Port_Enable
+                     2  | --Port_Suspend
+                     3  | --Port_Overcurrent
+                     4  | --Port_Reset
+                     8  | --Port_Power
+                     9  | --Port_Low_speed
+                     16 | --C_Port_Connection
+                     17 | --C_Port_Enable
+                     18 | --C_Port_Suspend
+                     19 | --C_Port_Overcurrent
+                     20 | --C_Port_Reset
+                     21 | --Port_Test
+                     22   --Port_Indicator
+                      =>
+                  ep0_class_stall <= '0';
+                when others =>
+                  null; --Set STALL as request is not supported
+              end case;
+            end if;
+          when others =>
+            null;
+
+        end case;
+          
+      end if;    
+  end process PROC_CLASS_STALL;
+
   PROC_REQUEST_HANDLING : process(sys_clk, sys_rst_n)
   variable var_port : integer range 0 to C_HUB_NB_PORTS-1;
   begin
@@ -105,7 +175,7 @@ begin
         case ep0_request is
           when C_CLASS_REQ_CLEAR_FEATURE =>
             if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
-              -- TODO : STALL request
+              null;
             elsif to_integer(unsigned(ep0_windex)) = 0 then  --ClearHubFeature
               -- TODO : complete transfer - anything to set ???
             else                                             --ClearPortFeature
@@ -134,20 +204,20 @@ begin
                 when 20 => --C_Port_Reset
                   hub_port_reset_change(var_port)   <= '0';
                 when others =>
-                  -- TODO : STALL request
+                  null;
               end case;
             end if;
     
           when C_CLASS_REQ_GET_STATUS =>
             if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
-              -- TODO : STALL request
+              null;
             else                                             --GetHubStatus / GetPortStatus
               data_index <= to_integer(unsigned(ep0_windex));
             end if;
     
           when C_CLASS_REQ_SET_FEATURE =>
             if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
-              -- TODO : STALL request
+              null;
             elsif to_integer(unsigned(ep0_windex)) = 0 then  --SetHubFeature
               -- TODO : complete transfer - anything to set ???
             else                                             --SetPortFeature
@@ -167,9 +237,9 @@ begin
                      =>
                        null;
                 when 1 => --Port_Enable
-                  hub_port_enable_int(var_port)     <= '1';
+                        hub_port_enable_int(var_port)     <= '1';
                 when 2 => --Port_Suspend
-                              hub_port_suspend(var_port)        <= '1'; 
+                        hub_port_suspend(var_port)        <= '1'; 
                 when 4 => --Port_Reset
                         hub_port_reset_int(var_port)      <= '1';
                         hub_port_reset_change(var_port)   <= '1';
@@ -177,7 +247,7 @@ begin
                         hub_port_suspend(var_port)        <= '0';
                         hub_port_suspend_change(var_port) <= '0';
                 when others =>
-                  -- TODO : STALL request
+                  null;
               end case;
             end if;
     

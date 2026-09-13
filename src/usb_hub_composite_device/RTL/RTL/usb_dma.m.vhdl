@@ -20,12 +20,12 @@ use IEEE.numeric_std.ALL;
 
 library usb_lib;
 use usb_lib.usb_subcmp_pkg.all;
-use usb_lib.usb_fs_emb_dev_cfg_pkg.all;
 
 entity usb_dma is
 generic(USB_DATAWIDTH      : integer := 8;
         RAM_DATAWIDTH      : integer := 32;
         C_NBPHYSEP         : integer := 14;
+        C_NBDEV_SW         : integer := 1;
         C_DALB             : integer := 22);
 port (
       hclk              : in    std_logic; 
@@ -69,7 +69,7 @@ port (
 
       sync_busreset:              in  std_logic;
       
-      dma_ahb_selected:           out std_logic;
+      dma_skipdev_selected:       out integer range 0 to C_NBDEV_SW-1;
 
       -- from fs_reg module
       usbreg_setup:               in  std_logic;
@@ -129,27 +129,32 @@ signal endpoint_nr_dir          : integer range 0 to C_NBPHYSEP+1;
 signal word_number              : integer range 0 to 15;
 signal pointer                  : integer range 0 to FIFO_NBYTES;
 signal data                     : std_logic_vector(FIFO_NBYTES*8-1 downto 0);
-signal nbytes                   : integer range 0 to 3072;
+signal nbytes                   : integer range 0 to 4095; --Maximum assigned value for nbytes is 3072. 
+                                                           --Increased the range to 4095 to fix lint errors
 signal endtransfer              : std_logic;
 signal epinfo_req_delayed       : std_logic;
 signal skip_ep                  : integer range 0 to C_NBPHYSEP+1;
 signal usbreg_setup_int         : std_logic;
-signal ahb_selected             : std_logic;
+
+signal skip_dev                 : integer range 0 to C_NBDEV_SW-1;
 
 begin
 
   epinfo_req <= sync_sieint_epinfo_req;
   
   usbreg_setup_int <= usbreg_setup;
+  
+  dma_skipdev_selected <= skip_dev;
 
   -----------------------------------------------
   -- MAIN state machine
   -----------------------------------------------
   MAIN : process (hclk,hresetn)
   variable var_pointer : integer range 0 to FIFO_NBYTES;
+  variable var_nbytes  : integer range 0 to RAM_DATAWIDTH/8;
   variable var_data    : std_logic_vector(FIFO_NBYTES*8-1 downto 0);
-  variable var_maxpacket : integer range 0 to 3072;
-  variable clear_active: boolean;
+  variable var_maxpacket : unsigned(14 downto 0);
+  variable var_clear_active: boolean;
   begin
     if hresetn = '0' then
       dma_state               <= IDLE;
@@ -178,7 +183,7 @@ begin
       dma_set_toggle          <= '0';
       dma_clear_toggle        <= '0';
       epinfo_txdata_valid     <= '0'; 
-
+      skip_dev                <= 0;   
       
     elsif hclk'event and hclk = '1' then
       var_data    := data;
@@ -200,13 +205,18 @@ begin
           dma_write         <= '0';
           word_number       <= 0;
           var_pointer       := 0;
-          clear_active      := FALSE;
+          var_clear_active  := FALSE;
           setup_not_cleared <= usbreg_setup_int;
           if usbreg_ep_skip(skip_ep) = '1' then
-            clear_active := TRUE;
+            var_clear_active := TRUE;
           else
             if skip_ep = C_NBPHYSEP+1 then
               skip_ep <= 0;
+              if skip_dev = C_NBDEV_SW-1 then
+                  skip_dev <= 0;
+              else
+                  skip_dev <= skip_dev + 1;
+              end if;
             else
               skip_ep <= skip_ep + 1;
             end if;
@@ -216,7 +226,7 @@ begin
             dma_req            <= '1';
             dma_write          <= '0';
             dma_state          <= READ_EPINFO;
-          elsif clear_active then
+          elsif var_clear_active then
             dma_req   <= '1';
             dma_write <= '0';
             dma_state <= READ_EPINFO_SKIP;
@@ -400,27 +410,27 @@ begin
         when CHECK_EPINFO =>
           if pie_speed = HIGH_SPEED then
             if sync_sieint_epinfo_epnr = "0000" then
-              var_maxpacket := 64;
+              var_maxpacket := to_unsigned(64,15);
             elsif epinfo_periodic = '1' then
               if epinfo_rf_tv = '0' then --HBW ISO
-                var_maxpacket := 3072;
+                var_maxpacket := to_unsigned(3072,15);
               else                       --HBW Interrupt (high bandwith are handled at the software layer)
-                var_maxpacket := 1024;
+                var_maxpacket := to_unsigned(1024,15);
               end if;
             else                         --Gen Ep (Bulk Interrupt ratefeedback mode)
-              var_maxpacket := 512;
+              var_maxpacket := to_unsigned(512,15);
             end if;
           else
             if epinfo_periodic = '1' and epinfo_rf_tv = '0' then --FS ISO
-              var_maxpacket := 1023;
+              var_maxpacket := to_unsigned(1023,15);
             else
-              var_maxpacket := 64;
+              var_maxpacket := to_unsigned(64,15);
             end if;
           end if;
-          if to_integer(unsigned(epinfo_nbytes)) < var_maxpacket then
-            nbytes <= to_integer(unsigned(epinfo_nbytes));
+          if unsigned(epinfo_nbytes) < var_maxpacket then
+            nbytes <= to_integer(unsigned(epinfo_nbytes(11 downto 0)));
           else
-            nbytes <= var_maxpacket;
+            nbytes <= to_integer(unsigned(var_maxpacket(11 downto 0)));
           end if;
           if epinfo_disabled = '1' or epinfo_active = '0'
                                    or (setup_not_cleared = '1' and 
@@ -453,11 +463,15 @@ begin
               var_data(var_pointer*8+i) := dma_rdata(i);
             end loop;
             if nbytes > (RAM_DATAWIDTH/8)-1 then
-              nbytes      <= nbytes - RAM_DATAWIDTH/8;
-              var_pointer := var_pointer + RAM_DATAWIDTH/8;
+              var_nbytes := RAM_DATAWIDTH/8;
             else
-              nbytes      <= 0;
-              var_pointer := var_pointer + nbytes;
+              var_nbytes := nbytes rem (RAM_DATAWIDTH/8);
+            end if;   
+            nbytes      <= nbytes - var_nbytes;
+            if var_pointer + var_nbytes < FIFO_NBYTES then
+              var_pointer := var_pointer + var_nbytes;
+            else --This should never happen. var_pointer must always be smaller than or equal to FIFO_NBYTES
+              var_pointer := FIFO_NBYTES; 
             end if;
             if RAM_DATAWIDTH = 32 then
               if word_number = 15 then
@@ -492,26 +506,26 @@ begin
                 var_data(31) := epinfo_active;
                 if pie_speed = HIGH_SPEED then
                   if sync_sieint_epinfo_epnr = "0000" then
-                    var_maxpacket := 64;
+                    var_maxpacket := to_unsigned(64,15);
                   elsif epinfo_periodic = '1' then
                     --if epinfo_ratefeedbackmode = '0' then --HBW Iso
                     if epinfo_rf_tv = '0' then --HBW Iso
-                      var_maxpacket := 3072;
+                      var_maxpacket := to_unsigned(3072,15);
                     else                       --HBW Interrupt  (high bandwith are handled at the software layer)
-                      var_maxpacket := 1024;
+                      var_maxpacket := to_unsigned(1024,15);
                     end if;
                   else                         --Gen Ep (Bulk Interrupt ratefeedback mode)
-                    var_maxpacket := 512;
+                    var_maxpacket := to_unsigned(512,15);
                   end if;
                 else
                   if epinfo_periodic = '1' and epinfo_rf_tv = '0' then --FS ISO
-                    var_maxpacket := 1023;
+                    var_maxpacket := to_unsigned(1023,15);
                   else
-                    var_maxpacket := 64;
+                    var_maxpacket := to_unsigned(64,15);
                   end if;
                 end if;
                 if (epinfo_periodic = '1' and epinfo_rf_tv = '0')     or 
-                   not(var_maxpacket < to_integer(unsigned(epinfo_nbytes))) then
+                   not(var_maxpacket < unsigned(epinfo_nbytes)) then
                   var_data(31)    := '0';
                   -- generate interrupt because active is cleared
                   dma_set_int <= '1'; 
@@ -521,10 +535,8 @@ begin
                 var_data(28) := '0'; 
                 var_data(27) := epinfo_rf_tv;
                 var_data(26) := epinfo_periodic;
-                if var_maxpacket < to_integer(unsigned(epinfo_nbytes)) then
-                  var_data(25 downto 11) := std_logic_vector(to_unsigned
-                              (to_integer(unsigned(epinfo_nbytes))
-                             - var_maxpacket,15));
+                if var_maxpacket < unsigned(epinfo_nbytes) then
+                  var_data(25 downto 11) := std_logic_vector(unsigned(epinfo_nbytes)-var_maxpacket);
                 else
                   var_data(25 downto 11) := (others => '0');
                 end if;
@@ -572,21 +584,21 @@ begin
                   var_data(63) := epinfo_active;
                   if pie_speed = HIGH_SPEED then
                     if sync_sieint_epinfo_epnr = "0000" then
-                      var_maxpacket := 64;
+                      var_maxpacket := to_unsigned(64,15);
                     elsif epinfo_periodic = '1' then
                       if epinfo_rf_tv = '0' then --HBW ISO 
-                        var_maxpacket := 3072;
+                        var_maxpacket := to_unsigned(3072,15);
                       else                       --HBW Interrupt (high bandwith are handled at the software layer) 
-                        var_maxpacket := 1024;
+                        var_maxpacket := to_unsigned(1024,15);
                       end if;
                     else                         --Gen Ep (Bulk Interrupt ratefeedback mode) 
-                      var_maxpacket := 512;
+                      var_maxpacket := to_unsigned(512,15);
                     end if;
                   else
                     if epinfo_periodic = '1' and epinfo_rf_tv = '0' then --FS ISO
-                      var_maxpacket := 1023;
+                      var_maxpacket := to_unsigned(1023,15);
                     else
-                      var_maxpacket := 64;
+                      var_maxpacket := to_unsigned(64,15);
                     end if;
                   end if;
                   if (epinfo_periodic = '1' and epinfo_rf_tv = '0')     or 
@@ -600,10 +612,8 @@ begin
                   var_data(60) := '0'; 
                   var_data(59) := epinfo_rf_tv;
                   var_data(58) := epinfo_periodic;
-                  if var_maxpacket < to_integer(unsigned(epinfo_nbytes)) then
-                    var_data(57 downto 43) := std_logic_vector(to_unsigned
-                              (to_integer(unsigned(epinfo_nbytes))
-                             - var_maxpacket,15));
+                  if var_maxpacket < unsigned(epinfo_nbytes) then
+                    var_data(57 downto 43) := std_logic_vector(unsigned(epinfo_nbytes)-var_maxpacket);
                   else
                     var_data(57 downto 43) := (others => '0');
                   end if;
@@ -649,21 +659,21 @@ begin
                   var_data(31) := epinfo_active;
                   if pie_speed = HIGH_SPEED then
                     if sync_sieint_epinfo_epnr = "0000" then
-                      var_maxpacket := 64;
+                      var_maxpacket := to_unsigned(64,15);
                     elsif epinfo_periodic = '1' then
                       if epinfo_rf_tv = '0' then  --HBW ISO 
-                        var_maxpacket := 3072;
+                        var_maxpacket := to_unsigned(3072,15);
                       else                        --HBW Interrupt (high bandwith are handled at the software layer) 
-                        var_maxpacket := 1024;
+                        var_maxpacket := to_unsigned(1024,15);
                       end if;
                     else                         --Gen Ep (Bulk Interrupt ratefeedback mode) 
-                      var_maxpacket := 512;
+                      var_maxpacket := to_unsigned(512,15);
                     end if;
                   else
                     if epinfo_periodic = '1'  and epinfo_rf_tv = '0' then --FS ISO
-                      var_maxpacket := 1023;
+                      var_maxpacket := to_unsigned(1023,15);
                     else
-                      var_maxpacket := 64;
+                      var_maxpacket := to_unsigned(64,15);
                     end if;
                   end if;
                   if (epinfo_periodic = '1' and epinfo_rf_tv = '0')     or 
@@ -677,10 +687,8 @@ begin
                   var_data(28) := '0'; 
                   var_data(27) := epinfo_rf_tv;
                   var_data(26) := epinfo_periodic;
-                  if var_maxpacket < to_integer(unsigned(epinfo_nbytes)) then
-                    var_data(25 downto 11) := std_logic_vector(to_unsigned
-                              (to_integer(unsigned(epinfo_nbytes))
-                             - var_maxpacket,15));
+                  if var_maxpacket < unsigned(epinfo_nbytes) then
+                    var_data(25 downto 11) := std_logic_vector(unsigned(epinfo_nbytes)-var_maxpacket);
                   else
                     var_data(25 downto 11) := (others => '0');
                   end if;
@@ -788,27 +796,26 @@ begin
                     var_data(31) := epinfo_active;
                     if pie_speed = HIGH_SPEED then
                       if sync_sieint_epinfo_epnr = "0000" then
-                        var_maxpacket := 64;
+                        var_maxpacket := to_unsigned(64,15);
                       elsif epinfo_periodic = '1' then
                         if epinfo_rf_tv = '0' then --HBW ISO 
-                          var_maxpacket := 3072;
+                          var_maxpacket := to_unsigned(3072,15);
                         else                       --HBW Interrupt (high bandwith are handled at the software layer) 
-                          var_maxpacket := 1024;
+                          var_maxpacket := to_unsigned(1024,15);
                         end if;
                       else                         --Gen Ep (Bulk Interrupt ratefeedback mode) 
-                        var_maxpacket := 512;
+                        var_maxpacket := to_unsigned(512,15);
                       end if;
                     else
                       if epinfo_periodic = '1' and epinfo_rf_tv = '0' then --FS ISO
-                        var_maxpacket := 1023;
+                        var_maxpacket := to_unsigned(1023,15);
                       else
-                        var_maxpacket := 64;
+                        var_maxpacket := to_unsigned(64,15);
                       end if;
                     end if;
-                    if (to_integer(unsigned(sync_sieint_rx_nbytes)) < var_maxpacket)
-                        or (epinfo_periodic = '1' and epinfo_rf_tv = '0')                                          
-                        or not(to_integer(unsigned(sync_sieint_rx_nbytes)) 
-                                       < to_integer(unsigned(epinfo_nbytes))) then
+                    if (unsigned("000"&sync_sieint_rx_nbytes) < var_maxpacket) or
+                       (epinfo_periodic = '1' and epinfo_rf_tv = '0')          or                                          
+                       not(unsigned("000"&sync_sieint_rx_nbytes) < (unsigned(epinfo_nbytes))) then
                       var_data(31)    := '0';
                       --generate interrupt because active bit is cleared
                       dma_set_int        <= '1'; 
@@ -868,27 +875,26 @@ begin
                       var_data(63) := epinfo_active;
                       if pie_speed = HIGH_SPEED then
                         if sync_sieint_epinfo_epnr = "0000" then
-                          var_maxpacket := 64;
+                          var_maxpacket := to_unsigned(64,15);
                         elsif epinfo_periodic = '1' then
                           if epinfo_rf_tv = '0' then --HBW ISO 
-                            var_maxpacket := 3072;
+                            var_maxpacket := to_unsigned(3072,15);
                           else                       --HBW Interrupt (high bandwith are handled at the software layer) 
-                            var_maxpacket := 1024;
+                            var_maxpacket := to_unsigned(1024,15);
                           end if;
                         else                         --Gen Ep (Bulk Interrupt ratefeedback mode) 
-                          var_maxpacket := 512;
+                          var_maxpacket := to_unsigned(512,15);
                         end if;
                       else
                         if epinfo_periodic = '1' and epinfo_rf_tv = '0' then --FS ISO
-                          var_maxpacket := 1023;
+                          var_maxpacket := to_unsigned(1023,15);
                         else
-                          var_maxpacket := 64;
+                          var_maxpacket := to_unsigned(64,15);
                         end if;
                       end if;
-                      if (to_integer(unsigned(sync_sieint_rx_nbytes)) < var_maxpacket)
-                          or (epinfo_periodic = '1' and epinfo_rf_tv = '0')                                           
-                          or not(to_integer(unsigned(sync_sieint_rx_nbytes)) 
-                                       < to_integer(unsigned(epinfo_nbytes))) then
+                      if (unsigned("000"&sync_sieint_rx_nbytes) < var_maxpacket) or
+                         (epinfo_periodic = '1' and epinfo_rf_tv = '0')          or 
+                         not(unsigned("000"&sync_sieint_rx_nbytes) < (unsigned(epinfo_nbytes))) then
                         var_data(63)        := '0';
                         --generate interrupt because active bit is cleared
                         dma_set_int          <= '1'; 
@@ -898,11 +904,8 @@ begin
                       var_data(60) := '0';
                       var_data(59) := epinfo_rf_tv;
                       var_data(58) := epinfo_periodic;
-                      if to_integer(unsigned(sync_sieint_rx_nbytes)) 
-                                        < to_integer(unsigned(epinfo_nbytes)) then
-                        var_data(57 downto 43) := std_logic_vector(to_unsigned
-                                (to_integer(unsigned(epinfo_nbytes)) 
-                               - to_integer(unsigned(sync_sieint_rx_nbytes)),15));
+                      if (unsigned("000"&sync_sieint_rx_nbytes) < unsigned(epinfo_nbytes)) then
+                        var_data(57 downto 43) := std_logic_vector(unsigned(epinfo_nbytes) - unsigned("000"&sync_sieint_rx_nbytes));
                       else
                         var_data(57 downto 43) := (others => '0');
                       end if;
@@ -947,27 +950,26 @@ begin
                       var_data(31) := epinfo_active;
                       if pie_speed = HIGH_SPEED then
                         if sync_sieint_epinfo_epnr = "0000" then
-                          var_maxpacket := 64;
+                          var_maxpacket := to_unsigned(64,15);
                         elsif epinfo_periodic = '1' then
                           if epinfo_rf_tv = '0' then --HBW ISO 
-                            var_maxpacket := 3072;
+                            var_maxpacket := to_unsigned(3072,15);
                           else                       --HBW Interrupt (high bandwith are handled at the software layer) 
-                            var_maxpacket := 1024;
+                            var_maxpacket := to_unsigned(1024,15);
                           end if;
                         else                         --Gen Ep (Bulk Interrupt ratefeedback mode) 
-                          var_maxpacket := 512;
+                          var_maxpacket := to_unsigned(512,15);
                         end if;
                       else
                         if epinfo_periodic = '1' and epinfo_rf_tv = '0' then --FS ISO
-                          var_maxpacket := 1023;
+                          var_maxpacket := to_unsigned(1023,15);
                         else
-                          var_maxpacket := 64;
+                          var_maxpacket := to_unsigned(64,15);
                         end if;
                       end if;
-                      if (to_integer(unsigned(sync_sieint_rx_nbytes)) < var_maxpacket)
-                          or (epinfo_periodic = '1' and epinfo_rf_tv = '0')                                           
-                          or not(to_integer(unsigned(sync_sieint_rx_nbytes)) 
-                                       < to_integer(unsigned(epinfo_nbytes))) then
+                      if (unsigned("000"&sync_sieint_rx_nbytes) < var_maxpacket) or
+                         (epinfo_periodic = '1' and epinfo_rf_tv = '0')          or
+                         not(unsigned("000"&sync_sieint_rx_nbytes) < unsigned(epinfo_nbytes)) then
                         var_data(31)        := '0';
                         --generate interrupt because active bit is cleared
                         dma_set_int          <= '1'; 
@@ -977,11 +979,8 @@ begin
                       var_data(28) := '0';
                       var_data(27) := epinfo_rf_tv;
                       var_data(26) := epinfo_periodic;
-                      if to_integer(unsigned(sync_sieint_rx_nbytes)) 
-                                        < to_integer(unsigned(epinfo_nbytes)) then
-                        var_data(25 downto 11) := std_logic_vector(to_unsigned
-                                (to_integer(unsigned(epinfo_nbytes)) 
-                               - to_integer(unsigned(sync_sieint_rx_nbytes)),15));
+                      if (unsigned("000"&sync_sieint_rx_nbytes) < unsigned(epinfo_nbytes)) then
+                        var_data(25 downto 11) := std_logic_vector(unsigned(epinfo_nbytes)-unsigned("000"&sync_sieint_rx_nbytes));
                       else
                         var_data(25 downto 11) := (others => '0');
                       end if;
@@ -1199,8 +1198,6 @@ begin
                                else epinfo_addr;
   dma_wdata <= data(RAM_DATAWIDTH-1 downto 0);
 
-  ahb_selected      <= '1';
-  dma_ahb_selected <= ahb_selected;
   dma_word_enable  <= "11" when RAM_DATAWIDTH = 64 and
                                 (dma_state = CHECK_EPINFO       or
                                  dma_state = FETCH_INEP_DATA    or

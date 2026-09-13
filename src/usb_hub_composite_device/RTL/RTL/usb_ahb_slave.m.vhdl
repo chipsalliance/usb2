@@ -21,23 +21,23 @@ entity usb_ahb_slave is
 generic (AHB_SLAVE_ADDR_WIDTH : integer := 4);
 port (
       hclk		: in	std_logic;   
-      hresetn		: in	std_logic;   
+      hresetn	: in	std_logic;   
       
       haddr		: in	std_logic_vector(AHB_SLAVE_ADDR_WIDTH+1 downto 2); 
-      hwrite		: in	std_logic;   
+      hwrite	: in	std_logic;   
       hsel		: in	std_logic;   
-      htrans1		: in	std_logic;   -- bit 1 of the htrans signal
-      hwdata		: in	std_logic_vector(31 downto 0);
-      hrdata		: out	std_logic_vector(31 downto 0);
+      htrans1	: in	std_logic;   -- bit 1 of the htrans signal
+      hwdata	: in	std_logic_vector(31 downto 0);
+      hrdata	: out	std_logic_vector(31 downto 0);
       hresp		: out	std_logic_vector(1 downto 0); 
-      hready		: out	std_logic;   
-      hready_glb	: in	std_logic;   
+      hready	: out	std_logic;   
+      hready_glb: in	std_logic;   
       
-      reg_waddr		: out	std_logic_vector(AHB_SLAVE_ADDR_WIDTH-1 downto 0);   
-      reg_wdata         : out   std_logic_vector(31 downto 0);  
-      reg_raddr		: out	std_logic_vector(AHB_SLAVE_ADDR_WIDTH-1 downto 0);   
-      reg_rdata		: in	std_logic_vector(31 downto 0);  
-      reg_write         : out   std_logic                       
+      reg_waddr	: out	std_logic_vector(AHB_SLAVE_ADDR_WIDTH-1 downto 0);   
+      reg_wdata : out   std_logic_vector(31 downto 0);  
+      reg_raddr	: out	std_logic_vector(AHB_SLAVE_ADDR_WIDTH-1 downto 0);   
+      reg_rdata	: in	std_logic_vector(31 downto 0);  
+      reg_write : out   std_logic                       
      );
 end usb_ahb_slave; 
 
