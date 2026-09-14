@@ -87,7 +87,6 @@ begin
             if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
               ep0_class_stall <= '1';
             elsif to_integer(unsigned(ep0_windex)) /= 0 then  --ClearHubFeature
-              ep0_class_stall <= '1';
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
                      1  | --Port_Enable
@@ -106,7 +105,7 @@ begin
                       =>
                   ep0_class_stall <= '0';
                 when others =>
-                  null; --Set STALL as request is not supported
+                  ep0_class_stall <= '1'; --Set STALL as request is not supported
               end case;
             end if;
     
