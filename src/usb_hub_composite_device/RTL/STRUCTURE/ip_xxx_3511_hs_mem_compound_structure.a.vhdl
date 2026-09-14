@@ -48,134 +48,103 @@ constant C_HUB_FIFO_ADDRWIDTH : integer := log2(C_HUB_FIFO_SIZE);
 --++++++++++++++++++++++++++++++++++++++++++++++
 
 component usb_pie
-   generic (
-      ULPI_SUPPORT          : boolean := TRUE;
-      UTMI_SUPPORT          : boolean := TRUE;
-      USB_DATAWIDTH         : integer := 64;
-      C_NBDEV               : integer := 1;
-      C_NBPHYSEP            : integer := 14;
-      C_EXTEND_TX_DELAY     : boolean := FALSE;
-      G_SIM_CHIRP_TIMERS    : boolean := FALSE
-   );
-    port (
-          ----- To/From usb synchronizer ------------------------
-         pie_epinfo_req               : out std_logic;
-         pie_epinfo_epnr              : out std_logic_vector(3 downto 0);
-         pie_epinfo_epdir             : out std_logic;
-         pie_epinfo_setup             : out std_logic;
-         pie_epinfo_setup_received    : out std_logic;
-         pie_usbaddress               : out std_logic_vector(6 downto 0);
-
-         epinfo_valid                 : in  std_logic;
-         epinfo_active                : in  std_logic;
-         epinfo_disabled              : in  std_logic;
-         epinfo_toggle                : in  std_logic;
-         epinfo_stall                 : in  std_logic;
-         epinfo_iso                   : in  std_logic;
-         epinfo_nbytes                : in  std_logic_vector(14 downto 0);
-         epinfo_maxpacket             : in std_logic_vector(1 downto 0);
-
-         pie_txdata_fetched           : out std_logic;
-         epinfo_txdata                : in  std_logic_vector(USB_DATAWIDTH-1 downto 0);
-         epinfo_txdata_valid          : in  std_logic;
-
-         pie_rx_nbytes                : out std_logic_vector(11 downto 0);
-         pie_rxdata                   : out std_logic_vector(USB_DATAWIDTH-1 downto 0);
-         pie_rxdatavalid              : out std_logic;
-
-         pie_endtransfer              : out std_logic;
-         pie_success                  : out std_logic;
-         pie_error                    : out std_logic;
-         pie_errortype                : out std_logic_vector(3 downto 0);
-         pie_sentNAK                  : out std_logic;
-         pie_isotoggle                : out std_logic;
-         pie_busreset                 : out std_logic;
-         pie_devicespeed              : out std_logic;
-         pie_suspend                  : out std_logic;
-         pie_lpm_suspend              : out std_logic;
-         pie_lpm_remotewake_enable    : out std_logic;
-         pie_lpm_hird_hw              : out std_logic_vector(3 downto 0);
-
-         pie_vbusvalid                : out std_logic;
-         pie_lowpower_n               : out std_logic;
-
-         -- phy test mode
-         phy_address                  : in std_logic_vector(7 downto 0);
-         phy_readdata                 : out std_logic_vector(7 downto 0);
-         phy_writedata                : in std_logic_vector(7 downto 0);
-         phy_write                    : in std_logic;
-         phy_start                    : in std_logic;
-         phy_endtoggle                : out std_logic;
-         phy_mode                     : in std_logic;
-
-         sync_usbreg_phy_test_mode_change  : in std_logic;  -- phy_test_mode change, resynchronized with usb_pie clock
-         sync_usbreg_remotewakeup     : in std_logic;  -- usbreg_remotewakeup from reg_if resynchronized with usb_pie clock
-         sync_usbreg_lpmremotewakeup     : in std_logic;  -- usbreg_lpmremotewakeup from reg_if resynchronized with usb_pie clock
-
-         reset_n                      : in std_logic; -- AHB reset after resynchronization, active LOW
-         pie_clk                      : in std_logic; -- UTMI/ULPI clock
-
-
-          -----  To/From usb_reg_if ------------------------
-          ------ To/From ahb register module - pseudo-static signals
-         usbreg_pll_on                : in  std_logic;
-         usbreg_deviceenabled         : in  std_logic_vector(C_NBDEV-1 downto 0);
-         usbreg_dev_connect           : in  std_logic;
-         usbreg_remotewakeup          : in  std_logic;
-         usbreg_lpm_sup               : in  std_logic;
-         usbreg_lpmremotewakeup       : in  std_logic;
-         usbreg_lpm_hird_sw           : in std_logic_vector(3 downto 0);
-         usbreg_lpm_nyet              : in std_logic;
-         usbreg_frame_number          : out std_logic_vector(10 downto 0);
-         usbreg_usbaddress            : in  std_logic_vector(C_NBDEV*7-1 downto 0);
-         usbreg_usbaddress_tmp        : in  std_logic_vector(C_NBDEV*7-1 downto 0);
-         usbreg_phy_test_mode         : in  std_logic_vector(2 downto 0);
-         usbreg_port_force_fullspeed  : in  std_logic;
-	 
-	 token_length_counter         : in  std_logic_vector(6 downto 0);
-	 usb_token_length             : out std_logic_vector(6 downto 0);
-
-
-         -- UTMI INTERFACE
-         -- These signals are only to be used when the generic
-         -- UTMI_SUPPORT is set to TRUE
-         --utmi_clk                     : in  std_logic;
-         utmi_rxdata                  : in  std_logic_vector(7 downto 0);
-         utmi_rxvalid                 : in  std_logic;
-         utmi_rxactive                : in  std_logic;
-         utmi_rxerror                 : in  std_logic;
-         utmi_txdata                  : out std_logic_vector(7 downto 0);
-         utmi_txvalid                 : out std_logic;
-         utmi_txready                 : in  std_logic;
-         utmi_reset                   : out std_logic;
-         utmi_xcvrselect              : out std_logic;
-         utmi_termselect              : out std_logic;
-         utmi_opmode                  : out std_logic_vector(1 downto 0);
-         utmi_linestate               : in  std_logic_vector(1 downto 0);
-         utmi_vcontrol                : out std_logic_vector(3 downto 0);
-         utmi_vcontrolloadm           : out std_logic;
-         utmi_vstatus                 : in std_logic_vector(7 downto 0);
-         utmi_vbusvalid               : in std_logic;
-
-         -- ULPI INTERFACE
-         -- These signals are only to be used when the generic
-         -- ULPI_SUPPORT is set to TRUE
-         --ulpi_clk                     : in  std_logic;
-         ulpi_rxdata                  : in std_logic_vector(7 downto 0);
-         ulpi_txdata                  : out std_logic_vector(7 downto 0);
-         ulpi_txenable                : out std_logic;
-         ulpi_dir                     : in  std_logic;
-         ulpi_stp                     : out std_logic;
-         ulpi_nxt                     : in  std_logic;
-         ulpi_pwrctrl_wakeup          : in std_logic;
-
-         VBusDebounced                : in std_logic;
-         pie_dev_selected             : out integer range 0 to C_NBDEV - 1;
-
-         --fpga debug
-         usb_pie_fpga                 : out std_logic_vector(63 downto 0)
-          );
-end component;
+    generic(
+        ULPI_SUPPORT       : boolean := TRUE;
+        USB_DATAWIDTH      : integer := 64;
+        C_NBDEV            : integer := 1;
+        C_NBPHYSEP         : integer := 14;
+        C_EXTEND_TX_DELAY  : boolean := FALSE;
+        G_SIM_CHIRP_TIMERS : boolean := FALSE
+    );
+    port(
+        pie_epinfo_req                   : out std_logic;
+        pie_epinfo_epnr                  : out std_logic_vector(3 downto 0);
+        pie_epinfo_epdir                 : out std_logic;
+        pie_epinfo_setup                 : out std_logic;
+        pie_epinfo_setup_received        : out std_logic;
+        pie_usbaddress                   : out std_logic_vector(6 downto 0);
+        epinfo_valid                     : in  std_logic;
+        epinfo_active                    : in  std_logic;
+        epinfo_disabled                  : in  std_logic;
+        epinfo_toggle                    : in  std_logic;
+        epinfo_stall                     : in  std_logic;
+        epinfo_iso                       : in  std_logic;
+        epinfo_nbytes                    : in  std_logic_vector(14 downto 0);
+        epinfo_maxpacket                 : in  std_logic_vector(1 downto 0);
+        pie_txdata_fetched               : out std_logic;
+        epinfo_txdata                    : in  std_logic_vector(USB_DATAWIDTH-1 downto 0);
+        epinfo_txdata_valid              : in  std_logic;
+        pie_rx_nbytes                    : out std_logic_vector(11 downto 0);
+        pie_rxdata                       : out std_logic_vector(USB_DATAWIDTH-1 downto 0);
+        pie_rxdatavalid                  : out std_logic;
+        pie_endtransfer                  : out std_logic;
+        pie_success                      : out std_logic;
+        pie_error                        : out std_logic;
+        pie_errortype                    : out std_logic_vector(3 downto 0);
+        pie_sentNAK                      : out std_logic;
+        pie_isotoggle                    : out std_logic;
+        pie_busreset                     : out std_logic;
+        pie_devicespeed                  : out std_logic;
+        pie_suspend                      : out std_logic;
+        pie_lpm_suspend                  : out std_logic;
+        pie_lpm_remotewake_enable        : out std_logic;
+        pie_lpm_hird_hw                  : out std_logic_vector(3 downto 0);
+        pie_vbusvalid                    : out std_logic;
+        pie_lowpower_n                   : out std_logic;
+        phy_address                      : in  std_logic_vector(7 downto 0);
+        phy_readdata                     : out std_logic_vector(7 downto 0);
+        phy_writedata                    : in  std_logic_vector(7 downto 0);
+        phy_write                        : in  std_logic;
+        phy_start                        : in  std_logic;
+        phy_endtoggle                    : out std_logic;
+        phy_mode                         : in  std_logic;
+        sync_usbreg_phy_test_mode_change : in  std_logic;
+        sync_usbreg_remotewakeup         : in  std_logic;
+        sync_usbreg_lpmremotewakeup      : in  std_logic;
+        reset_n                          : in  std_logic;
+        pie_clk                          : in  std_logic;
+        usbreg_pll_on                    : in  std_logic;
+        usbreg_deviceenabled             : in  std_logic_vector(C_NBDEV-1 downto 0);
+        usbreg_dev_connect               : in  std_logic;
+        usbreg_remotewakeup              : in  std_logic;
+        usbreg_lpm_sup                   : in  std_logic;
+        usbreg_lpmremotewakeup           : in  std_logic;
+        usbreg_lpm_hird_sw               : in  std_logic_vector(3 downto 0);
+        usbreg_lpm_nyet                  : in  std_logic;
+        usbreg_frame_number              : out std_logic_vector(10 downto 0);
+        usbreg_usbaddress                : in  std_logic_vector(C_NBDEV*7-1 downto 0);
+        usbreg_usbaddress_tmp            : in  std_logic_vector(C_NBDEV*7-1 downto 0);
+        usbreg_phy_test_mode             : in  std_logic_vector(2 downto 0);
+        usbreg_port_force_fullspeed      : in  std_logic;
+        token_length_counter             : in  std_logic_vector(6 downto 0);
+        usb_token_length                 : out std_logic_vector(6 downto 0);
+        utmi_rxdata                      : in  std_logic_vector(7 downto 0);
+        utmi_rxvalid                     : in  std_logic;
+        utmi_rxactive                    : in  std_logic;
+        utmi_rxerror                     : in  std_logic;
+        utmi_txdata                      : out std_logic_vector(7 downto 0);
+        utmi_txvalid                     : out std_logic;
+        utmi_txready                     : in  std_logic;
+        utmi_reset                       : out std_logic;
+        utmi_xcvrselect                  : out std_logic;
+        utmi_termselect                  : out std_logic;
+        utmi_opmode                      : out std_logic_vector(1 downto 0);
+        utmi_linestate                   : in  std_logic_vector(1 downto 0);
+        utmi_vcontrol                    : out std_logic_vector(3 downto 0);
+        utmi_vcontrolloadm               : out std_logic;
+        utmi_vstatus                     : in  std_logic_vector(7 downto 0);
+        utmi_vbusvalid                   : in  std_logic;
+        ulpi_rxdata                      : in  std_logic_vector(7 downto 0);
+        ulpi_txdata                      : out std_logic_vector(7 downto 0);
+        ulpi_txenable                    : out std_logic;
+        ulpi_dir                         : in  std_logic;
+        ulpi_stp                         : out std_logic;
+        ulpi_nxt                         : in  std_logic;
+        ulpi_pwrctrl_wakeup              : in  std_logic;
+        pie_dev_selected                 : out integer range 0 to C_NBDEV - 1;
+        usb_pie_fpga                     : out std_logic_vector(63 downto 0)
+    );
+end component usb_pie;
 
 component usb_synchronizer
     generic(
@@ -550,58 +519,51 @@ component usb_mux
 end component;
 
 component usb_ep0_handler
-generic(C_NBPHYSEP     : integer := 2;
-        C_NBDEV        : integer := 2;
+    generic(
+        C_NBPHYSEP     : integer := 2;
+        C_NBDEV        : integer := 1;
         C_DATAWIDTH    : integer := 32;
-        C_EPNBYTEWIDTH : integer := 15);
-  port (
-      clk               : in  std_logic;
-      rst_n             : in  std_logic;
-
-      upd_dma_addr      : in  std_logic_vector(14 downto 0);
-      upd_dma_req       : in  std_logic;
-      upd_dma_gnt       : out std_logic;
-      upd_dma_write     : in  std_logic;
-      upd_dma_wdata     : in  std_logic_vector(C_DATAWIDTH-1 downto 0);
-      upd_dma_rdata     : out std_logic_vector(C_DATAWIDTH-1 downto 0);
-
-      usbreg_setup_to_decode : in std_logic_vector(C_NBDEV-1 downto 0);
-
-      ep0_setupdone     : out std_logic_vector(C_NBDEV-1 downto 0);
-      ep0_new_address   : out std_logic;
-      ep0_address       : out std_logic_vector(6 downto 0); --New address communicated by SET_ADDRESS command.
-      ep0_device_config : out std_logic_vector(C_NBDEV-1 downto 0);
-
-      ep0_remote_wake_enabled : out std_logic_vector(C_NBDEV-1 downto 0);
-      ep_set_stall      : out std_logic_vector(C_NBPHYSEP-1 downto 0);
-      ep_clear_stall    : out std_logic_vector(C_NBPHYSEP-1 downto 0);
-
-      ep0_out_active    : out std_logic;
-      ep0_in_active     : out std_logic;
-      ep0_outin_nbytes  : out std_logic_vector( C_EPNBYTEWIDTH-1 downto 0);
-      ep0_setup_dir     : out std_logic;
-      ep0_data_buffer   : out std_logic_vector( 7 downto 0);
-
-      ep0_request       : out std_logic_vector( 6 downto 0);
-      ep0_wvalue        : out std_logic_vector(15 downto 0);
-      ep0_windex        : out std_logic_vector(15 downto 0);
-      ep0_class_rdata   : in  std_logic_vector(C_DATAWIDTH-1 downto 0);
-      ep0_class_addr    : out std_logic_vector( 3 downto 0);
-
-      ep0_mem_req       : out std_logic;
-      ep0_mem_gnt       : in  std_logic;
-      ep0_mem_addr      : out std_logic_vector(11 downto 0); --DWORD address - max is 4k 64bit words
-      ep0_mem_rdata     : in  std_logic_vector(C_DATAWIDTH-1 downto 0);
-
-      sync_busreset     : in  std_logic;
-      usbreg_dev_connect: in  std_logic;
-
-      usb_phy_test_mode : out std_logic_vector(2 downto 0);
-      usb_self_powered  : in  std_logic;
-      epconfig_stall    : in  std_logic_vector(C_NBPHYSEP-1 downto 0)
-
-     );
-end component;
+        C_EPNBYTEWIDTH : integer := 10
+    );
+    port(
+        clk                     : in  std_logic;
+        rst_n                   : in  std_logic;
+        upd_dma_addr            : in  std_logic_vector(14 downto 0);
+        upd_dma_req             : in  std_logic;
+        upd_dma_gnt             : out std_logic;
+        upd_dma_write           : in  std_logic;
+        upd_dma_wdata           : in  std_logic_vector(C_DATAWIDTH-1 downto 0);
+        upd_dma_rdata           : out std_logic_vector(C_DATAWIDTH-1 downto 0);
+        usbreg_setup_to_decode  : in  std_logic_vector(C_NBDEV-1 downto 0);
+        ep0_setupdone           : out std_logic_vector(C_NBDEV-1 downto 0);
+        ep0_new_address         : out std_logic;
+        ep0_address             : out std_logic_vector(6 downto 0);
+        ep0_device_config       : out std_logic_vector(C_NBDEV-1 downto 0);
+        ep0_remote_wake_enabled : out std_logic_vector(C_NBDEV-1 downto 0);
+        ep_set_stall            : out std_logic_vector(C_NBPHYSEP-1 downto 0);
+        ep_clear_stall          : out std_logic_vector(C_NBPHYSEP-1 downto 0);
+        ep0_out_active          : out std_logic;
+        ep0_in_active           : out std_logic;
+        ep0_outin_nbytes        : out std_logic_vector( C_EPNBYTEWIDTH-1 downto 0);
+        ep0_setup_dir           : out std_logic;
+        ep0_data_buffer         : out std_logic_vector( 7 downto 0);
+        ep0_request             : out std_logic_vector( 6 downto 0);
+        ep0_wvalue              : out std_logic_vector(15 downto 0);
+        ep0_windex              : out std_logic_vector(15 downto 0);
+        ep0_class_rdata         : in  std_logic_vector(C_DATAWIDTH-1 downto 0);
+        ep0_class_addr          : out std_logic_vector( 3 downto 0);
+        ep0_class_stall         : in  std_logic_vector(C_NBDEV-1 downto 0);
+        ep0_mem_req             : out std_logic;
+        ep0_mem_gnt             : in  std_logic;
+        ep0_mem_addr            : out std_logic_vector(11 downto 0);
+        ep0_mem_rdata           : in  std_logic_vector(C_DATAWIDTH-1 downto 0);
+        sync_busreset           : in  std_logic;
+        usbreg_dev_connect      : in  std_logic;
+        usb_phy_test_mode       : out std_logic_vector(2 downto 0);
+        usb_self_powered        : in  std_logic;
+        epconfig_stall          : in  std_logic_vector(C_NBPHYSEP-1 downto 0)
+    );
+end component usb_ep0_handler;
 
 component usb_ep_config_handler
 generic(C_NBPHYSEP     : integer := 2;
@@ -651,60 +613,58 @@ end component;
 
 component usb_ep0_hub_descr
     generic(
-        C_NWORDS     : integer := 128;
+        C_NWORDS     : integer := 172;
         C_HIGH_SPEED : boolean := TRUE
     );
     port(
-        sys_clk          : in  std_logic;
-        sys_rst_n        : in  std_logic;
-        reg_waddr        : in  std_logic_vector((log2(C_NWORDS))-1 downto 0);
-        reg_wdata        : in  std_logic_vector(31 downto 0);
-        reg_raddr        : in  std_logic_vector((log2(C_NWORDS))-1 downto 0);
-        reg_rdata        : out std_logic_vector(31 downto 0);
-        reg_write        : in  std_logic;
-        usb_self_powered : in  std_logic;
-        ep0_mem_req      : in  std_logic;
-        ep0_mem_gnt      : out std_logic;
-        ep0_mem_addr     : in  std_logic_vector((log2(C_NWORDS))-1 downto 0);
-        ep0_mem_rdata    : out std_logic_vector(63 downto 0);
-        USB_EnableHub    : in  std_logic;
-        hub_enable       : out std_logic;
-        hub_dcon         : out std_logic
+        sys_clk              : in  std_logic;
+        sys_rst_n            : in  std_logic;
+        reg_waddr            : in  std_logic_vector((log2(C_NWORDS))-1 downto 0);
+        reg_wdata            : in  std_logic_vector(31 downto 0);
+        reg_raddr            : in  std_logic_vector((log2(C_NWORDS))-1 downto 0);
+        reg_rdata            : out std_logic_vector(31 downto 0);
+        reg_write            : in  std_logic;
+        usb_self_powered_pin : in  std_logic;
+        usb_self_powered_ff  : out std_logic;
+        ep0_mem_req          : in  std_logic;
+        ep0_mem_gnt          : out std_logic;
+        ep0_mem_addr         : in  std_logic_vector((log2(C_NWORDS))-1 downto 0);
+        ep0_mem_rdata        : out std_logic_vector(63 downto 0);
+        USB_EnableHub        : in  std_logic;
+        hub_enable           : out std_logic;
+        hub_dcon             : out std_logic
     );
 end component usb_ep0_hub_descr;
 
 component usb_app_hw_hub
-generic(C_HUB_NB_PORTS     : integer := 2; --This can be maximum 255 according to USB spec
-        C_DATAWIDTH        : integer := 32);
-  port (
-      sys_clk                : in  std_logic;
-      sys_rst_n              : in  std_logic;
-      sync_busreset          : in  std_logic;
-      pie_speed              : in  std_logic_vector( 1 downto 0);
-
-      -- HUB Status IN endpoint
-      hub_epin_req           : in  std_logic;
-      hub_epin_gnt           : out std_logic;
-      hub_epin_addr          : in  std_logic_vector(2 downto 0); -- only needed when more than 31 downstream ports
-      hub_epin_rdata         : out std_logic_vector(C_DATAWIDTH-1 downto 0);
-      hub_epin_stall         : out std_logic;
-      hub_epin_clear_buffer  : out std_logic;
-      hub_epin_enable_buffer : out std_logic;
-      hub_epin_buffer_size   : out std_logic_vector(6 downto 0);
-
-      -- HUB Class-specific requests
-      ep0_setupdone          : in  std_logic;
-      ep0_request            : in  std_logic_vector( 6 downto 0);
-      ep0_wvalue             : in  std_logic_vector(15 downto 0);
-      ep0_windex             : in  std_logic_vector(15 downto 0);
-      ep0_class_rdata        : out std_logic_vector(C_DATAWIDTH-1 downto 0);
-
-      -- DOWNSTREAM PORTS
-      hub_port_connect       : in  std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
-      hub_port_enable        : out std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
-      hub_port_reset         : out std_logic_vector(C_HUB_NB_PORTS-1 downto 0)
-     );
-end component;
+    generic(
+        C_HUB_NB_PORTS : integer := 2;
+        C_DATAWIDTH    : integer := 32
+    );
+    port(
+        sys_clk                : in  std_logic;
+        sys_rst_n              : in  std_logic;
+        sync_busreset          : in  std_logic;
+        pie_speed              : in  std_logic_vector( 1 downto 0);
+        hub_epin_req           : in  std_logic;
+        hub_epin_gnt           : out std_logic;
+        hub_epin_addr          : in  std_logic_vector(2 downto 0);
+        hub_epin_rdata         : out std_logic_vector(C_DATAWIDTH-1 downto 0);
+        hub_epin_stall         : out std_logic;
+        hub_epin_clear_buffer  : out std_logic;
+        hub_epin_enable_buffer : out std_logic;
+        hub_epin_buffer_size   : out std_logic_vector(6 downto 0);
+        ep0_setupdone          : in  std_logic;
+        ep0_request            : in  std_logic_vector( 6 downto 0);
+        ep0_wvalue             : in  std_logic_vector(15 downto 0);
+        ep0_windex             : in  std_logic_vector(15 downto 0);
+        ep0_class_rdata        : out std_logic_vector(C_DATAWIDTH-1 downto 0);
+        ep0_class_stall        : out std_logic;
+        hub_port_connect       : in  std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+        hub_port_enable        : out std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+        hub_port_reset         : out std_logic_vector(C_HUB_NB_PORTS-1 downto 0)
+    );
+end component usb_app_hw_hub;
 
 -- resets
 signal RG_BUSReset     : boolean;
@@ -747,6 +707,7 @@ signal dev1_usbreg_data_buffer_start : std_logic_vector(31 downto 0);
 signal dev1_usbreg_ep_skip           : std_logic_vector(C_DEV1_NBPHYSEP+1 downto 0);
 signal dev1_usbreg_ep_bufinuse       : std_logic_vector(C_DEV1_NBPHYSEP+1 downto 0);
 signal dev1_usbreg_epinfo_toggle     : std_logic_vector(C_DEV1_NBPHYSEP+1 downto 0);
+signal dev1_usbreg_pll_on            : std_logic;
 
 signal LPM_RW           : boolean;
 signal sieint_epinfo_req:      std_logic;
@@ -814,7 +775,8 @@ signal usbreg_lpm_nyet           : std_logic;
 signal sync_usbreg_lpm_nyet      : std_logic;
 signal dev0_usbreg_ep_skip       : std_logic_vector(C_DEV0_NBPHYSEP+1 downto 0);
 signal dev0_usbreg_ep_bufinuse   : std_logic_vector(C_DEV0_NBPHYSEP+1 downto 0);
-signal usbreg_pll_on          : std_logic;
+signal dev0_usbreg_pll_on        : std_logic;
+signal usbreg_pll_on             : std_logic;
 signal sync_usbreg_pll_on     : std_logic;
 signal usbreg_deviceenabled   : std_logic_vector(C_NBDEV+1 downto 0);
 --signal sync_usbreg_deviceenabled : std_logic_vector(C_NBDEV+1 downto 0);
@@ -1043,40 +1005,47 @@ signal upd_dma_rdata_config   : std_logic_vector(RAM_DATAWIDTH-1 downto 0);
 signal upd_dma_rdata_ep_noram : std_logic_vector(RAM_DATAWIDTH-1 downto 0);
 
 --ep0 interfaces
-signal ep0_setupdone   : std_logic_vector(C_NBDEV-1 downto 0);
-signal ep0_new_address   : std_logic;
-signal ep0_address   : std_logic_vector(6 downto 0); --New address communicated by SET_ADDRESS command.
-signal ep0_device_config : std_logic_vector(C_NBDEV-1 downto 0);
+signal ep0_setupdone      : std_logic_vector(C_NBDEV-1 downto 0);
+signal ep0_new_address    : std_logic;
+signal ep0_address        : std_logic_vector(6 downto 0); --New address communicated by SET_ADDRESS command.
+signal ep0_device_config  : std_logic_vector(C_NBDEV-1 downto 0);
 --signal ep0_remote_wake_enabled : std_logic_vector(C_NBDEV-1 downto 0);
-signal ep_set_stall   : std_logic_vector(C_NBPHYSEP-1 downto 0);
-signal ep_clear_stall   : std_logic_vector(C_NBPHYSEP-1 downto 0);
-signal ep0_out_active   : std_logic;
-signal ep0_in_active   : std_logic;
-signal ep0_outin_nbytes  : std_logic_vector(C_EPNBYTEWIDTH-1 downto 0);
-signal ep0_setup_dir   : std_logic;
-signal ep0_data_buffer   : std_logic_vector( 7 downto 0);
-signal ep0_request   : std_logic_vector( 6 downto 0);
-signal ep0_wvalue   : std_logic_vector(15 downto 0);
-signal ep0_windex   : std_logic_vector(15 downto 0);
-signal ep0_mem_req   : std_logic;
-signal ep0_mem_gnt   : std_logic;
-signal ep0_mem_addr   : std_logic_vector(11 downto 0); --DWORD address - max is 4k 32bit words
-signal ep0_mem_rdata   : std_logic_vector(RAM_DATAWIDTH-1 downto 0);
-signal ep0_class_rdata  : std_logic_vector(RAM_DATAWIDTH-1 downto 0);
+signal ep_set_stall       : std_logic_vector(C_NBPHYSEP-1 downto 0);
+signal ep_clear_stall     : std_logic_vector(C_NBPHYSEP-1 downto 0);
+signal ep0_out_active     : std_logic;
+signal ep0_in_active      : std_logic;
+signal ep0_outin_nbytes   : std_logic_vector(C_EPNBYTEWIDTH-1 downto 0);
+signal ep0_setup_dir      : std_logic;
+signal ep0_data_buffer    : std_logic_vector( 7 downto 0);
+signal ep0_request        : std_logic_vector( 6 downto 0);
+signal ep0_wvalue         : std_logic_vector(15 downto 0);
+signal ep0_windex         : std_logic_vector(15 downto 0);
+signal ep0_mem_req        : std_logic;
+signal ep0_mem_gnt        : std_logic;
+signal ep0_mem_addr       : std_logic_vector(11 downto 0); --DWORD address - max is 4k 32bit words
+signal ep0_mem_rdata      : std_logic_vector(RAM_DATAWIDTH-1 downto 0);
+signal ep0_class_rdata    : std_logic_vector(RAM_DATAWIDTH-1 downto 0);
+signal ep0_class_stall    : std_logic_vector(C_NBDEV-1 downto 0);
+signal ep0_hub_class_stall: std_logic;
 
 -- ep_config handler
-signal ep_clk            : std_logic_vector(C_NBPHYSEP-1 downto 0);
-signal ep_rst_n          : std_logic_vector(C_NBPHYSEP-1 downto 0);
-signal epconfig_stall    : std_logic_vector(C_NBPHYSEP-1 downto 0);
-signal ep_stall          : std_logic_vector(C_NBPHYSEP-1 downto 0);
+signal ep_clk             : std_logic_vector(C_NBPHYSEP-1 downto 0);
+signal ep_rst_n           : std_logic_vector(C_NBPHYSEP-1 downto 0);
+signal epconfig_stall     : std_logic_vector(C_NBPHYSEP-1 downto 0);
+signal ep_stall           : std_logic_vector(C_NBPHYSEP-1 downto 0);
 
-signal hub_epinfo_toggle : std_logic_vector(C_NBPHYSEP+1 downto 0);
-signal hub_ep_toggle     : std_logic_vector(C_NBPHYSEP-1 downto 0);
-signal hub_ep0_toggle    : std_logic_vector(C_NBDEV*2-1 downto 0);
+signal hub_epinfo_toggle  : std_logic_vector(C_NBPHYSEP+1 downto 0);
+signal hub_ep_toggle      : std_logic_vector(C_NBPHYSEP-1 downto 0);
+signal hub_ep0_toggle     : std_logic_vector(C_NBDEV*2-1 downto 0);
+
+signal usb_self_powered_pin_s  : std_logic;
+signal usb_self_powered_pin_ss : std_logic;
+signal usb_self_powered_pin    : std_logic;
+signal usb_self_powered_ff     : std_logic;
 
 -- fpga debug probes 
-signal usb_dma_fpga      : std_logic_vector(63 downto 0);
-signal usb_reg_if_fpga   : std_logic_vector(63 downto 0);
+signal usb_dma_fpga       : std_logic_vector(63 downto 0);
+signal usb_reg_if_fpga    : std_logic_vector(63 downto 0);
 signal ahb_dma_slave_fpga : std_logic_vector(63 downto 0);
 signal usb_pie_fpga       : std_logic_vector(63 downto 0);
 signal zero7              : std_logic_vector(6 downto 0);
@@ -1105,7 +1074,6 @@ zero7 <= (others => '0');
 
 usb_pie_1 : usb_pie
   generic map(ULPI_SUPPORT      => C_ULPI_SUPPORT,
-              UTMI_SUPPORT      => C_UTMI_SUPPORT,
               USB_DATAWIDTH     => USBPIE_DATAWIDTH,
               C_NBDEV           => C_NBDEV+2,      -- C_NBDEV hardware devices + 2 software devices
               C_NBPHYSEP        => C_NBPHYSEP_MAX, -- Maximum value of C_DEV0_NBPHYSEP and C_DEV1_NBPHYSEP
@@ -1200,8 +1168,6 @@ usb_pie_1 : usb_pie
              ulpi_stp                     => ulpi_stp,
              ulpi_nxt                     => ulpi_nxt,
              ulpi_pwrctrl_wakeup          => ulpi_pwrctrl_wakeup,
-
-             VBusDebounced                => VBusDebounced,
 
              pie_dev_selected             => pie_dev_selected, --|
              usb_pie_fpga                 => usb_pie_fpga
@@ -1335,6 +1301,8 @@ usb_synchronizer_1: usb_synchronizer
               hrstn                        => hresetn
               );
 
+usbreg_pll_on <= dev0_usbreg_pll_on or dev1_usbreg_pll_on;
+
 usb_ahb_slave_0 : usb_ahb_slave
   generic map(AHB_SLAVE_ADDR_WIDTH => C_HUB_FIFO_ADDRWIDTH)
   port map   (
@@ -1392,7 +1360,7 @@ usb_reg_if_1 : usb_reg_if
               usbreg_deviceenabled       => dev0_usbreg_deviceenabled,
               usbreg_setup               => dev0_usbreg_setup,
               sieint_setup_received      => dev0_setup_received,
-              usbreg_pll_on              => usbreg_pll_on,
+              usbreg_pll_on              => dev0_usbreg_pll_on,
               usbreg_lpm_sup             => usbreg_lpm_sup,
               usbreg_remotewakeup        => usbreg_remotewakeup,
               usbreg_lpmremotewakeup     => usbreg_lpmremotewakeup,
@@ -1495,7 +1463,7 @@ usb_reg_if_2 : usb_reg_if
     usbreg_deviceenabled       => dev1_usbreg_deviceenabled,
     usbreg_setup               => dev1_usbreg_setup,
     sieint_setup_received      => dev1_setup_received,
-    usbreg_pll_on              => open,
+    usbreg_pll_on              => dev1_usbreg_pll_on,
     usbreg_lpm_sup             => open,
     usbreg_remotewakeup        => open,
     usbreg_lpmremotewakeup     => open,
@@ -1777,9 +1745,12 @@ usb_dma_1 : usb_dma
                     else '0';
   dev0_dma_sent_nak <= dma_sent_NAK when sync_pie_dev_selected = C_NBDEV
                   else '0';
-  dev0_dma_set_int <= dma_set_int when sync_pie_dev_selected = C_NBDEV
-                  else '0';
-  dev0_dma_physepnr <= dma_physepnr when sync_pie_dev_selected = C_NBDEV else 0; 
+  dev0_dma_set_int <= dma_set_int when (dma_clear_skip = '1' and dma_skipdev_selected = 0) or 
+                                       (sync_pie_dev_selected = C_NBDEV)
+                 else '0';
+  dev0_dma_physepnr <= dma_physepnr when (sync_pie_dev_selected = C_NBDEV)   and
+                                         (dma_physepnr <= C_DEV0_NBPHYSEP+1)
+                                    else 0; 
 
   dev1_dma_clear_toggle <= dma_clear_toggle when sync_pie_dev_selected = C_NBDEV + 1
                     else '0';
@@ -1787,9 +1758,12 @@ usb_dma_1 : usb_dma
                     else '0';
   dev1_dma_sent_nak <= dma_sent_NAK when sync_pie_dev_selected = C_NBDEV + 1
                     else '0';
-  dev1_dma_set_int <= dma_set_int when sync_pie_dev_selected = C_NBDEV + 1
+  dev1_dma_set_int <= dma_set_int when (dma_clear_skip = '1' and dma_skipdev_selected = 1) or 
+                                       (sync_pie_dev_selected = C_NBDEV + 1)
                     else '0';
-  dev1_dma_physepnr <= dma_physepnr when sync_pie_dev_selected = C_NBDEV+1 else 0;
+  dev1_dma_physepnr <= dma_physepnr when (sync_pie_dev_selected = C_NBDEV+1) and
+                                         (dma_physepnr <= C_DEV1_NBPHYSEP+1)
+                                    else 0;
   
 
 ahb_dma_slave_1 : ahb_dma_slave
@@ -1969,10 +1943,13 @@ usb_ep0_handler_1 : usb_ep0_handler
       ep0_mem_rdata           => ep0_mem_rdata,
       sync_busreset           => sync_busreset,
       usbreg_dev_connect      => hub_connect,
-      usb_self_powered        => usb_self_powered,
+      usb_self_powered        => usb_self_powered_ff,
       usb_phy_test_mode       => ep0_phy_test_mode,
-      epconfig_stall          => epconfig_stall
+      epconfig_stall          => epconfig_stall,
+      ep0_class_stall         => ep0_class_stall
      );
+
+ep0_class_stall(0) <= ep0_hub_class_stall;
 
 usb_ep_config_handler_1 : usb_ep_config_handler
   generic map(C_NBPHYSEP  => C_NBPHYSEP,
@@ -2037,7 +2014,8 @@ usb_ep0_hub_descr_1 : usb_ep0_hub_descr
       reg_raddr            => hub_reg_raddr,
       reg_rdata            => hub_reg_rdata,
       reg_write            => hub_reg_write,      
-      usb_self_powered     => usb_self_powered,
+      usb_self_powered_ff  => usb_self_powered_ff,
+      usb_self_powered_pin => usb_self_powered_pin,
       ep0_mem_req          => ep0_mem_req,
       ep0_mem_gnt          => ep0_mem_gnt,
       ep0_mem_addr         => ep0_mem_addr(C_HUB_FIFO_ADDRWIDTH-1 downto 0),
@@ -2046,6 +2024,19 @@ usb_ep0_hub_descr_1 : usb_ep0_hub_descr
       hub_enable           => hub_enable_q,
       hub_dcon             => hub_dcon_q
   );
+  
+proc_usb_self_powered_pin_sync : process(hresetn,hclk)
+begin
+  if hresetn = '0' then
+    usb_self_powered_pin_s  <= '0';
+    usb_self_powered_pin_ss <= '0';
+  elsif hclk'event and hclk = '1' then
+    usb_self_powered_pin_s  <= usb_self_powered;
+    usb_self_powered_pin_ss <= usb_self_powered_pin_s;
+  end if;
+end process proc_usb_self_powered_pin_sync;
+
+usb_self_powered_pin <= usb_self_powered_pin_ss;
   
 usb_app_hw_hub_1 : usb_app_hw_hub
   generic map(C_HUB_NB_PORTS => 2,
@@ -2068,6 +2059,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
       ep0_wvalue             => ep0_wvalue,
       ep0_windex             => ep0_windex,
       ep0_class_rdata        => ep0_class_rdata,
+      ep0_class_stall        => ep0_hub_class_stall,
       hub_port_connect       => hub_port_connect,
       hub_port_enable        => hub_port_enable,
       hub_port_reset         => hub_port_reset
@@ -2138,6 +2130,12 @@ usb_app_hw_hub_1 : usb_app_hw_hub
   ep_buffer_size( 6 downto 0) <= hub_epin_buffer_size(6 downto 0);
   ep_stall(0)                 <= hub_epin_stall;
   
+  ep_clk(1)                   <= hclk; --Assign hclk to solve lint errors.  
+  ep_rst_n(1)                 <= '0';  --This endpoint is not used. Reset can be fixed to zero.
+  ep_enable_buffer(1)         <= '0';
+  ep_clear_buffer(1)          <= '0';
+  ep_buffer_size(13 downto 7) <= (others => '0');
+  ep_stall(1)                 <= '0';
   
   usbreg_deviceenabled(0) <= hub_connect when hub_enable_q = '1' else '0';
 
@@ -2357,7 +2355,6 @@ usb_app_hw_hub_1 : usb_app_hw_hub
     end if;
   end process WAKEUP_DETECTION;
 
-
   usb_needclk_int      <= '0' when sys_donotwakeup_n = '0' else
                           '1' when  ((clock_on = '1' or clk_off_counter /= 0 or dataline_low_power_en = '0' or pwrctrl_wakeup_int = '1') and phy_mode = '0') else
                           '1' when  ((clock_on = '1'or dataline_low_power_en = '0' or pwrctrl_wakeup_int = '1') and phy_mode = '1') else
@@ -2365,24 +2362,20 @@ usb_app_hw_hub_1 : usb_app_hw_hub
 
   usb_needclk <= usb_needclk_int;
 
-
   -- LAB : this has been rewritten because the process commented below did not pass spyglass compliance test
   -- reset_n is gated with async_disable, the set condition is also gated with async_disable.
   -- What is not clear is why pwrctrl_wakeup_int needs to be connected to async_disable 
-  -- This has to be checked during DFT especially ATPG simulation (see ticket Customer Ticket 111086 : incorrect async_disabling in usb_fs_ip_3528_susp_ctrl) . 
-  --
+  -- This has to be checked during DFT especially ATPG simulation. 
 
   set_pwrctrl_wakeup <= ((clock_on and to_std_logic(clk_off_counter = 0) and dataline_low_power_en and not(phy_mode)) or
                           (clock_on and dataline_low_power_en and ulpi_dir_sss and phy_mode))
                           and not async_disable;
   
   --ULPI OR UTMI
-  WAKEUP_STAGE : Process (reset_n,set_pwrctrl_wakeup,pie_clk)
-  -- wake up is set asynchronously, can be reset asynchronously and synchronously if suspend_set is cleared
+  WAKEUP_STAGE : Process (set_pwrctrl_wakeup,pie_clk)
+  -- wake up is set asynchronously, and synchronously if suspend_set is cleared
   begin
-    if reset_n = '0' then
-       pwrctrl_wakeup_int <= '0';
-    elsif (set_pwrctrl_wakeup = '1') then
+    if (set_pwrctrl_wakeup = '1') then
        pwrctrl_wakeup_int <= '1'; -- asynch wake up is only allowed when a wake up event occurs once usb clock is OFF
     elsif pie_clk'event and pie_clk ='1' then
     -- wake up must be hold asserted until clock is running again and lowpower is de-asserted
@@ -2394,41 +2387,6 @@ usb_app_hw_hub_1 : usb_app_hw_hub
     end if;
   end process  WAKEUP_STAGE;
   
-  
-  -- this process does not pass spyglass compliancy  
-
----  --ULPI OR UTMI
----  WAKEUP_STAGE : Process (reset_n,async_disable,clock_on,clk_off_counter,phy_mode,dataline_low_power_en,ulpi_dir_sss,pie_clk,awake)
----  -- wake up is set asynchronously, can be reset asynchronously and synchronously if suspend_set is cleared
----  begin
----  --altera translate_off
----     if async_disable = '0' then
----  --altera translate_on
----        if reset_n = '0' then
----           pwrctrl_wakeup_int <= '0';
----        elsif (clock_on = '1'  and clk_off_counter = 0 and dataline_low_power_en = '1' and phy_mode = '0') or
----            (clock_on = '1' and dataline_low_power_en = '1' and ulpi_dir_sss = '1' and phy_mode = '1') then
----           pwrctrl_wakeup_int <= '1'; -- asynch wake up is only allowed when a wake up event occurs once usb clock is OFF
----        elsif pie_clk'event and pie_clk ='1' then
----        -- wake up must be hold asserted until clock is running again and lowpower is de-asserted
----           --if phy_mode = '1' then
----              pwrctrl_wakeup_int <= pwrctrl_wakeup_int and not awake;
----           --elsif (pwrctrl_wakeup_int = '1'and pie_lowpower_n = '0' and clk_off_counter = 0) then
----           --   pwrctrl_wakeup_int <= '1';
----           --else
----           --   pwrctrl_wakeup_int <= '0';
----           --end if;
----        end if;
----  --altera translate_off
----     else -- bypass asynchronous set/reset in test mode
----        if pie_clk'event and pie_clk ='1' then
----           pwrctrl_wakeup_int <= async_disable;
----        end if;
----     end if;
----  --altera translate_on
----
----  end process  WAKEUP_STAGE;
-
   -- Only relevant for ULPI:
   ulpi_pwrctrl_wakeup <= pwrctrl_wakeup_int when sys_donotwakeup_n = '1' else '0';
 
@@ -2439,14 +2397,16 @@ usb_app_hw_hub_1 : usb_app_hw_hub
 
   --ULPI OR UTMI
   clock_on <= '1' when (reset_needed_zz  = '1' and phy_mode = '0')   or
-                       usbreg_pll_on = '1'                           or
+                       (usbreg_pll_on = '1')                         or
                        ((VBusDebounced = '1' xor pie_vbusvalid = '1') and phy_mode = '0') or
                        (dp_s         /= dp and sync_usbreg_dev_connect = '1') or
                        (dm_s         /= dm and sync_usbreg_dev_connect = '1') or
                        pie_lowpower_n = '1'                              or
                        sys_dev_wakeup_n = '0'                            or
                        (ulpi_int_lp = '1' and phy_mode = '1')            or
-                       usbreg_phy_start = '1'
+                       usbreg_phy_start = '1'                            or
+                       reset_n = '0'                                     --reset_n is derived from hrstn. It is asserted until the UTMI clock is on. 
+                                                                         --After this, it is deasserted again
                   else '0';
 
 

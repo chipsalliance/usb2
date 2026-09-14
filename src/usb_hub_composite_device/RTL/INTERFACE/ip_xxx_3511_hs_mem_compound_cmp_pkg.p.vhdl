@@ -24,7 +24,7 @@ USE usb_lib.usb_general_subcmp_pkg.all;
 package ip_xxx_3511_hs_mem_compound_cmp_pkg is
 component ip_xxx_3511_hs_mem_compound
     generic(
-        C_HUB_FIFO_SIZE                : integer                       := 128;
+        C_HUB_FIFO_SIZE                : integer                       := 172;
         C_DEV0_RAM_ADDRWIDTH           : integer                       := 15;
         C_DEV1_RAM_ADDRWIDTH           : integer                       := 15;
         C_DEV0_NBPHYSEP                : integer                       := 14;

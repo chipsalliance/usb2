@@ -24,8 +24,8 @@
 //           Each AXI port covers one entity (regs + DMA) with an AHB-side
 //           address-threshold decode to split register from DMA traffic.
 //
-//             hub_axi  (MCU, hub entity)   addr < HUB_REG_ADDR_TOP  -> hub_ahbs
-//                                          addr >= HUB_REG_ADDR_TOP -> hub_desc_ahbs_dma
+//             hub_axi  (MCU, hub entity)   -> hub_ahbs (single slave: regs and
+//                                            the descriptor flip-flop array)
 //             dev0_axi (MCU, USBDC0)       addr < DEV0_REG_ADDR_TOP -> dev0_ahbs
 //                                          addr >= DEV0_REG_ADDR_TOP-> dev0_ahbs_dma
 //             dev1_axi (SoC-uC, USBDC1)   addr < DEV1_REG_ADDR_TOP -> dev1_ahbs
@@ -40,20 +40,41 @@
 // VERSION  DATE        AUTHOR   DESCRIPTION
 // 0.1      2026-08-14  nxp      Initial integration drop; replaces 3516 wrapper
 // 0.2      2026-08-14  nxp      Entity-typed mapping: 3 x axi_to_ahb, AHB reg/DMA decode
+// 0.3      2026-09-04  nxp      Hub descriptor store migrated from external SRAM +
+//                              dedicated DMA AHB port to an internal self-initializing
+//                              flip-flop array. Removes the hub_desc_mem_* SRAM port,
+//                              the 11 hub_desc_ahbs_dma_* AHB ports and tcb_clkgate_se;
+//                              widens hub_ahbs_haddr to [9:2]; splits the per-device
+//                              generics. See docs/usb_hub_ram_to_flipflop_migration.md
 // -------------------------------------------------------------------------
 
 module ip_xxx_3511_hs_mem_compound_wrapper
   import axi_pkg::*;
 #(
+  // Number of 32-bit words in the hub descriptor flip-flop array. Must match
+  // the IP default (172) unless the IP is reconfigured; it sets the width of
+  // hub_ahbs_haddr and therefore the hub register aperture.
+  parameter int unsigned  C_HUB_FIFO_SIZE           = 172,
+
   // ---- SRAM configuration -------------------------------------------------
-  parameter int unsigned  RAM_ADDRWIDTH             = 9,
+  // Per-device EP-list / data-buffer SRAM address width. The IP splits this
+  // into C_DEV0_RAM_ADDRWIDTH / C_DEV1_RAM_ADDRWIDTH; 
+  parameter int unsigned  C_DEV0_RAM_ADDRWIDTH      = 9,
+  parameter int unsigned  C_DEV1_RAM_ADDRWIDTH      = 9,
 
   // ---- USB IP configuration (forwarded to VHDL entity generics) ----------
-  parameter int unsigned  C_NBPHYSEP                = 14,
+  // C_DEV0_NBPHYSEP and C_DEV1_NBPHYSEP defines the number of physical endpoints
+  // This can be different for both FW programmable devices
+  // The value for these parameters must be a multiple of 2.
+  // Note: the package constant C_NBPHYSEP is now hard-coded to 2 for the hub
+  // itself and is unrelated to these two per-device values.
+  parameter int unsigned  C_DEV0_NBPHYSEP           = 14,
+  parameter int unsigned  C_DEV1_NBPHYSEP           = 14,
   parameter int unsigned  C_EPUB                    = 32,
   parameter int unsigned  C_DAUB                    = 32,
   parameter int unsigned  C_DALB                    = 17,
   // boolean generics: 1 = TRUE, 0 = FALSE
+  // Applied to both devices; the IP now takes these per device.
   parameter int unsigned  C_SINGLE_BUFFER_SUPPORTED = 1,
   parameter int unsigned  C_DOUBLE_BUFFER_SUPPORTED = 1,
   parameter int unsigned  C_TOGGLE_REG_READABLE     = 1,
@@ -259,14 +280,11 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   input  logic                              dev1_axi_bready,
 
   // =========================================================================
-  // Hub descriptor SRAM interface  (hub ROM/RAM for descriptors + SETUP table)
+  // NOTE: the hub descriptor SRAM interface (hub_desc_mem_*) has been removed.
+  // The hub descriptor store is now an internal flip-flop array inside the IP
+  // that self-initializes from a ROM constant at reset, so there is no longer
+  // an external memory to attach nor a dedicated descriptor DMA AHB port.
   // =========================================================================
-  input  logic [63:0]                       hub_desc_mem_q,
-  output logic [63:0]                       hub_desc_mem_d,
-  output logic                              hub_desc_mem_cs,
-  output logic [RAM_ADDRWIDTH-1:0]          hub_desc_mem_a,
-  output logic                              hub_desc_mem_web_out,
-  output logic [63:0]                       hub_desc_mem_bsel,
 
   // =========================================================================
   // USBDC0 SRAM interface  (MCU-owned device controller EP list + data buf)
@@ -356,7 +374,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   // DFT / testability
   // =========================================================================
   input  logic                              testmode,
-  input  logic                              tcb_clkgate_se,
   input  logic                              async_disable
 );
 
@@ -364,7 +381,18 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   // Internal constants
   // =========================================================================
 
-  localparam DMA_AHB_ADDR_W = RAM_ADDRWIDTH + 5;
+  // Byte-address width of the per-device DMA AHB ports. The IP encodes a byte
+  // address over a 64-bit SRAM, so the word address is extended by 3 bits, not
+  // 5. This matches the entity declaration
+  // dev0/1_ahbs_dma_haddr(C_DEVn_RAM_ADDRWIDTH-1+3 downto 0).
+  localparam C_DEV0_DMA_AHB_ADDR_W = C_DEV0_RAM_ADDRWIDTH + 3;
+  localparam C_DEV1_DMA_AHB_ADDR_W = C_DEV1_RAM_ADDRWIDTH + 3;
+
+  // Word-address width of the hub register/descriptor AHB port. The entity
+  // declares hub_ahbs_haddr(log2(C_HUB_FIFO_SIZE)-1+2 downto 2), so with the
+  // default C_HUB_FIFO_SIZE = 172 this is $clog2(172) = 8 word bits, i.e.
+  // hub_ahb_haddr[9:2].
+  localparam HUB_AHB_WORD_ADDR_W = $clog2(C_HUB_FIFO_SIZE);
 
   // =========================================================================
   // Internal AHB bus signals produced by the three AXI-to-AHB converters
@@ -659,44 +687,27 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   // =========================================================================
 
   // -------------------------------------------------------------------------
-  // Hub entity: hub_axi -> hub_ahbs (regs) + hub_desc_ahbs_dma (DMA)
+  // Hub entity: hub_axi -> hub_ahbs
   // -------------------------------------------------------------------------
+  // The hub descriptor store is now an internal self-initializing flip-flop
+  // array, so the dedicated descriptor DMA AHB port is gone. The hub entity
+  // exposes exactly one AHB slave (hub_ahbs) whose word address is
+  // hub_ahbs_haddr[HUB_AHB_WORD_ADDR_W+1:2]. There is therefore nothing left
+  // to decode or to multiplex on this entity: hsel and the response signals
+  // pass straight through.
   logic hub_reg_sel_comb;
-  logic hub_dma_sel_comb;
-  logic hub_reg_sel_dphase;  // registered: 1=reg port active in data phase
 
-  // Compare against the intra-entity offset (low-order bits) rather than
-  // the full absolute AXI address, which would always fail the "< TOP"
-  // test for real SoC addresses and permanently misroute register writes
-  // to the DMA sub-port.
-  assign hub_reg_sel_comb = hub_ahb_hsel & (hub_ahb_haddr[REG_ADDR_OFFSET_BITS-1:0] < HUB_REG_ADDR_TOP[REG_ADDR_OFFSET_BITS-1:0]);
-  assign hub_dma_sel_comb = hub_ahb_hsel & (hub_ahb_haddr[REG_ADDR_OFFSET_BITS-1:0] >= HUB_REG_ADDR_TOP[REG_ADDR_OFFSET_BITS-1:0]);
+  assign hub_reg_sel_comb = hub_ahb_hsel;
 
-  always_ff @(posedge hub_axi_aclk or negedge hub_axi_aresetn) begin
-    if (!hub_axi_aresetn)
-      hub_reg_sel_dphase <= 1'b1;
-    else if (hub_ahb_htrans[1] & hub_ahb_hreadymux)
-      hub_reg_sel_dphase <= hub_reg_sel_comb;
-  end
-
-  // Response wires from hub IP sub-ports
+  // Response wires from the hub IP register port
   logic [AXI_DATA_WIDTH-1:0]   hub_ahbs_hrdata_w;
   logic                        hub_ahbs_hreadyout_w;
   logic [1:0]                  hub_ahbs_hresp_w;
-  logic [AXI_DATA_WIDTH-1:0]   hub_desc_dma_hrdata_w;
-  logic                        hub_desc_dma_hreadyout_w;
-  logic [1:0]                  hub_desc_dma_hresp_w;
 
   always_comb begin
-    if (hub_reg_sel_dphase) begin
-      hub_ahb_hrdata    = hub_ahbs_hrdata_w;
-      hub_ahb_hreadyout = hub_ahbs_hreadyout_w;
-      hub_ahb_hresp     = hub_ahbs_hresp_w;
-    end else begin
-      hub_ahb_hrdata    = hub_desc_dma_hrdata_w;
-      hub_ahb_hreadyout = hub_desc_dma_hreadyout_w;
-      hub_ahb_hresp     = hub_desc_dma_hresp_w;
-    end
+    hub_ahb_hrdata    = hub_ahbs_hrdata_w;
+    hub_ahb_hreadyout = hub_ahbs_hreadyout_w;
+    hub_ahb_hresp     = hub_ahbs_hresp_w;
   end
 
   // -------------------------------------------------------------------------
@@ -787,24 +798,36 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   logic [1:0] unused_dma_dword_sel_w;
   logic       unused_dma_write_access_w;
 
+  // AHB_DATAWIDTH and RAM_DATAWIDTH no longer exist: the IP hard-codes the
+  // AHB data bus to 32 bits and the per-device SRAM to 64 bits. RAM_ADDRWIDTH
+  // has been split into C_DEV0_RAM_ADDRWIDTH / C_DEV1_RAM_ADDRWIDTH; both are
+  // driven from the wrapper's single RAM_ADDRWIDTH so the two SoC SRAM
+  // instances keep their current geometry (do NOT take the IP default of 15,
+  // that would silently widen dev0/1_mem_a). The buffer/toggle booleans and
+  // the physical endpoint count are likewise per device now.
   ip_xxx_3511_hs_mem_compound #(
-    .AHB_DATAWIDTH                (AXI_DATA_WIDTH),       // must be 32
-    .RAM_DATAWIDTH                (64),                   // fixed 64-bit SRAM
-    .RAM_ADDRWIDTH                (RAM_ADDRWIDTH),        // 9 default
-    .C_NBPHYSEP_ARM               (C_NBPHYSEP),
-    .C_EPUB                       (C_EPUB),
-    .C_DAUB                       (C_DAUB),
-    .C_DALB                       (C_DALB),
-    .C_EPFIFO_PAGE                (C_EPFIFO_PAGE),
-    .C_DATAFIFO_PAGE              (C_DATAFIFO_PAGE),
-    .C_SINGLE_BUFFER_SUPPORTED    (C_SINGLE_BUFFER_SUPPORTED),
-    .C_DOUBLE_BUFFER_SUPPORTED    (C_DOUBLE_BUFFER_SUPPORTED),
-    .C_TOGGLE_REG_READABLE        (C_TOGGLE_REG_READABLE),
-    .C_PLL_ENABLE                 (0),    // FALSE: no on-chip PLL
-    .C_ULPI_SUPPORT               (1),    // TRUE
-    .C_UTMI_SUPPORT               (1),    // TRUE
-    .C_EXTEND_TX_DELAY            (1),    // TRUE
-    .G_SIM_CHIRP_TIMERS           (G_SIM_CHIRP_TIMERS)
+    .C_HUB_FIFO_SIZE                (C_HUB_FIFO_SIZE),
+    .C_DEV0_RAM_ADDRWIDTH           (C_DEV0_RAM_ADDRWIDTH),
+    .C_DEV1_RAM_ADDRWIDTH           (C_DEV1_RAM_ADDRWIDTH),
+    .C_DEV0_NBPHYSEP                (C_DEV0_NBPHYSEP),
+    .C_DEV1_NBPHYSEP                (C_DEV1_NBPHYSEP),
+    .C_EPUB                         (C_EPUB),
+    .C_DAUB                         (C_DAUB),
+    .C_DALB                         (C_DALB),
+    .C_EPFIFO_PAGE                  (C_EPFIFO_PAGE),
+    .C_DATAFIFO_PAGE                (C_DATAFIFO_PAGE),
+    .C_DEV0_SINGLE_BUFFER_SUPPORTED (C_SINGLE_BUFFER_SUPPORTED),
+    .C_DEV0_DOUBLE_BUFFER_SUPPORTED (C_DOUBLE_BUFFER_SUPPORTED),
+    .C_DEV0_TOGGLE_REG_READABLE     (C_TOGGLE_REG_READABLE),
+    .C_DEV1_SINGLE_BUFFER_SUPPORTED (C_SINGLE_BUFFER_SUPPORTED),
+    .C_DEV1_DOUBLE_BUFFER_SUPPORTED (C_DOUBLE_BUFFER_SUPPORTED),
+    .C_DEV1_TOGGLE_REG_READABLE     (C_TOGGLE_REG_READABLE),
+    .C_PLL_ENABLE                   (0),    // FALSE: no on-chip PLL
+    // C_PLL_DIVIDER left at the IP default: C_PLL_ENABLE is FALSE
+    .C_ULPI_SUPPORT                 (1),    // TRUE
+    .C_UTMI_SUPPORT                 (1),    // TRUE
+    .C_EXTEND_TX_DELAY              (1),    // TRUE
+    .G_SIM_CHIRP_TIMERS             (G_SIM_CHIRP_TIMERS)
   ) u_hub_compound (
 
     // ---- Clock / Reset ----
@@ -812,10 +835,11 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .hresetn                       (hub_axi_aresetn),
     .ahbs_resetn                   (hub_axi_aresetn),
 
-    // ---- Hub control register AHB port (hub_ahbs) ----
-    // hub_axi drives this port when addr < HUB_REG_ADDR_TOP.
-    // haddr[5:2] only: IP register map is 4-bit wide.
-    .hub_ahbs_haddr                (hub_ahb_haddr[5:2]),
+    // ---- Hub control register / descriptor AHB port (hub_ahbs) ----
+    // Sole hub AHB slave: registers AND the descriptor flip-flop array are
+    // reached through it. Word address width is log2(C_HUB_FIFO_SIZE) = 8,
+    // i.e. hub_ahb_haddr[9:2] for the default C_HUB_FIFO_SIZE = 172.
+    .hub_ahbs_haddr                (hub_ahb_haddr[HUB_AHB_WORD_ADDR_W+1:2]),
     .hub_ahbs_htrans               (hub_reg_sel_comb ? hub_ahb_htrans : 2'b00),
     .hub_ahbs_hwrite               (hub_ahb_hwrite),
     .hub_ahbs_hwdata               (hub_ahb_hwdata[31:0]),
@@ -825,27 +849,9 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .hub_ahbs_hreadyout            (hub_ahbs_hreadyout_w),
     .hub_ahbs_hresp                (hub_ahbs_hresp_w),
 
-    // ---- Hub descriptor DMA AHB port (hub_desc_ahbs_dma) ----
-    // hub_axi drives this port when addr >= HUB_REG_ADDR_TOP.
-    .hub_desc_ahbs_dma_haddr       (hub_ahb_haddr[DMA_AHB_ADDR_W-1:0]),
-    .hub_desc_ahbs_dma_htrans      (hub_dma_sel_comb ? hub_ahb_htrans : 2'b00),
-    .hub_desc_ahbs_dma_hwrite      (hub_ahb_hwrite),
-    .hub_desc_ahbs_dma_hwdata      (hub_ahb_hwdata),
-    .hub_desc_ahbs_dma_hsel        (hub_dma_sel_comb),
-    .hub_desc_ahbs_dma_hreadyin    (hub_ahb_hreadymux),
-    .hub_desc_ahbs_dma_hrdata      (hub_desc_dma_hrdata_w),
-    .hub_desc_ahbs_dma_hreadyout   (hub_desc_dma_hreadyout_w),
-    .hub_desc_ahbs_dma_hresp       (hub_desc_dma_hresp_w),
-    .hub_desc_ahbs_dma_hsize       (hub_ahb_hsize),
-    .hub_desc_ahbs_dma_hburst      (hub_ahb_hburst),
-
-    // ---- Hub descriptor SRAM ----
-    .hub_desc_mem_q                (hub_desc_mem_q),
-    .hub_desc_mem_d                (hub_desc_mem_d),
-    .hub_desc_mem_cs               (hub_desc_mem_cs),
-    .hub_desc_mem_a                (hub_desc_mem_a),
-    .hub_desc_mem_web_out          (hub_desc_mem_web_out),
-    .hub_desc_mem_bsel             (hub_desc_mem_bsel),
+    // NOTE: hub_desc_ahbs_dma_* and hub_desc_mem_* no longer exist. The
+    // descriptor store is an internal flip-flop array initialized from a ROM
+    // constant at reset, reachable through hub_ahbs above.
 
     // ---- USBDC0 control register AHB port (dev0_ahbs) ----
     // dev0_axi drives this port when addr < DEV0_REG_ADDR_TOP.
@@ -974,9 +980,10 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .USB_self_powered              (USB_self_powered),
 
     // ---- DFT ----
+    // tcb_clkgate_se removed: the IP no longer exposes a scan clock-gate
+    // enable now that the hub descriptor SRAM is gone.
     .async_disable                 (async_disable),
     .testmode                      (testmode),
-    .tcb_clkgate_se                (tcb_clkgate_se),
 
     .usb_dma_dword_selection       (unused_dma_dword_sel_w),
     .usb_dma_write_access          (unused_dma_write_access_w)

@@ -768,7 +768,7 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
        if C_SINGLE_BUFFER_SUPPORTED and C_DOUBLE_BUFFER_SUPPORTED then
          for i in 0 to C_NBPHYSEP-1 loop
            if dma_set_int = '1' and dma_clear_skip = '0'
-                                and dma_physepnr = i+2
+                                and i = dma_physepnr-2
                                 and reg_ep_doublebuffer(i+2) = '1' then
              bufinuse(i) <= not(bufinuse(i));
            end if;
@@ -776,7 +776,7 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
        elsif C_DOUBLE_BUFFER_SUPPORTED then
          for i in 0 to C_NBPHYSEP-1 loop
            if dma_set_int = '1' and dma_clear_skip = '0'
-                                and dma_physepnr = i+2 then
+                                and i = dma_physepnr-2 then
              bufinuse(i) <= not(bufinuse(i));
            end if;
          end loop;

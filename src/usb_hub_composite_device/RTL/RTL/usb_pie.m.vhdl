@@ -24,7 +24,6 @@ USE usb_lib.usb_subcmp_pkg.all;
 entity usb_pie is
       generic (
       ULPI_SUPPORT          : boolean := TRUE;
-      UTMI_SUPPORT          : boolean := TRUE;
       USB_DATAWIDTH         : integer := 64;
       C_NBDEV               : integer := 1;
       C_NBPHYSEP            : integer := 14;
@@ -143,7 +142,6 @@ entity usb_pie is
          ulpi_nxt                     : in  std_logic;
          ulpi_pwrctrl_wakeup          : in std_logic;
 
-         VBusDebounced                : in std_logic;
          pie_dev_selected             : out integer range 0 to C_NBDEV - 1;
 
          --fpga debug
@@ -167,9 +165,9 @@ constant PID_ACK   : std_logic_vector(3 downto 0) := "0010";  -- Receiver accept
 constant PID_NAK   : std_logic_vector(3 downto 0) := "1010";  -- Cannot accept or transmit data
 constant PID_STALL : std_logic_vector(3 downto 0) := "1110";  -- EP halted or control pipe request not supported
 constant PID_NYET  : std_logic_vector(3 downto 0) := "0110";  -- No response from receiver
-constant PID_PRE   : std_logic_vector(3 downto 0) := "1100";  -- Host issued preamble to enable LS
-constant PID_ERR   : std_logic_vector(3 downto 0) := "1100";  -- Split transaction errror handshake
-constant PID_SPLIT : std_logic_vector(3 downto 0) := "1000";  -- HS split transaction token
+--constant PID_PRE   : std_logic_vector(3 downto 0) := "1100";  -- Host issued preamble to enable LS
+--constant PID_ERR   : std_logic_vector(3 downto 0) := "1100";  -- Split transaction errror handshake
+--constant PID_SPLIT : std_logic_vector(3 downto 0) := "1000";  -- HS split transaction token
 constant PID_PING  : std_logic_vector(3 downto 0) := "0100";  -- HS flow control probe for bulk/control EP
 constant PID_EXT   : std_logic_vector(3 downto 0) := "0000";  -- Protocol extension token
 
@@ -1540,7 +1538,7 @@ begin
 end process bus_event_fsm_clk_proc;
 
 
-bus_event_to_phy_comb_proc : process (bus_event_state_nxt,usbreg_pll_on,txvalid_pkt_nxt,txdata_pkt_nxt,usbreg_phy_test_mode,VBusDebounced,usbreg_dev_connect)
+bus_event_to_phy_comb_proc : process (bus_event_state_nxt,usbreg_pll_on,txvalid_pkt_nxt,txdata_pkt_nxt,usbreg_phy_test_mode,usbreg_dev_connect)
 begin
   -- default values
 
@@ -1890,7 +1888,7 @@ end process bus_event_decod_reg_clk_proc;
 -- to store the info, we have added one state per case in the FSM.
 -- By concentrating the "storage"in the FSM, the total nr of registers should be optimized
 
-packet_handling_fsm_comb_proc : process(packet_handling_state_r,rxactive,rxvalid,rxerror,rxdata,pid_nxt,new_sof_vld,
+packet_handling_fsm_comb_proc : process(packet_handling_state_r,rxactive,rxvalid,rxerror,rxdata,pid_nxt,
 epinfo_valid,epinfo_disabled,epinfo_toggle,epinfo_txdata_valid,req_handshake_r,timer_packet_handling_r,
 crc5_valid_nxt,pid_r,epinfo_iso,epinfo_stall,epinfo_active,ep_r,txready,epinfo_nbytes,crc16_valid_nxt,ignore_data_r,data_byte_cnt,
 txdata_req_r,dev_speed_r,epinfo_req_r,packetsize,epinfo_setup_r,iso_in_pending_r,iso_out_pending_r,iso_transact_cnt_down,
@@ -1898,51 +1896,51 @@ iso_mdata_cnt_up,bus_event_state_r,rxdata_16,usbreg_deviceenabled,usbreg_usbaddr
 usbreg_lpm_hird_sw,lpm_hird_hw_r,usbreg_lpm_nyet,usbreg_lpm_sup,usbreg_phy_test_mode,linkstate_r,lpm_init_valid_r,epinfo_maxpacket,
 eop_rx,eop_tx,sop_start,sop_det_r)
 
-
+-- Removed procedure and instantiated code directly in process to fix lint error.
 -- DOC_BEGIN: Procedure SetError
-    -- SetError generates an error of the specified type.
-    procedure SetError(SetErrorType: T_PACKET_ERROR_enum) is
-    begin
-
-      case SetErrorType is
-        when ERROR_NO_ERROR         => errortype <= "0000";
-        when ERROR_PID_ENCODING     => errortype <= "0001";
-        when ERROR_PID_UNKNOWN      => errortype <= "0010";
-        when ERROR_PACKET_UNEXPECTED=> errortype <= "0011";
-        when ERROR_TOKEN_CRC        => errortype <= "0100";
-        when ERROR_DATA_CRC         => errortype <= "0101";
-        when ERROR_TIMEOUT          => errortype <= "0110";
-        when ERROR_BABBLE           => errortype <= "0111";
-        when ERROR_TR_EOP           => errortype <= "1000";
-        when ERROR_SENT_RECEIVED_NAK=> errortype <= "1001";
-        when ERROR_SENT_STALL       => errortype <= "1010";
-        when ERROR_OVERRUN          => errortype <= "1011";
-        when ERROR_SENT_EMPTYPACK   => errortype <= "1100";
-        when ERROR_BITSTUFF_ERROR   => errortype <= "1101";
-        when ERROR_SYNC_ERROR       => errortype <= "1110";
-        when others --Wrong data toggle
-                                    => errortype <= "1111";
-      end case;
-
-      set_pie_error       <= '1';
-      set_pie_endtransfer <= '1';
-      clear_pie_success <= '1';
-      clear_iso_in_pending <= '1';
-      clear_iso_out_pending <= '1';
-      clear_iso_transact_cnt_down <= '1';
-      clear_iso_mdata_cnt_up <= '1';
-      clear_wf_ext_token_packet <= '1';
-      clear_sop_det <= '1';
-      if SetErrorType = ERROR_SENT_RECEIVED_NAK then
-        set_pie_sentNAK <= '1';
-      end if;
-    end;
-  -- DOC_END
+--    -- SetError generates an error of the specified type.
+--    procedure SetError(SetErrorType: T_PACKET_ERROR_enum) is
+--    begin
+--
+--      case SetErrorType is
+--        when ERROR_NO_ERROR         => errortype <= "0000";
+--        when ERROR_PID_ENCODING     => errortype <= "0001";
+--        when ERROR_PID_UNKNOWN      => errortype <= "0010";
+--        when ERROR_PACKET_UNEXPECTED=> errortype <= "0011";
+--        when ERROR_TOKEN_CRC        => errortype <= "0100";
+--        when ERROR_DATA_CRC         => errortype <= "0101";
+--        when ERROR_TIMEOUT          => errortype <= "0110";
+--        when ERROR_BABBLE           => errortype <= "0111";
+--        when ERROR_TR_EOP           => errortype <= "1000";
+--        when ERROR_SENT_RECEIVED_NAK=> errortype <= "1001";
+--        when ERROR_SENT_STALL       => errortype <= "1010";
+--        when ERROR_OVERRUN          => errortype <= "1011";
+--        when ERROR_SENT_EMPTYPACK   => errortype <= "1100";
+--        when ERROR_BITSTUFF_ERROR   => errortype <= "1101";
+--        when ERROR_SYNC_ERROR       => errortype <= "1110";
+--        when others --Wrong data toggle
+--                                    => errortype <= "1111";
+--      end case;
+--
+--      set_pie_error       <= '1';
+--      set_pie_endtransfer <= '1';
+--      clear_pie_success <= '1';
+--      clear_iso_in_pending <= '1';
+--      clear_iso_out_pending <= '1';
+--      clear_iso_transact_cnt_down <= '1';
+--      clear_iso_mdata_cnt_up <= '1';
+--      clear_wf_ext_token_packet <= '1';
+--      clear_sop_det <= '1';
+--      if SetErrorType = ERROR_SENT_RECEIVED_NAK then
+--        set_pie_sentNAK <= '1';
+--      end if;
+--    end;
+--  -- DOC_END
 
    variable DevAddrChecked   : boolean;
    variable var_address1     : std_logic_vector(6 downto 0);
    variable var_address2     : std_logic_vector(6 downto 0);
-   variable v_over_run_size       : integer range 0 to MAX_DATA_PACKET_SIZE+2;
+   variable v_over_run_size       : unsigned(14 downto 0);
    variable v_nbytes_prev_packets : natural range 0 to MAX_DATA_PACKET_SIZE *2;
 begin
 
@@ -2010,7 +2008,7 @@ begin
    clear_sop_det <= '0';
 
 
-   v_over_run_size:=0;
+   v_over_run_size:=(others => '0');
    v_nbytes_prev_packets:= 0;
    if bus_event_state_r = BUS_EVENT_INIT then
       packet_handling_state_nxt <= USB_PROT_WF_IDLE;
@@ -2061,12 +2059,21 @@ begin
 
             elsif req_handshake_r = '1' then  -- handshake is expected to be received from the host
                if timer_packet_handling_r = 0 then -- TIMEOUT : Start of packet of the Handshake is not received on time
-                  SetError(ERROR_TIMEOUT);
-                  packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                  --SetError(ERROR_TIMEOUT);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "0110"; --ERROR_TIMEOUT
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
+                  packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                   clear_req_handshake <= '1';
-                  clear_pie_success        <= '1';
-                  set_pie_endtransfer      <= '1';
-               elsif sop_start = '1' then -- pulse event, start of packet is detected
+                elsif sop_start = '1' then -- pulse event, start of packet is detected
                   packet_handling_state_nxt <= USB_PROT_IN_WF_RX_HANDSHAKE;
                   clear_req_handshake <= '1';
                   -- Timer is reloaded and is used to avoid the FSM stays stuck forever in the next state.
@@ -2100,10 +2107,21 @@ begin
                         new_pid_vld <= '1';
                      when PID_PING =>
                         if dev_speed_r = USB_FULL_SPEED then -- FS device does not support PING Protocol and should not answer
-                           SetError(ERROR_PID_UNKNOWN);
-                           packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                           --SetError(ERROR_PID_UNKNOWN);
+                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           errortype                   <= "0010"; --ERROR_PID_UNKNOWN
+                           set_pie_error               <= '1';
+                           set_pie_endtransfer         <= '1';
+                           clear_pie_success           <= '1';
+                           clear_iso_in_pending        <= '1';
+                           clear_iso_out_pending       <= '1';
+                           clear_iso_transact_cnt_down <= '1';
+                           clear_iso_mdata_cnt_up      <= '1';
+                           clear_wf_ext_token_packet   <= '1';
+                           clear_sop_det               <= '1';
+                           packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                         else
-                           packet_handling_state_nxt <= USB_PROT_WF_TOKEN_BYTE2;
+                           packet_handling_state_nxt   <= USB_PROT_WF_TOKEN_BYTE2;
                            new_pid_vld <= '1';
                         end if;
                      when others => -- unexpected PID
@@ -2111,12 +2129,34 @@ begin
                         packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                   end case;
                else -- bad PID, Ignore the remainder packet
-                  SetError(ERROR_PID_ENCODING);
+                  --SetError(ERROR_PID_ENCODING);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "0001"; --ERROR_PID_ENCODING
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
                   packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                end if;
             elsif rxactive = '0' then -- 1st byte is not sent, wrong start of packet
-               packet_handling_state_nxt <= USB_PROT_WF_IDLE;
-               SetError(ERROR_TR_EOP);
+               --SetError(ERROR_TR_EOP);
+               --Removed procedure and moved code explicitly in desing to fix lint error
+               errortype                   <= "1000"; --ERROR_TR_EOP
+               set_pie_error               <= '1';
+               set_pie_endtransfer         <= '1';
+               clear_pie_success           <= '1';
+               clear_iso_in_pending        <= '1';
+               clear_iso_out_pending       <= '1';
+               clear_iso_transact_cnt_down <= '1';
+               clear_iso_mdata_cnt_up      <= '1';
+               clear_wf_ext_token_packet   <= '1';
+               clear_sop_det               <= '1';
+               packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
             end if;
 
          when USB_PROT_WF_TOKEN_BYTE2 =>  -- waiting For 2nd Byte of the Token Packet
@@ -2125,8 +2165,19 @@ begin
                new_token_byte2_vld <= '1';
                packet_handling_state_nxt <= USB_PROT_WF_TOKEN_BYTE3;
             elsif rxactive = '0' then -- no 2nd byte
-               packet_handling_state_nxt <= USB_PROT_WF_IDLE;
-               SetError(ERROR_TR_EOP);
+               --SetError(ERROR_TR_EOP);
+               --Removed procedure and moved code explicitly in desing to fix lint error
+               errortype                   <= "1000"; --ERROR_TR_EOP
+               set_pie_error               <= '1';
+               set_pie_endtransfer         <= '1';
+               clear_pie_success           <= '1';
+               clear_iso_in_pending        <= '1';
+               clear_iso_out_pending       <= '1';
+               clear_iso_transact_cnt_down <= '1';
+               clear_iso_mdata_cnt_up      <= '1';
+               clear_wf_ext_token_packet   <= '1';
+               clear_sop_det               <= '1';
+               packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
             end if;
 
          when USB_PROT_WF_TOKEN_BYTE3 =>  -- waiting For 3rd Byte of the Token Packet
@@ -2140,16 +2191,38 @@ begin
                            packet_handling_state_nxt <= USB_PROT_IN_WF_EOP;
                            new_inoutsetup_vld <= '1';
                         else  -- PID_OUT was expected
-                           SetError(ERROR_PACKET_UNEXPECTED);
-                           packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                           --SetError(ERROR_PACKET_UNEXPECTED);
+                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
+                           set_pie_error               <= '1';
+                           set_pie_endtransfer         <= '1';
+                           clear_pie_success           <= '1';
+                           clear_iso_in_pending        <= '1';
+                           clear_iso_out_pending       <= '1';
+                           clear_iso_transact_cnt_down <= '1';
+                           clear_iso_mdata_cnt_up      <= '1';
+                           clear_wf_ext_token_packet   <= '1';
+                           clear_sop_det               <= '1';
+                           packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                         end if;
                      when PID_OUT =>
                         if iso_in_pending_r = '0' then
                            packet_handling_state_nxt <= USB_PROT_OUT_SETUP_WF_EOP;
                            new_inoutsetup_vld <= '1';
                         else  -- PID_IN was expected
-                           SetError(ERROR_PACKET_UNEXPECTED);
-                           packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                           --SetError(ERROR_PACKET_UNEXPECTED);
+                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
+                           set_pie_error               <= '1';
+                           set_pie_endtransfer         <= '1';
+                           clear_pie_success           <= '1';
+                           clear_iso_in_pending        <= '1';
+                           clear_iso_out_pending       <= '1';
+                           clear_iso_transact_cnt_down <= '1';
+                           clear_iso_mdata_cnt_up      <= '1';
+                           clear_wf_ext_token_packet   <= '1';
+                           clear_sop_det               <= '1';
+                           packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                         end if;
 
                      when PID_SETUP =>
@@ -2157,8 +2230,19 @@ begin
                            packet_handling_state_nxt <= USB_PROT_OUT_SETUP_WF_EOP;
                            new_inoutsetup_vld <= '1';
                         else  -- PID_IN/PID_OUT was expected
-                           SetError(ERROR_PACKET_UNEXPECTED);
-                           packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                           --SetError(ERROR_PACKET_UNEXPECTED);
+                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
+                           set_pie_error               <= '1';
+                           set_pie_endtransfer         <= '1';
+                           clear_pie_success           <= '1';
+                           clear_iso_in_pending        <= '1';
+                           clear_iso_out_pending       <= '1';
+                           clear_iso_transact_cnt_down <= '1';
+                           clear_iso_mdata_cnt_up      <= '1';
+                           clear_wf_ext_token_packet   <= '1';
+                           clear_sop_det               <= '1';
+                           packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                         end if;
 
                      when PID_PING =>
@@ -2166,8 +2250,19 @@ begin
                            packet_handling_state_nxt <= USB_PROT_PING_WF_EOP;
                            new_inoutsetup_vld <= '1';
                         else-- PID_IN/PID_OUT was expected
-                           SetError(ERROR_PACKET_UNEXPECTED);
-                           packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                           --SetError(ERROR_PACKET_UNEXPECTED);
+                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
+                           set_pie_error               <= '1';
+                           set_pie_endtransfer         <= '1';
+                           clear_pie_success           <= '1';
+                           clear_iso_in_pending        <= '1';
+                           clear_iso_out_pending       <= '1';
+                           clear_iso_transact_cnt_down <= '1';
+                           clear_iso_mdata_cnt_up      <= '1';
+                           clear_wf_ext_token_packet   <= '1';
+                           clear_sop_det               <= '1';
+                           packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                         end if;
 
                       when PID_EXT =>
@@ -2198,17 +2293,46 @@ begin
                         clear_iso_mdata_cnt_up <= '1';
                         packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                         if iso_in_pending_r = '1' or iso_out_pending_r = '1' then
-                        --PID_IN/PID_OUT was expected, SOF will clear all pending iso transactions.
-                           SetError(ERROR_PACKET_UNEXPECTED);
-                        end if;
+                           --PID_IN/PID_OUT was expected, SOF will clear all pending iso transactions.
+                           --SetError(ERROR_PACKET_UNEXPECTED);
+                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
+                           set_pie_error               <= '1';
+                           set_pie_endtransfer         <= '1';
+                           clear_pie_success           <= '1';
+                           clear_wf_ext_token_packet   <= '1';
+                           clear_sop_det               <= '1';
+                       end if;
                   end case;
                else  -- CRC5 not valid. Packet is ignore
-                  SetError(ERROR_TOKEN_CRC);
-                  packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                  --SetError(ERROR_TOKEN_CRC);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "0100"; --ERROR_TOKEN_CRC
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
+                  packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                end if;
             elsif rxactive = '0' then -- no 3rd byte
-               packet_handling_state_nxt <= USB_PROT_WF_IDLE;
-               SetError(ERROR_TR_EOP);
+               --SetError(ERROR_TR_EOP);
+               --Removed procedure and moved code explicitly in desing to fix lint error
+               errortype                   <= "1000"; --ERROR_TR_EOP
+               set_pie_error               <= '1';
+               set_pie_endtransfer         <= '1';
+               clear_pie_success           <= '1';
+               clear_iso_in_pending        <= '1';
+               clear_iso_out_pending       <= '1';
+               clear_iso_transact_cnt_down <= '1';
+               clear_iso_mdata_cnt_up      <= '1';
+               clear_wf_ext_token_packet   <= '1';
+               clear_sop_det               <= '1';
+               packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
             end if;
 
          when USB_PROT_IN_WF_EOP =>  -- waiting for End of Packet
@@ -2226,8 +2350,20 @@ begin
          when USB_PROT_IN_WF_EP_INFO_VALID => -- waiting for ep_info_valid signal is asserted
             if bus_event_state_r = BUS_EVENT_TEST_MODE and usbreg_phy_test_mode = "011" then-- -- Test_SE0_NAK
                -- NAK handshake must be returned
+               --SetError(ERROR_SENT_RECEIVED_NAK);
+               --Removed procedure and moved code explicitly in desing to fix lint error
+               errortype                   <= "1001"; --ERROR_SENT_RECEIVED_NAK
+               set_pie_error               <= '1';
+               set_pie_endtransfer         <= '1';
+               clear_pie_success           <= '1';
+               clear_iso_in_pending        <= '1';
+               clear_iso_out_pending       <= '1';
+               clear_iso_transact_cnt_down <= '1';
+               clear_iso_mdata_cnt_up      <= '1';
+               clear_wf_ext_token_packet   <= '1';
+               clear_sop_det               <= '1';
+               set_pie_sentNAK             <= '1';
                packet_handling_state_nxt <= USB_PROT_IN_OUT_PING_WF_TX_NAK_HANDSHAKE;
-               SetError(ERROR_SENT_RECEIVED_NAK);
             elsif epinfo_req_r = '0' then -- EP or address not valid
                packet_handling_state_nxt <= USB_PROT_WF_IDLE;
             elsif epinfo_valid = '1' then -- information from the DMA Handler is valid
@@ -2254,11 +2390,34 @@ begin
                      end if;
                   end if;
                elsif epinfo_stall = '1' and epinfo_active = '0' then -- stall handshake must be returned
-                  packet_handling_state_nxt <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
-                  SetError(ERROR_SENT_STALL);
-               elsif  epinfo_active = '0' then -- NAK handshake must be returned
+                  --SetError(ERROR_SENT_STALL);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "1010"; --ERROR_SENT_STALL
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
+                  packet_handling_state_nxt   <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
+                elsif  epinfo_active = '0' then -- NAK handshake must be returned
+                  --SetError(ERROR_SENT_RECEIVED_NAK);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "1001"; --ERROR_SENT_RECEIVED_NAK
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
+                  set_pie_sentNAK             <= '1';
                   packet_handling_state_nxt <= USB_PROT_IN_OUT_PING_WF_TX_NAK_HANDSHAKE;
-                  SetError(ERROR_SENT_RECEIVED_NAK);
                else   -- normal operation --  minimum interpacket delay is guaranteed (no timer needed)
                   data_byte_cnt_clear <= '1';
                   moved_to_tx <= '1';
@@ -2282,8 +2441,19 @@ begin
             if epinfo_req_r = '0' then -- EP or address not valid, no need to wait for timeout
                packet_handling_state_nxt <= USB_PROT_WF_IDLE;
             elsif timer_packet_handling_r = 0 then -- TIMEOUT : Data Packet or epinfo_valid is not received on time
-               SetError(ERROR_TIMEOUT);
-               packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+               --SetError(ERROR_TIMEOUT);
+               --Removed procedure and moved code explicitly in desing to fix lint error
+               errortype                   <= "0110"; --ERROR_TIMEOUT
+               set_pie_error               <= '1';
+               set_pie_endtransfer         <= '1';
+               clear_pie_success           <= '1';
+               clear_iso_in_pending        <= '1';
+               clear_iso_out_pending       <= '1';
+               clear_iso_transact_cnt_down <= '1';
+               clear_iso_mdata_cnt_up      <= '1';
+               clear_wf_ext_token_packet   <= '1';
+               clear_sop_det               <= '1';
+               packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
             elsif sop_start = '1' and sop_det_r = '0' then
             -- Start of packet is detected (pulse event). Timer is reloaded.
             -- This time, it is used to avoid the FSM stays stuck forever in this state.
@@ -2297,8 +2467,19 @@ begin
             end if;
             if rxactive= '1' then -- start of packet is/has been detected
                if rxvalid = '1' then -- 1st byte of the data packet is received before epinfo is valid
-                  SetError(ERROR_OVERRUN);
-                  packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                  --SetError(ERROR_OVERRUN);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "1011"; --ERROR_OVERRUN
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
+                  packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                elsif epinfo_req_r = '0' then -- EP or address not valid, remaining packet can be ignored
                   packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                elsif epinfo_valid = '1' then -- information from the DMA Handler is valid
@@ -2346,12 +2527,35 @@ begin
                   clear_pie_success        <= '1';
                   set_pie_endtransfer      <= '1';
                elsif epinfo_stall = '1' and epinfo_active = '0' then -- stall handshake must be returned
-                  packet_handling_state_nxt <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
-                  SetError(ERROR_SENT_STALL);
+                  --SetError(ERROR_SENT_STALL);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "1010"; --ERROR_SENT_STALL
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
+                  packet_handling_state_nxt   <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
                elsif  epinfo_active = '0' then -- NAK handshake must be returned
+                  --SetError(ERROR_SENT_RECEIVED_NAK);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "1001"; --ERROR_SENT_RECEIVED_NAK
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
+                  set_pie_sentNAK             <= '1';
                   packet_handling_state_nxt <= USB_PROT_IN_OUT_PING_WF_TX_NAK_HANDSHAKE;
-                  SetError(ERROR_SENT_RECEIVED_NAK);
-               else   -- Endpoint has space for a MaxPacketSize data payload
+                else   -- Endpoint has space for a MaxPacketSize data payload
                   packet_handling_state_nxt <= USB_PROT_OUT_SETUP_PING_WF_TX_ACK_HANDSHAKE;
                   clear_pie_success        <= '1';
                   set_pie_endtransfer      <= '1';
@@ -2427,7 +2631,18 @@ begin
                               -- a 3rd MDATA transaction is not possible whatever epinfo_nbytes
                               --unexpected PID: ignore the remainder packet,
                               -- all the data transferred during the uframe must be treated as if it had encountered an error
-                              SetError(ERROR_PID_UNKNOWN);
+                              --SetError(ERROR_PID_UNKNOWN);
+                              --Removed procedure and moved code explicitly in desing to fix lint error
+                              errortype                   <= "0010"; --ERROR_PID_UNKNOWN
+                              set_pie_error               <= '1';
+                              set_pie_endtransfer         <= '1';
+                              clear_pie_success           <= '1';
+                              clear_iso_in_pending        <= '1';
+                              clear_iso_out_pending       <= '1';
+                              clear_iso_transact_cnt_down <= '1';
+                              clear_iso_mdata_cnt_up      <= '1';
+                              clear_wf_ext_token_packet   <= '1';
+                              clear_sop_det               <= '1';
                               packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                            else
                               packet_handling_state_nxt <= USB_PROT_OUT_SETUP_RCV_DATA_PACKET;
@@ -2437,10 +2652,21 @@ begin
 
                         when PID_DATA2 => --high BW iso only, it can only be the last transaction of 3 after receiving 2 valid MDATA transactions
                            if dev_speed_r = USB_FULL_SPEED or iso_mdata_cnt_up /= "10"then -- unexpected PID
-                           --unexpected PID: ignore the remainder packet,
-                           -- all the data transferred during the uframe must be treated as if it had encountered an error
-                              SetError(ERROR_PID_UNKNOWN);
-                                packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                              --unexpected PID: ignore the remainder packet,
+                              -- all the data transferred during the uframe must be treated as if it had encountered an error
+                              --SetError(ERROR_PID_UNKNOWN);
+                              --Removed procedure and moved code explicitly in desing to fix lint error
+                              errortype                   <= "0010"; --ERROR_PID_UNKNOWN
+                              set_pie_error               <= '1';
+                              set_pie_endtransfer         <= '1';
+                              clear_pie_success           <= '1';
+                              clear_iso_in_pending        <= '1';
+                              clear_iso_out_pending       <= '1';
+                              clear_iso_transact_cnt_down <= '1';
+                              clear_iso_mdata_cnt_up      <= '1';
+                              clear_wf_ext_token_packet   <= '1';
+                              clear_sop_det               <= '1';
+                              packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                              else
                               packet_handling_state_nxt <= USB_PROT_OUT_SETUP_RCV_DATA_PACKET;
                               clear_iso_transact_cnt_down <= '1'; -- it is the last transaction of 3
@@ -2451,9 +2677,20 @@ begin
                         -- in FS iso , PID_DATA1 is not expected but must be accepted,
                         -- in High BW iso, it can only be the last transaction of 2 (after receiving 1 valid MDATA transaction)
                            if iso_mdata_cnt_up /= "01" and dev_speed_r = USB_HIGH_SPEED then -- unexpected PID
-                           --unexpected PID: ignore the remainder packet,
-                           -- all the data transferred during the uframe must be treated as if it had encountered an error
-                              SetError(ERROR_PID_UNKNOWN);
+                              --unexpected PID: ignore the remainder packet,
+                              -- all the data transferred during the uframe must be treated as if it had encountered an error
+                              --SetError(ERROR_PID_UNKNOWN);
+                              --Removed procedure and moved code explicitly in desing to fix lint error
+                              errortype                   <= "0010"; --ERROR_PID_UNKNOWN
+                              set_pie_error               <= '1';
+                              set_pie_endtransfer         <= '1';
+                              clear_pie_success           <= '1';
+                              clear_iso_in_pending        <= '1';
+                              clear_iso_out_pending       <= '1';
+                              clear_iso_transact_cnt_down <= '1';
+                              clear_iso_mdata_cnt_up      <= '1';
+                              clear_wf_ext_token_packet   <= '1';
+                              clear_sop_det               <= '1';
                               packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                            else
                               packet_handling_state_nxt <= USB_PROT_OUT_SETUP_RCV_DATA_PACKET;
@@ -2464,9 +2701,20 @@ begin
                         when PID_DATA0 =>
                            -- in High BW iso, it can only be the single transaction
                            if iso_mdata_cnt_up   /= "00" then -- unexpected PID
-                           --unexpected PID: ignore the remainder packet,
-                           -- all the data transferred during the uframe must be treated as if it had encountered an error
-                              SetError(ERROR_PID_UNKNOWN);
+                              --unexpected PID: ignore the remainder packet,
+                              -- all the data transferred during the uframe must be treated as if it had encountered an error
+                              --SetError(ERROR_PID_UNKNOWN);
+                              --Removed procedure and moved code explicitly in desing to fix lint error
+                              errortype                   <= "0010"; --ERROR_PID_UNKNOWN
+                              set_pie_error               <= '1';
+                              set_pie_endtransfer         <= '1';
+                              clear_pie_success           <= '1';
+                              clear_iso_in_pending        <= '1';
+                              clear_iso_out_pending       <= '1';
+                              clear_iso_transact_cnt_down <= '1';
+                              clear_iso_mdata_cnt_up      <= '1';
+                              clear_wf_ext_token_packet   <= '1';
+                              clear_sop_det               <= '1';
                               packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                            else
                               packet_handling_state_nxt <= USB_PROT_OUT_SETUP_RCV_DATA_PACKET;
@@ -2475,7 +2723,18 @@ begin
                            end if;
 
                         when others => --unexpected PID
-                           SetError(ERROR_PID_UNKNOWN); -- TO BE CHECKED
+                           --SetError(ERROR_PID_UNKNOWN);
+                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           errortype                   <= "0010"; --ERROR_PID_UNKNOWN
+                           set_pie_error               <= '1';
+                           set_pie_endtransfer         <= '1';
+                           clear_pie_success           <= '1';
+                           clear_iso_in_pending        <= '1';
+                           clear_iso_out_pending       <= '1';
+                           clear_iso_transact_cnt_down <= '1';
+                           clear_iso_mdata_cnt_up      <= '1';
+                           clear_wf_ext_token_packet   <= '1';
+                           clear_sop_det               <= '1';
                            packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                         end case;
 
@@ -2501,31 +2760,74 @@ begin
                            data_byte_cnt_clear <= '1';
 
                         when others => --unexpected PID, ignore the remainder packet
-                           SetError(ERROR_PID_UNKNOWN); -- TO BE CHECKED
-                           packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                           --SetError(ERROR_PID_UNKNOWN);
+                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           errortype                   <= "0010"; --ERROR_PID_UNKNOWN
+                           set_pie_error               <= '1';
+                           set_pie_endtransfer         <= '1';
+                           clear_pie_success           <= '1';
+                           clear_iso_in_pending        <= '1';
+                           clear_iso_out_pending       <= '1';
+                           clear_iso_transact_cnt_down <= '1';
+                           clear_iso_mdata_cnt_up      <= '1';
+                           clear_wf_ext_token_packet   <= '1';
+                           clear_sop_det               <= '1';
+                           packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                         end case;
                   end if;
                else  -- bad PID, Ignore the remainder packet
-                  SetError(ERROR_PID_ENCODING);
+                  --SetError(ERROR_PID_ENCODING);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "0001"; --ERROR_PID_ENCODING
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
                   packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                end if;
             elsif rxactive= '0' then  -- Unexpected EOP
-               packet_handling_state_nxt <= USB_PROT_WF_IDLE;
-               SetError(ERROR_TR_EOP);
+               --SetError(ERROR_TR_EOP);
+               --Removed procedure and moved code explicitly in desing to fix lint error
+               errortype                   <= "1000"; --ERROR_TR_EOP
+               set_pie_error               <= '1';
+               set_pie_endtransfer         <= '1';
+               clear_pie_success           <= '1';
+               clear_iso_in_pending        <= '1';
+               clear_iso_out_pending       <= '1';
+               clear_iso_transact_cnt_down <= '1';
+               clear_iso_mdata_cnt_up      <= '1';
+               clear_wf_ext_token_packet   <= '1';
+               clear_sop_det               <= '1';
+               packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
             end if;
 
 
          when USB_PROT_OUT_SETUP_RCV_DATA_PACKET => -- crc16 computing has started
 
-            v_over_run_size:= to_integer(packetsize)+2; -- v_over_run_size takes into account the 2 CRC16 bytes
+            v_over_run_size:= packetsize+to_unsigned(2,15); -- v_over_run_size takes into account the 2 CRC16 bytes
 
             if rxactive ='0' then -- EOP is detected, CRC16 should be valid
 
                if epinfo_stall = '1' and epinfo_active = '0' and crc16_valid_nxt = '1' then -- stall handshake must be returned
                  -- if rxactive = '0' then -- wait for EOP before starting inter-packet delay timer
                   if iso_out_pending_r = '0' then -- non isochronous ep
-                     packet_handling_state_nxt <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
-                     SetError(ERROR_SENT_STALL);
+                     --SetError(ERROR_SENT_STALL);
+                     --Removed procedure and moved code explicitly in desing to fix lint error
+                     errortype                   <= "1010"; --ERROR_SENT_STALL
+                     set_pie_error               <= '1';
+                     set_pie_endtransfer         <= '1';
+                     clear_pie_success           <= '1';
+                     clear_iso_in_pending        <= '1';
+                     clear_iso_out_pending       <= '1';
+                     clear_iso_transact_cnt_down <= '1';
+                     clear_iso_mdata_cnt_up      <= '1';
+                     clear_wf_ext_token_packet   <= '1';
+                     clear_sop_det               <= '1';
+                     packet_handling_state_nxt   <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
                      if dev_speed_r = USB_FULL_SPEED then
                         timer_packet_handling_nxt <= INTER_PACKET_DELAY_FS-1;
                         reload_timer_packet_handling_nxt <= '1';
@@ -2534,8 +2836,19 @@ begin
                         reload_timer_packet_handling_nxt <= '1';
                      end if;
                   else -- isochronous ep -- no handshake is returned. Data packet is not treated
-                     SetError(ERROR_PACKET_UNEXPECTED);
-                     packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                     --SetError(ERROR_PACKET_UNEXPECTED);
+                     --Removed procedure and moved code explicitly in desing to fix lint error
+                     errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
+                     set_pie_error               <= '1';
+                     set_pie_endtransfer         <= '1';
+                     clear_pie_success           <= '1';
+                     clear_iso_in_pending        <= '1';
+                     clear_iso_out_pending       <= '1';
+                     clear_iso_transact_cnt_down <= '1';
+                     clear_iso_mdata_cnt_up      <= '1';
+                     clear_wf_ext_token_packet   <= '1';
+                     clear_sop_det               <= '1';
+                     packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                   end if;
                  -- end if;
 
@@ -2543,8 +2856,20 @@ begin
                  -- NAK handshake must be returned after the data packet (epinfo_active is always ='1' for setup)
                  -- if rxactive = '0' then -- wait for EOP before starting inter-packet delay timer
                   if iso_out_pending_r = '0' then -- non isochronous ep
+                      --SetError(ERROR_SENT_RECEIVED_NAK);
+                     --Removed procedure and moved code explicitly in desing to fix lint error
+                     errortype                   <= "1001"; --ERROR_SENT_RECEIVED_NAK
+                     set_pie_error               <= '1';
+                     set_pie_endtransfer         <= '1';
+                     clear_pie_success           <= '1';
+                     clear_iso_in_pending        <= '1';
+                     clear_iso_out_pending       <= '1';
+                     clear_iso_transact_cnt_down <= '1';
+                     clear_iso_mdata_cnt_up      <= '1';
+                     clear_wf_ext_token_packet   <= '1';
+                     clear_sop_det               <= '1';
+                     set_pie_sentNAK             <= '1';
                      packet_handling_state_nxt <= USB_PROT_IN_OUT_PING_WF_TX_NAK_HANDSHAKE;
-                     SetError(ERROR_SENT_RECEIVED_NAK);
                      if dev_speed_r = USB_FULL_SPEED then
                          timer_packet_handling_nxt <= INTER_PACKET_DELAY_FS-1;
                          reload_timer_packet_handling_nxt <= '1';
@@ -2553,8 +2878,19 @@ begin
                         reload_timer_packet_handling_nxt <= '1';
                      end if;
                   else -- isochronous ep -- no handshake is returned. Data packet is not treated
-                     SetError(ERROR_PACKET_UNEXPECTED);
-                     packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                     --SetError(ERROR_PACKET_UNEXPECTED);
+                     --Removed procedure and moved code explicitly in desing to fix lint error
+                     errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
+                     set_pie_error               <= '1';
+                     set_pie_endtransfer         <= '1';
+                     clear_pie_success           <= '1';
+                     clear_iso_in_pending        <= '1';
+                     clear_iso_out_pending       <= '1';
+                     clear_iso_transact_cnt_down <= '1';
+                     clear_iso_mdata_cnt_up      <= '1';
+                     clear_wf_ext_token_packet   <= '1';
+                     clear_sop_det               <= '1';
+                     packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                   end if;
                  -- end if;
                elsif crc16_valid_nxt = '1' then
@@ -2580,7 +2916,18 @@ begin
                         set_rx_nbytes <= '1';
                         rx_nbytes      <=  std_logic_vector(data_byte_cnt(11 downto 0)-2); -- nr of data bytes = data_byte counter - 2 bytes of CRC16
                      else
-                       SetError(ERROR_DATA_IGNORED_WRONG_DATA01);
+                       --SetError(ERROR_DATA_IGNORED_WRONG_DATA01);
+                       --Removed procedure and moved code explicitly in desing to fix lint error
+                       errortype                   <= "1111"; --ERROR_DATA_IGNORED_WRONG_DATA01
+                       set_pie_error               <= '1';
+                       set_pie_endtransfer         <= '1';
+                       clear_pie_success           <= '1';
+                       clear_iso_in_pending        <= '1';
+                       clear_iso_out_pending       <= '1';
+                       clear_iso_transact_cnt_down <= '1';
+                       clear_iso_mdata_cnt_up      <= '1';
+                       clear_wf_ext_token_packet   <= '1';
+                       clear_sop_det               <= '1';
                      end if;
                   else -- isochronous ep -- no handshake is returned. Data packet is treated
                      if iso_transact_cnt_down  = "00" then -- last valid iso transaction
@@ -2605,16 +2952,38 @@ begin
                   end if;
 
                else  --  BAD CRC: Data Packet Corrupted , no  hanshake is returned
-                  packet_handling_state_nxt <= USB_PROT_WF_IDLE;
-                  SetError(ERROR_DATA_CRC);
+                  --SetError(ERROR_DATA_CRC);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "0101"; --ERROR_DATA_CRC
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
+                  packet_handling_state_nxt   <= USB_PROT_WF_IDLE;
                end if;
 
             elsif rxvalid = '1' and ignore_data_r ='0' then  -- 1 data byte is ready and PIE can accept it
-               if to_integer(data_byte_cnt) < v_over_run_size then -- prevent buffer overflow
+               if data_byte_cnt < v_over_run_size(11 downto 0) then -- prevent buffer overflow - v_over_run_size can be maximum 1026
                   data_byte_cnt_incr <= '1';
                   data_fifo_fill_rx  <= '1';
                else
-                  SetError(ERROR_OVERRUN);
+                  --SetError(ERROR_OVERRUN);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "1011"; --ERROR_OVERRUN
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
                end if;
             end if;
 
@@ -2630,7 +2999,18 @@ begin
                else
                    -- buffer underrun error, PIE will corrupt the CRC
                  packet_handling_state_nxt <= USB_PROT_BAD_IN_TX_CRC16_BYTE1;
-                 SetError(ERROR_TIMEOUT);
+                 --SetError(ERROR_TIMEOUT);
+                 --Removed procedure and moved code explicitly in desing to fix lint error
+                 errortype                   <= "0110"; --ERROR_TIMEOUT
+                 set_pie_error               <= '1';
+                 set_pie_endtransfer         <= '1';
+                 clear_pie_success           <= '1';
+                 clear_iso_in_pending        <= '1';
+                 clear_iso_out_pending       <= '1';
+                 clear_iso_transact_cnt_down <= '1';
+                 clear_iso_mdata_cnt_up      <= '1';
+                 clear_wf_ext_token_packet   <= '1';
+                 clear_sop_det               <= '1';
                end if;
             end if;
 
@@ -2658,7 +3038,18 @@ begin
                   data_fifo_fill_tx <= '1';
                else -- buffer underrun error, PIE will corrupt the CRC
                   packet_handling_state_nxt <= USB_PROT_BAD_IN_TX_CRC16_BYTE1;
-                  SetError(ERROR_TIMEOUT);
+                  --SetError(ERROR_TIMEOUT);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "0110"; --ERROR_TIMEOUT
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
                end if;
             end if;
 
@@ -2707,7 +3098,18 @@ begin
 
          when USB_PROT_IN_WF_RX_HANDSHAKE => -- only ACK handshake or No reply (==> detected via timeout) are expected behaviours
             if timer_packet_handling_r = 0 then  -- TIMEOUT : no answer from host means data error
-               SetError(ERROR_TIMEOUT);          -- timeout is still taken into account in case of rxvalid would never be set.
+               --SetError(ERROR_TIMEOUT);
+               --Removed procedure and moved code explicitly in desing to fix lint error
+               errortype                   <= "0110"; --ERROR_TIMEOUT
+               set_pie_error               <= '1';
+               set_pie_endtransfer         <= '1';
+               clear_pie_success           <= '1';
+               clear_iso_in_pending        <= '1';
+               clear_iso_out_pending       <= '1';
+               clear_iso_transact_cnt_down <= '1';
+               clear_iso_mdata_cnt_up      <= '1';
+               clear_wf_ext_token_packet   <= '1';
+               clear_sop_det               <= '1';
                packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                clear_req_handshake <= '1';
                clear_pie_success        <= '1';
@@ -2720,16 +3122,33 @@ begin
                         set_pie_success        <= '1';
                         set_pie_endtransfer    <= '1';
                      when others => -- unexpected PID
-                        SetError(ERROR_PID_UNKNOWN); -- TO BE CHECKED
+                        --SetError(ERROR_PID_UNKNOWN);
+                        --Removed procedure and moved code explicitly in desing to fix lint error
+                        errortype                   <= "0010"; --ERROR_PID_UNKNOWN
+                        set_pie_error               <= '1';
+                        set_pie_endtransfer         <= '1';
+                        clear_pie_success           <= '1';
+                        clear_iso_in_pending        <= '1';
+                        clear_iso_out_pending       <= '1';
+                        clear_iso_transact_cnt_down <= '1';
+                        clear_iso_mdata_cnt_up      <= '1';
+                        clear_wf_ext_token_packet   <= '1';
+                        clear_sop_det               <= '1';
                         packet_handling_state_nxt <= USB_PROT_WF_IDLE;
-                        clear_pie_success        <= '1';
-                        set_pie_endtransfer    <= '1';
                    end case;
                else -- bad PID, Ignore the remainder packet
-                   SetError(ERROR_PID_ENCODING);
-                   packet_handling_state_nxt <= USB_PROT_WF_IDLE;
-                   clear_pie_success        <= '1';
-                   set_pie_endtransfer    <= '1';
+                  --SetError(ERROR_PID_ENCODING);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "0001"; --ERROR_PID_ENCODING
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                end if;
             end if;
 
@@ -2770,11 +3189,32 @@ begin
                      new_pid_vld <= '1';
 
                   when others => -- unexpected PID
-                     SetError(ERROR_PID_UNKNOWN);
+                      --SetError(ERROR_PID_UNKNOWN);
+                      --Removed procedure and moved code explicitly in desing to fix lint error
+                      errortype                   <= "0010"; --ERROR_PID_UNKNOWN
+                      set_pie_error               <= '1';
+                      set_pie_endtransfer         <= '1';
+                      clear_pie_success           <= '1';
+                      clear_iso_in_pending        <= '1';
+                      clear_iso_out_pending       <= '1';
+                      clear_iso_transact_cnt_down <= '1';
+                      clear_iso_mdata_cnt_up      <= '1';
+                      clear_wf_ext_token_packet   <= '1';
+                      clear_sop_det               <= '1';
                       packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                   end case;
                else -- bad PID, Ignore the remainder packet
-                  SetError(ERROR_PID_ENCODING);
+                  --SetError(ERROR_PID_ENCODING);
+                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  errortype                   <= "0001"; --ERROR_PID_ENCODING
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
                   packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                end if;
             end if;
@@ -2811,13 +3251,23 @@ begin
                      set_lpm_init_valid <= '1';
                   end if;
                 else  -- CRC5 not valid. Packet is ignore
-                   SetError(ERROR_TOKEN_CRC);
+                   --SetError(ERROR_TOKEN_CRC);
+                   --Removed procedure and moved code explicitly in desing to fix lint error
+                   errortype                   <= "0100"; --ERROR_TOKEN_CRC
+                   set_pie_error               <= '1';
+                   set_pie_endtransfer         <= '1';
+                   clear_pie_success           <= '1';
+                   clear_iso_in_pending        <= '1';
+                   clear_iso_out_pending       <= '1';
+                   clear_iso_transact_cnt_down <= '1';
+                   clear_iso_mdata_cnt_up      <= '1';
+                   clear_wf_ext_token_packet   <= '1';
+                   clear_sop_det               <= '1';
                    packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                 end if;
              elsif rxactive = '0' then -- no 3rd byte
                 packet_handling_state_nxt <= USB_PROT_WF_IDLE;
             end if;
-
 
          when others =>
             packet_handling_state_nxt <= USB_PROT_WF_IDLE;

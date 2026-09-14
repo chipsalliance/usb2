@@ -60,6 +60,7 @@ port (
       ep0_windex        : out std_logic_vector(15 downto 0);
       ep0_class_rdata   : in  std_logic_vector(C_DATAWIDTH-1 downto 0);
       ep0_class_addr    : out std_logic_vector( 3 downto 0);
+      ep0_class_stall   : in  std_logic_vector(C_NBDEV-1 downto 0);
       
       -- rom interface
       ep0_mem_req       : out std_logic;
@@ -115,7 +116,6 @@ signal ep0_remote_wake_enabled_int : std_logic_vector(C_NBDEV-1 downto 0);
 
 signal ep0_out_active_int : std_logic;
 signal ep0_in_active_int  : std_logic;
-signal ep0_out_stall      : std_logic;
 signal ep0_in_stall       : std_logic;
 
 
@@ -240,6 +240,7 @@ begin
               setup_decode_state        <= SETUP_DONE;
               ep0_setupdone_int(device) <= '1';
               setup_request             <= (others => '0'); -- Clear setup_request such that nothing else is triggered
+                                                            -- Not setting the active bits for EP0 IN and OUT will return a STALL handshake
             else
               setup_decode_state    <= READ_SETUP_LSB;
               setup_mem_req         <= '1';
@@ -283,8 +284,8 @@ begin
   end process PROC_SETUP_DECODE;
 
   ep0_setupdone    <= ep0_setupdone_int;
-  ep0_out_active   <= ep0_out_active_int and not(ep0_out_stall);
-  ep0_in_active    <= ep0_in_active_int and not(ep0_in_stall);
+  ep0_out_active   <= ep0_out_active_int and not(ep0_class_stall(device));
+  ep0_in_active    <= ep0_in_active_int and not(ep0_in_stall) and not(ep0_class_stall(device)); --Active bit is not set when a pulse on ep0_in_stall or ep0_class_stall is generated
 
   ep0_request      <= setup_request;
   ep0_setup_dir    <= setup_bytes(device)(7) when device < C_NBDEV else '0';
@@ -314,8 +315,7 @@ begin
     clear_remote_wake_enabled <= '0';
     set_usb_phy_test_mode     <= '0';
     setup_data      <= setup_bytes(device)(31 downto 0);
-    ep0_out_stall <= '0';
-    ep0_in_stall  <= '0';
+    ep0_in_stall    <= '0';
 
     if setup_bytes(device)(39) = EP_IN then
       var_offset := to_integer(unsigned(setup_bytes(device)(35 downto 32)) * 4) + 2;

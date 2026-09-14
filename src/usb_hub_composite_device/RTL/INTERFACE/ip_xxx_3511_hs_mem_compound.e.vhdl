@@ -23,11 +23,12 @@ USE usb_lib.usb_general_subcmp_pkg.all;
 
 entity ip_xxx_3511_hs_mem_compound is
   generic(
-          C_HUB_FIFO_SIZE           : integer := 172; --Number of 32-bit words in HUB DESCRIPTOR FIFO. Maximum allowed value is 8096.
+          C_HUB_FIFO_SIZE           : integer := 172; --Number of 32-bit words in HUB DESCRIPTOR FIFO. 
+                                                      --Maximum value allowed is 4096. This is 16kBytes for hub descriptor FIFO
           C_DEV0_RAM_ADDRWIDTH      : integer := 15;
           C_DEV1_RAM_ADDRWIDTH      : integer := 15;
           C_DEV0_NBPHYSEP           : integer := 14;
-          C_DEV1_NBPHYSEP           : integer := 12;
+          C_DEV1_NBPHYSEP           : integer := 14;
           
           C_EPUB                    : integer := 32;
           C_DAUB                    : integer := 32; --Requirement : C_DAUB > C_DALB
