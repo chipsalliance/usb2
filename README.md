@@ -21,4 +21,4 @@ To update the pinned submodule revision from the configured `main` branch:
 git submodule update --remote submodules/caliptra-rtl
 ```
 
-To compile : ./run_compile (VCS verion : Version W-2024.09-SP1_Full64)
+To compile: `cd tools/scripts && ./run_compile.csh` (VCS version: W-2024.09-SP1_Full64)
