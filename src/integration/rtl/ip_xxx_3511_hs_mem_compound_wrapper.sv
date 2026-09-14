@@ -48,7 +48,7 @@
 //                              widens hub_ahbs_haddr to [9:2]; splits the per-device
 //                              generics. See docs/usb_hub_ram_to_flipflop_migration.md
 // 0.4      2026-09-11  Clayton  Overhaul AXI connections to interfaces and
-//                               hide hub behine a combo AXI interface with
+//                               hide hub behind a combo AXI interface with
 //                               DEV0
 // -------------------------------------------------------------------------
 

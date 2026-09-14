@@ -15,7 +15,7 @@
 
 // Externally implemented packet SRAM for one USB device.
 mem usb_device_memory #(
-    longint unsigned MEMORY_ENTRIES = 512
+    longint unsigned MEMORY_ENTRIES = 32768
 ) {
     name = "USB Device Packet SRAM";
     desc = "Externally implemented packet SRAM for one USB device. MEMORY_ENTRIES specifies the number of implemented 64-bit rows, and software accesses MEMORY_ENTRIES*8 bytes.";
