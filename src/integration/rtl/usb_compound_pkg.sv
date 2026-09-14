@@ -28,20 +28,4 @@ package usb_compound_pkg;
   localparam int unsigned RECOVERY_LOCAL_ADDR_WIDTH = $clog2(RECOVERY_APERTURE_BYTES);
 
   localparam logic [32:0] HUB_BASE_ADDR = 33'h0000_1000;
-
-  // Convert a 64-bit SRAM row-address width into a byte-address width.
-  function automatic int unsigned mem_local_addr_width(input int unsigned ram_addr_width);
-    // A 64-bit SRAM row spans eight byte addresses.
-    return ram_addr_width + 3;
-  endfunction
-
-  // Round the implemented HUB word count up to its native power-of-two aperture.
-  function automatic logic [32:0] hub_aperture_bytes(input int unsigned fifo_size);
-    return 33'd1 << ($clog2(fifo_size) + 2);
-  endfunction
-
-  // Size the local Combo address needed to include the complete HUB aperture.
-  function automatic int unsigned combo_local_addr_width(input int unsigned fifo_size);
-    return $clog2(HUB_BASE_ADDR + hub_aperture_bytes(fifo_size));
-  endfunction
 endpackage : usb_compound_pkg

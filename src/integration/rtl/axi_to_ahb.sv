@@ -68,12 +68,10 @@ module axi_to_ahb
     localparam logic [1:0] HTRANS_NONSEQ = 2'b10;
 
     // ---------------------------------------------------------------
-    // Function: map AHB hresp to AXI resp
-    //   AHB hresp==2'b00 -> OKAY, hresp==2'b01 -> SLVERR
-    //   (AHB-Lite only defines OKAY and ERROR)
+    // Function: map AHB hresp to AXI resp.
     // ---------------------------------------------------------------
     function automatic logic [1:0] ahb_resp_to_axi(input logic [1:0] hresp);
-        return (hresp[0]) ? AXI_RESP_SLVERR : AXI_RESP_OKAY;
+        return (hresp == 2'b00) ? AXI_RESP_OKAY : AXI_RESP_SLVERR;
     endfunction
 
     // =================================================================
@@ -520,7 +518,6 @@ module axi_to_ahb
                     end
                 end
 
-                default: ;
             endcase
         end
     end
@@ -568,7 +565,9 @@ module axi_to_ahb
                               & w_fifo_rvalid_pack
                               & (last_beat ? b_resp_wready : 1'b1);
             end
-            default: ;
+            default: begin
+                ahb_htrans = HTRANS_IDLE;
+            end
         endcase
     end
 
