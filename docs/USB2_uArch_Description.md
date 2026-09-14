@@ -880,6 +880,16 @@ The following requirements apply at the current IP top-level boundary:
 
 ## Main RTL Blocks
 
+The following diagram expands the functional architecture and shows its
+mapping to the main RTL blocks and implementation-level partitions.
+
+![USB Two-Port Compound Device RTL Diagram](USB_uArch_RTL_Architecture.svg)
+
+The following subsections describe the responsibilities, connectivity, and
+implementation references of the RTL blocks shown in the diagram.
+
+---
+
 ### USB 2.0 UTMI or ULPI PHY
 
 The external PHY implements the electrical and low-level signaling interface
