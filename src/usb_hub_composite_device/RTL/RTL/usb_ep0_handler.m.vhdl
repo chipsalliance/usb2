@@ -158,7 +158,7 @@ begin
           if usbreg_setup_to_decode(device) = '1' then
             setup_decode_state <= READ_DEV_LINK;
             setup_mem_req      <= '1';
-            setup_mem_addr     <= unsigned(C_DEV_LINK_START) + to_unsigned(device,12);
+            setup_mem_addr     <= unsigned(C_DEV_LINK_START) - to_unsigned(C_NBDEV-1,12) + to_unsigned(device,12);
           else
             if device = C_NBDEV-1 then
               device <= 0;
@@ -259,12 +259,12 @@ begin
         if var_device < C_NBDEV then
           if C_DATAWIDTH = 32 then   
             if upd_dma_addr(2) = '0' then
-              setup_bytes(var_device)(31 downto  0) <= upd_dma_wdata;
+              setup_bytes(var_device)(31 downto  0) <= upd_dma_wdata(31 downto 0);
             else
-              setup_bytes(var_device)(63 downto 32) <= upd_dma_wdata;
+              setup_bytes(var_device)(63 downto 32) <= upd_dma_wdata(31 downto 0);
             end if;
           else
-            setup_bytes(var_device)(63 downto 0) <= upd_dma_wdata;
+            setup_bytes(var_device)(63 downto 0) <= upd_dma_wdata(63 downto 0);
             if C_DATAWIDTH /= 64 then
               assert false
               report "Error : C_DATAWIDTH value not supported.";
@@ -427,13 +427,13 @@ begin
   PROC_UPD_DMA_RDATA : process(ep0_mem_rdata,upd_dma_addr, ep0_mem_addr_int, ep0_class_rdata,std_req_data)
   begin
     if (C_DATAWIDTH = 32) then
-      ep0_mem_rdata_int <= ep0_mem_rdata;
+      ep0_mem_rdata_int <= ep0_mem_rdata(31 downto 0);
       if (upd_dma_addr(13) = '1') then
         upd_dma_rdata <= ep0_mem_rdata;
       elsif (upd_dma_addr(12) = '1') then
         upd_dma_rdata <= ep0_class_rdata;
       else
-        upd_dma_rdata <= std_req_data;
+        upd_dma_rdata(31 downto 0) <= std_req_data(31 downto 0);
       end if;
     else
       if (ep0_mem_addr_int(0) = '1') then 
@@ -447,7 +447,8 @@ begin
         upd_dma_rdata <= ep0_class_rdata;
       else
         -- all standard get request except GetDescriptor have wLength <= 2, so the upper bits (63:32) do not matter, just duplicate them 
-        upd_dma_rdata <= std_req_data & std_req_data ;
+        upd_dma_rdata(63 downto 32) <= std_req_data(31 downto 0); 
+        upd_dma_rdata(31 downto  0) <= std_req_data(31 downto 0);
       end if;
       if C_DATAWIDTH /= 64 then
         assert false

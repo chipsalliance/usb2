@@ -28,7 +28,8 @@ entity usb_pie is
       USB_DATAWIDTH         : integer := 64;
       C_NBDEV               : integer := 1;
       C_NBPHYSEP            : integer := 14;
-      C_EXTEND_TX_DELAY     : boolean := FALSE
+      C_EXTEND_TX_DELAY     : boolean := FALSE;
+      G_SIM_CHIRP_TIMERS    : boolean := FALSE
    );
     port (
           ----- To/From usb synchronizer ------------------------
@@ -193,18 +194,83 @@ constant LINESTATE_INCST     : std_logic_vector(1 DOWNTO 0) := "11";
 -- T_3ms can be used for several timings: -  3ms < TWTREV (3.072 ms @ 60 MHz) < 3.125 ms &  T3 (5.22.1.1 UTMI spec)
 -- - 1 ms < TDRSMUP (1.1 us @ 60 MHz) < 15 ms (5.22.3 UTMI spec) & TUCH (min 1 ms), max 7 ms
 constant T_3ms             : natural := 184320;  --  3ms < TWTREV (3.072 ms @ 60 MHz) < 3.125 ms &  T3 (5.22.1.1 UTMI spec)
+-- T_TUCH: device chirp K duration for HS detection (USB 2.0 T_UCH).
+-- Spec: 1-7 ms. When G_SIM_CHIRP_TIMERS=TRUE, scaled to 30 us so the
+-- full chirp handshake fits within VIP scaledown tdrst (~150 us).
+-- Default (FALSE): uses T_3ms (3.072 ms), which is spec-compliant.
+constant T_TUCH_SIM        : natural := 1800;   -- 30 us @ 60 MHz (sim)
+constant T_TUCH_SPEC       : natural := 184320; -- 3.072 ms @ 60 MHz (spec)
+-- T_CHIRP_DELAY: delay before device drives chirp K after detecting
+-- bus reset (SE0). When G_SIM_CHIRP_TIMERS=TRUE, reduced to 10 us.
+-- Default (FALSE): uses T_125us (125 us).
+constant T_CHIRP_DELAY_SIM  : natural := 600;   -- 10 us @ 60 MHz (sim)
+constant T_CHIRP_DELAY_SPEC : natural := 7500;  -- 125 us @ 60 MHz (spec)
+-- T_TWTFS: IDLE time in HS mode before PHY is switched back to FS mode.
+-- Default (FALSE): nominal value of 2.4 milliseconds
+-- Simulation (TRUE): reduced to minimum value of 1.0ms
+constant T_TWTFS_SIM        : natural :=  60000; -- 1.0 ms @ 60MHz (sim)
+constant T_TWTFS_SPEC       : natural := 144000; -- 1.0 ms < TWTFS (2.4 ms @60 MHz) < 2.5 ms (5.22.2.1 UTMI spec)
+-- T_TWTRSTHS: Wait time before to check if HS idle is due to USB bus reset driven or suspend mode
+constant T_TWTRSTHS_SIM     : natural :=  6000; -- 100 us @ 60 MHz) (sim)
+constant T_TWTRSTHS_SPEC    : natural := 18000; -- 100 us < TWTRSTHS (300 us @ 60 MHz)< 875 us
+-- T_SUSPEND_DET: bus-idle time before the device decides the bus is suspended.
+-- Spec value is the same 3.072 ms as T_3ms (TWTREV / T3, UTMI spec 5.22.1.1);
+-- suspend is not signalled by the host, it is inferred from absence of bus
+-- activity, so this timer is on the critical path of every suspend test.
+-- Simulation (TRUE): reduced to 200 us. The host-side verification IP already
+-- scales its own idle-to-suspend timer (tinactivity) down to 300 us, so leaving
+-- this timer at the spec value made the device roughly 10x slower to react than
+-- the host and dominated the simulated time of the suspend tests.
+-- Only the bus-idle detection (stage 1 of suspend entry) uses this constant.
+-- The bus-reset decisions keep using T_3ms, so that shortening suspend
+-- detection cannot disturb the reset-versus-suspend discrimination.
+constant T_SUSPEND_DET_SIM_FS  : natural :=  66000; -- 1100 us @ 60 MHz (sim)
+constant T_SUSPEND_DET_SIM_HS  : natural :=  12000; -- 200 us @ 60 MHz (sim)
+constant T_SUSPEND_DET_SPEC    : natural := 184320; -- 3.072 ms @ 60 MHz (spec, = T_3ms)
+-- T_TWTRSM: stage 2, and the final step, of suspend entry. Entering suspend is
+-- a two-timer sequence: once T_SUSPEND_DET expires on a J linestate the FSM
+-- moves to BUS_EVENT_WF_SUSPEND, and only when TWTRSM (= T2SUSP, UTMI spec
+-- 5.22.1.1) expires does it commit to BUS_EVENT_SUSPEND. pie_suspend is
+-- asserted, and pie_lowpower_n released, exclusively in that final state, so
+-- nothing on the clock-gating path moves while the FSM sits in WF_SUSPEND.
+-- Scaling T_SUSPEND_DET alone is therefore not sufficient: the device still
+-- needed 200 us + 3.072 ms to report suspend, later than the host verification
+-- IP waits, so suspend and remote-wakeup tests failed with the device
+-- apparently never suspending while parked in WF_SUSPEND.
+-- Simulation (TRUE): reduced to 100 us, the same value already used for the
+-- scaled T_TWTRSTHS, which keeps the suspend and reset branches symmetric.
+-- Lower bound is set by MAX_LINESTATE_DBC_CNT (3.2 us): the timer must not
+-- expire before ls_dbc can report an SE0 that would mean reset instead.
+-- 100 us leaves roughly 30x margin over that floor. Shortening this timer is
+-- otherwise safe because WF_SUSPEND is only entered on a J linestate and still
+-- leaves to BUS_EVENT_RESET on SE0, so reset detection is unaffected.
+constant T_TWTRSM_SIM       : natural :=   6000; -- 100 us @ 60 MHz (sim)
+constant T_TWTRSM_SPEC      : natural := 184320; -- 3.072 ms @ 60 MHz (spec, = T_3ms)
+
+
+function sel_nat(sim : boolean; s : natural; r : natural) return natural is
+begin
+  if sim then return s; else return r; end if;
+end function;
+
+constant T_TUCH            : natural := sel_nat(G_SIM_CHIRP_TIMERS, T_TUCH_SIM, T_TUCH_SPEC);
+constant T_CHIRP_DELAY     : natural := sel_nat(G_SIM_CHIRP_TIMERS, T_CHIRP_DELAY_SIM, T_CHIRP_DELAY_SPEC);
+constant T_TWTFS           : natural := sel_nat(G_SIM_CHIRP_TIMERS, T_TWTFS_SIM, T_TWTFS_SPEC);
+constant T_TWTRSTHS        : natural := sel_nat(G_SIM_CHIRP_TIMERS, T_TWTRSTHS_SIM, T_TWTRSTHS_SPEC);
+constant T_SUSPEND_DET_FS  : natural := sel_nat(G_SIM_CHIRP_TIMERS, T_SUSPEND_DET_SIM_FS, T_SUSPEND_DET_SPEC);
+constant T_SUSPEND_DET_HS  : natural := sel_nat(G_SIM_CHIRP_TIMERS, T_SUSPEND_DET_SIM_HS, T_SUSPEND_DET_SPEC);
+constant T_TWTRSM          : natural := sel_nat(G_SIM_CHIRP_TIMERS, T_TWTRSM_SIM, T_TWTRSM_SPEC);
+
 
 constant T_60us            : natural := 3600;  -- 60 us @ 60 MHz
 constant T_125us           : natural := 7500;  -- 125 us @ 60 MHz
 constant T_1ms             : natural := 60000;  -- 1ms @ 60 MHz
-constant T_TWTRSTHS        : natural := 18000; -- 100 us < TWTRSTHS (300 us @ 60 MHz)< 875 us
 --constant T_TDRSMUP         : natural := 66000; -- 1 ms < TDRSMUP (1.1 ms @ 60 MHz) < 15 ms (5.22.3 UTMI spec) & TUCH
 ------------------------------------------
 --BVE : SMS PHY requires a longer time to stop transmitting resume - increase it to 30 us
 --constant T_TxENDDELAY        : natural := 384;  -- UTMI Spec 4.1.5
 constant T_TxENDDELAY        : natural := 1800;  -- UTMI Spec 4.1.5
 ------------------------------------------
-constant T_TWTFS              : natural :=  144000; -- 1.0 ms < TWTFS (2.4 ms @60 MHz) < 2.5 ms (5.22.2.1 UTMI spec)
 constant T_L1_Token_Retry     : natural := 540; -- 9 us @ 60MHz -- 8us < T_L1_Token_Retry < 10 us
 
 constant MAX_BUS_EVENT_TIMER  : natural := T_3ms + 1; --  = Maximum timer value + 1 => error condition
@@ -891,8 +957,12 @@ rxdata <=  utmi_rxdata_r when phy_mode = '0' else
 rxvalid <=  utmi_rxvalid_r when phy_mode = '0' else
             ulpi_rxvalid_r;
 
+--Fix to work with USB3320 ULPI PHY
+--old code :
+--rxactive <=  utmi_rxactive_r when phy_mode = '0' else
+--             ulpi_rxactive_r;
 rxactive <=  utmi_rxactive_r when phy_mode = '0' else
-             ulpi_rxactive_r;
+             (ulpi_rxactive_r or set_ulpi_rxactive_line);
 
 rxerror <=  utmi_rxerror_r when phy_mode = '0' else
             ulpi_rxerror_r;
@@ -1192,7 +1262,7 @@ begin
                init_linestate_dbc <= '1';
                clear_lpm_wf_l1_state <= '1';
                set_lpm_l1_state <= '1';
-            elsif timer_bus_event = T_3ms and linestate = LINESTATE_J then -- IDLE for > 3ms
+            elsif timer_bus_event = T_SUSPEND_DET_FS and linestate = LINESTATE_J then -- IDLE for > T_SUSPEND_DET (3ms spec, reduced in sim)
                bus_event_state_nxt <= BUS_EVENT_WF_SUSPEND;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';
@@ -1226,7 +1296,7 @@ begin
 -- BVE : The change below is not part of the IP in LPC55s69
 --            in HS mode, the RXACTIVE signal indicates if the linestate is different from SE0. No need to explicitly check line state.
 --            elsif timer_bus_event = T_3ms and linestate = LINESTATE_SE0 then -- IDLE for > 3ms
-            elsif timer_bus_event = T_3ms then -- IDLE for > 3ms
+            elsif timer_bus_event = T_SUSPEND_DET_HS then -- IDLE for > T_SUSPEND_DET (3ms spec, reduced in sim)
                bus_event_state_nxt <= BUS_EVENT_WF_SUSPEND_OR_RST;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';
@@ -1265,7 +1335,7 @@ begin
                bus_event_state_nxt <= BUS_EVENT_WF_EOR_FS;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';
-            elsif timer_bus_event = T_125us then -- add extra delay before driving chirp K
+            elsif timer_bus_event = T_CHIRP_DELAY then -- add extra delay before driving chirp K
                bus_event_state_nxt <= BUS_EVENT_HS_DET_HSK_1;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';
@@ -1277,7 +1347,7 @@ begin
                clear_timer_bus_event <= '1';
                set_dev_fs <= '1'; -- back to FS mode
                init_linestate_dbc <= '1';
-            elsif timer_bus_event = T_3ms then  -- t= HS Reset T0 + TWTRSM (= T2SUSP) (UTMI spec 5.22.1.1)
+            elsif timer_bus_event = T_TWTRSM then  -- t= HS Reset T0 + TWTRSM (= T2SUSP) (UTMI spec 5.22.1.1, reduced in sim)
                bus_event_state_nxt <= BUS_EVENT_SUSPEND;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';
@@ -1356,7 +1426,7 @@ begin
             end if;
 
          when BUS_EVENT_HS_DET_HSK_1 => -- High Speed Detection HandShake
-            if timer_bus_event = T_3ms  then --  TUCH minimum requirement is 1ms (UTMI spec 5.22.2.1)
+            if timer_bus_event = T_TUCH  then --  TUCH minimum requirement is 1ms (UTMI spec 5.22.2.1)
                bus_event_state_nxt <= BUS_EVENT_HS_DET_HSK_2;
                clear_timer_bus_event <= '1';
                init_linestate_dbc <= '1';

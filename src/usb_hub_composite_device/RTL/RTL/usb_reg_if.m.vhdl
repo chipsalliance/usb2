@@ -80,7 +80,7 @@ port (
       dma_set_int              : in  std_logic;
       dma_physepnr             : in  integer range 0 to C_NBPHYSEP+1;
       dma_clear_skip           : in  std_logic;
-      dma_skip_ep              : in  integer range 0 to C_NBPHYSEP+1;
+      dma_skip_ep              : in  integer range 0 to 31;
       sync_busreset            : in  std_logic;
       sync_suspend             : in  std_logic;
       sync_lpm_Suspend         : in  std_logic;
@@ -761,7 +761,7 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
        end if;
 
 
-       if dma_clear_skip = '1' then
+       if (dma_clear_skip = '1') and (dma_skip_ep <= C_NBPHYSEP+1) then
          reg_ep_skip(dma_skip_ep) <= '0';
        end if;
 
@@ -822,7 +822,9 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
 
        if dma_set_int = '1' then
          if dma_clear_skip = '1' then
-           reg_ep_int_status(dma_skip_ep)  <= '1';
+           if dma_skip_ep <= C_NBPHYSEP+1 then
+             reg_ep_int_status(dma_skip_ep)  <= '1';
+           end if;
          else
            reg_ep_int_status(dma_physepnr) <= '1';
          end if;

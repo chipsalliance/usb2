@@ -46,21 +46,20 @@ configuration ip_xxx_3511_hs_mem_compound_structure_cfg of ip_xxx_3511_hs_mem_co
     for ahb_dma_slave_2 : ahb_dma_slave
       use entity usb_lib.ahb_dma_slave(rtl);
     end for;
-    for hub_desc_ahb_dma_slave : ahb_dma_slave
-      use entity usb_lib.ahb_dma_slave(rtl);
-    end for;
     for usb_ahb_slave_1 : usb_ahb_slave
       use entity usb_lib.usb_ahb_slave(rtl);
     end for;
     for usb_ahb_slave_2 : usb_ahb_slave
       use entity usb_lib.usb_ahb_slave(rtl);
     end for;
-    for hub_usb_ahb_slave_1 : usb_ahb_slave
+    for usb_ahb_slave_0 : usb_ahb_slave
       use entity usb_lib.usb_ahb_slave(rtl);
     end for;
-    --<<<< LAB rename this without full speed confusing
-    for usb_fs_mux_1 : usb_fs_mux
-      use entity usb_lib.usb_fs_mux(rtl);
+    for usb_ep0_hub_descr_1 : usb_ep0_hub_descr
+      use entity usb_lib.usb_ep0_hub_descr(rtl);
+    end for;
+    for usb_mux_1 : usb_mux
+      use entity usb_lib.usb_mux(rtl);
     end for;
     for usb_ep0_handler_1 : usb_ep0_handler
       use entity usb_lib.usb_ep0_handler(rtl);
