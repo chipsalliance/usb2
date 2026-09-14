@@ -23,11 +23,10 @@ use usb_lib.usb_general_subcmp_pkg.all;
 
 entity ahb_dma_slave is
 generic(
-        AHB_DATAWIDTH  : integer := 32;--32, 64 
-        RAM_DATAWIDTH  : integer := 64;--32, 64, 128, 256 (and must not be smaller than AHB_DATAWIDTH)
+        AHB_DATAWIDTH  : integer := 32;--The code below supports only 32. Not 64 bits.
+        RAM_DATAWIDTH  : integer := 64;--32, 64 (and must not be smaller than AHB_DATAWIDTH)
         RAM_ADDR_WIDTH : integer := 15 --256 KBytes max = 2**16 (if RAM_DATAWIDTH = 32 bits)
-                                      --               = 2**15 (if RAM_DATAWIDTH = 64 bits)
-                                      --               = 2**14 (if RAM_DATAWIDTH = 128 bits)
+                                       --               = 2**15 (if RAM_DATAWIDTH = 64 bits)
        );
 port (ahb_dma_slave_fpga : out std_logic_vector(63 downto 0); 
       --system input
@@ -50,7 +49,7 @@ port (ahb_dma_slave_fpga : out std_logic_vector(63 downto 0);
       ads_mem_bsel      : out std_logic_vector(RAM_DATAWIDTH-1 downto 0);
       --ahb slave interface
       ads_hsel          : in  std_logic;   
-      ads_haddr         : in  std_logic_vector((RAM_ADDR_WIDTH-1+5) downto 0); --+5 biggest ahb address size in case ahb=32 bits/ sram = 256 bits
+      ads_haddr         : in  std_logic_vector(RAM_ADDR_WIDTH-1+3 downto 0); --AHB byte address in case sram datawidth is 64 bits
       ads_hwrite        : in  std_logic;   
       ads_htrans        : in  std_logic_vector(1 downto 0);
       ads_hsize         : in  std_logic_vector(2 downto 0); --bit 2 is unused as max ahb size is 64 bits. 
@@ -207,30 +206,30 @@ proc_ads_hrdata : process(ahb_q, stored_addr)
 begin
   case RAM_DATAWIDTH is
     when 32 =>
-      ads_hrdata <= ahb_q;
+      ads_hrdata(31 downto 0) <= ahb_q(31 downto 0);
     when 64 =>
       if stored_addr(2) = '1' then
-        ads_hrdata <= ahb_q(63 downto 32);
+        ads_hrdata(31 downto 0) <= ahb_q(63 downto 32);
       else
-        ads_hrdata <= ahb_q(31 downto 0);
+        ads_hrdata(31 downto 0) <= ahb_q(31 downto 0);
       end if; 
     when 128 =>
       case stored_addr(3 downto 2) is
-        when "00"   => ads_hrdata <= ahb_q( 31 downto 0);
-	when "01"   => ads_hrdata <= ahb_q( 63 downto 32);
-        when "10"   => ads_hrdata <= ahb_q( 95 downto 64);
-	when others => ads_hrdata <= ahb_q(127 downto 96);
+        when "00"   => ads_hrdata(31 downto 0) <= ahb_q( 31 downto 0);
+        when "01"   => ads_hrdata(31 downto 0) <= ahb_q( 63 downto 32);
+        when "10"   => ads_hrdata(31 downto 0) <= ahb_q( 95 downto 64);
+        when others => ads_hrdata(31 downto 0) <= ahb_q(127 downto 96);
       end case; 
     when 256 =>
       case stored_addr(4 downto 2) is
-        when "000"  => ads_hrdata <= ahb_q( 31 downto   0);
-	when "001"  => ads_hrdata <= ahb_q( 63 downto  32);
-        when "010"  => ads_hrdata <= ahb_q( 95 downto  64);
-	when "011"  => ads_hrdata <= ahb_q(127 downto  96);
-        when "100"  => ads_hrdata <= ahb_q(159 downto 128);
-	when "101"  => ads_hrdata <= ahb_q(191 downto 160);
-        when "110"  => ads_hrdata <= ahb_q(223 downto 192);
-	when others => ads_hrdata <= ahb_q(255 downto 224);
+        when "000"  => ads_hrdata(31 downto 0) <= ahb_q( 31 downto   0);
+        when "001"  => ads_hrdata(31 downto 0) <= ahb_q( 63 downto  32);
+        when "010"  => ads_hrdata(31 downto 0) <= ahb_q( 95 downto  64);
+        when "011"  => ads_hrdata(31 downto 0) <= ahb_q(127 downto  96);
+        when "100"  => ads_hrdata(31 downto 0) <= ahb_q(159 downto 128);
+        when "101"  => ads_hrdata(31 downto 0) <= ahb_q(191 downto 160);
+        when "110"  => ads_hrdata(31 downto 0) <= ahb_q(223 downto 192);
+        when others => ads_hrdata(31 downto 0) <= ahb_q(255 downto 224);
       end case; 
     when others =>
       assert FALSE report "Error : RAM_DATAWIDTH value is not supported" severity error;

@@ -18,6 +18,12 @@ setenv USB_COMPILE_DIR `pwd`
 setenv USB_CFG_DIR ${USB_COMPILE_DIR}/../../src/cfg
 setenv USB_ROOT ${USB_COMPILE_DIR}/../../src
 
+if ( ! -f "${USB_ROOT}/../submodules/caliptra-rtl/src/axi/rtl/axi_if.sv" ) then
+    echo "ERROR: caliptra-rtl submodule is not initialized."
+    echo "Run: git submodule update --init --recursive"
+    exit 1
+endif
+
 #Create the lib directories if not present 
 set dirs = ( rtl )
 
@@ -65,4 +71,3 @@ set MY_GREEN    = '\e[32m'
 set MY_CLR      = '\e[m'
 echo "${MY_GREEN}Running simulation${MY_CLR}"
 ./simv -l ${USB_COMPILE_DIR}/sim.log -ucli -i ucli_script +fsdb+all=on
-

@@ -22,11 +22,9 @@ package usb_ep_config_pkg is
 
 constant C_EP_FS_MAXPACKETSIZE_NON_ISO : std_logic_vector(6 downto 0) := "1000000";
 
-constant C_DEV_LINK_START            : std_logic_vector(11 downto 0) := X"0F0";
+constant C_DEV_LINK_START            : std_logic_vector(11 downto 0) := X"00E";
 constant C_NBDEV                     : integer := 1;  -- number of hardware devices (e.g hub + hid), software device is not included
-constant C_NBPHYSEP_IN               : integer := 1;
-constant C_NBPHYSEP_OUT              : integer := 0;
-constant C_NBPHYSEP                  : integer := C_NBPHYSEP_IN + C_NBPHYSEP_OUT;
+constant C_NBPHYSEP                  : integer := 2;  -- This must be set to 2 for the hub. See definition of this field for the ARM Device
 constant C_NBBUF_OUT                 : integer := 1;
 constant C_NBBUF_IN                  : integer := 1;
 

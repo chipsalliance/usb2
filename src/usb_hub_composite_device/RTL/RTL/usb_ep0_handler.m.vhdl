@@ -60,6 +60,7 @@ port (
       ep0_windex        : out std_logic_vector(15 downto 0);
       ep0_class_rdata   : in  std_logic_vector(C_DATAWIDTH-1 downto 0);
       ep0_class_addr    : out std_logic_vector( 3 downto 0);
+      ep0_class_stall   : in  std_logic_vector(C_NBDEV-1 downto 0);
       
       -- rom interface
       ep0_mem_req       : out std_logic;
@@ -115,7 +116,6 @@ signal ep0_remote_wake_enabled_int : std_logic_vector(C_NBDEV-1 downto 0);
 
 signal ep0_out_active_int : std_logic;
 signal ep0_in_active_int  : std_logic;
-signal ep0_out_stall      : std_logic;
 signal ep0_in_stall       : std_logic;
 
 
@@ -158,7 +158,7 @@ begin
           if usbreg_setup_to_decode(device) = '1' then
             setup_decode_state <= READ_DEV_LINK;
             setup_mem_req      <= '1';
-            setup_mem_addr     <= unsigned(C_DEV_LINK_START) + to_unsigned(device,12);
+            setup_mem_addr     <= unsigned(C_DEV_LINK_START) - to_unsigned(C_NBDEV-1,12) + to_unsigned(device,12);
           else
             if device = C_NBDEV-1 then
               device <= 0;
@@ -240,6 +240,7 @@ begin
               setup_decode_state        <= SETUP_DONE;
               ep0_setupdone_int(device) <= '1';
               setup_request             <= (others => '0'); -- Clear setup_request such that nothing else is triggered
+                                                            -- Not setting the active bits for EP0 IN and OUT will return a STALL handshake
             else
               setup_decode_state    <= READ_SETUP_LSB;
               setup_mem_req         <= '1';
@@ -259,12 +260,12 @@ begin
         if var_device < C_NBDEV then
           if C_DATAWIDTH = 32 then   
             if upd_dma_addr(2) = '0' then
-              setup_bytes(var_device)(31 downto  0) <= upd_dma_wdata;
+              setup_bytes(var_device)(31 downto  0) <= upd_dma_wdata(31 downto 0);
             else
-              setup_bytes(var_device)(63 downto 32) <= upd_dma_wdata;
+              setup_bytes(var_device)(63 downto 32) <= upd_dma_wdata(31 downto 0);
             end if;
           else
-            setup_bytes(var_device)(63 downto 0) <= upd_dma_wdata;
+            setup_bytes(var_device)(63 downto 0) <= upd_dma_wdata(63 downto 0);
             if C_DATAWIDTH /= 64 then
               assert false
               report "Error : C_DATAWIDTH value not supported.";
@@ -283,8 +284,8 @@ begin
   end process PROC_SETUP_DECODE;
 
   ep0_setupdone    <= ep0_setupdone_int;
-  ep0_out_active   <= ep0_out_active_int and not(ep0_out_stall);
-  ep0_in_active    <= ep0_in_active_int and not(ep0_in_stall);
+  ep0_out_active   <= ep0_out_active_int and not(ep0_class_stall(device));
+  ep0_in_active    <= ep0_in_active_int and not(ep0_in_stall) and not(ep0_class_stall(device)); --Active bit is not set when a pulse on ep0_in_stall or ep0_class_stall is generated
 
   ep0_request      <= setup_request;
   ep0_setup_dir    <= setup_bytes(device)(7) when device < C_NBDEV else '0';
@@ -314,8 +315,7 @@ begin
     clear_remote_wake_enabled <= '0';
     set_usb_phy_test_mode     <= '0';
     setup_data      <= setup_bytes(device)(31 downto 0);
-    ep0_out_stall <= '0';
-    ep0_in_stall  <= '0';
+    ep0_in_stall    <= '0';
 
     if setup_bytes(device)(39) = EP_IN then
       var_offset := to_integer(unsigned(setup_bytes(device)(35 downto 32)) * 4) + 2;
@@ -427,13 +427,13 @@ begin
   PROC_UPD_DMA_RDATA : process(ep0_mem_rdata,upd_dma_addr, ep0_mem_addr_int, ep0_class_rdata,std_req_data)
   begin
     if (C_DATAWIDTH = 32) then
-      ep0_mem_rdata_int <= ep0_mem_rdata;
+      ep0_mem_rdata_int <= ep0_mem_rdata(31 downto 0);
       if (upd_dma_addr(13) = '1') then
         upd_dma_rdata <= ep0_mem_rdata;
       elsif (upd_dma_addr(12) = '1') then
         upd_dma_rdata <= ep0_class_rdata;
       else
-        upd_dma_rdata <= std_req_data;
+        upd_dma_rdata(31 downto 0) <= std_req_data(31 downto 0);
       end if;
     else
       if (ep0_mem_addr_int(0) = '1') then 
@@ -447,7 +447,8 @@ begin
         upd_dma_rdata <= ep0_class_rdata;
       else
         -- all standard get request except GetDescriptor have wLength <= 2, so the upper bits (63:32) do not matter, just duplicate them 
-        upd_dma_rdata <= std_req_data & std_req_data ;
+        upd_dma_rdata(63 downto 32) <= std_req_data(31 downto 0); 
+        upd_dma_rdata(31 downto  0) <= std_req_data(31 downto 0);
       end if;
       if C_DATAWIDTH /= 64 then
         assert false

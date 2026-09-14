@@ -1,3 +1,4 @@
+
 --  SPDX-License-Identifier: Apache-2.0
 -- 
 --  Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,12 +14,12 @@
 --  limitations under the License.
 -- 
 -- ----------------------------------------------------------------------
-
+--------------------------------------------------------------------------------
 library IEEE;
 use IEEE.std_logic_1164.ALL;
 use IEEE.numeric_std.ALL;
 
-entity usb_fs_mux is
+entity usb_mux is
   generic(C_DATAWIDTH        : integer := 32);
   port (
       dma_dma_addr      : in    std_logic_vector(31 downto 0); 
@@ -44,9 +45,9 @@ entity usb_fs_mux is
       
       dma_ahb_selected  : in    std_logic 
      );
-end usb_fs_mux; 
+end usb_mux; 
       
-architecture RTL of usb_fs_mux is   
+architecture RTL of usb_mux is   
 
 begin
 
@@ -67,4 +68,4 @@ upd_dma_wdata <= dma_dma_wdata;
 dma_dma_rdata <= ahb_dma_rdata when dma_ahb_selected = '1' else upd_dma_rdata;
 
  
-end RTL; --usb_fs_mux
+end RTL; --usb_mux

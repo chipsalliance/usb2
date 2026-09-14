@@ -18,26 +18,40 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
+LIBRARY usb_lib;
+USE usb_lib.usb_general_subcmp_pkg.all;
+
 entity ip_xxx_3511_hs_mem_compound is
   generic(
-          AHB_DATAWIDTH  : integer := 32;
-          RAM_DATAWIDTH  : integer := 64;
-          RAM_ADDRWIDTH  : integer := 15;
-          C_NBPHYSEP_ARM : integer := 14;
-          C_EPUB         : integer := 32;
-          C_DAUB         : integer := 32; --Requirement : C_DAUB > C_DALB
-          C_DALB         : integer := 17; --maximum allowed value is 17
+          C_HUB_FIFO_SIZE           : integer := 172; --Number of 32-bit words in HUB DESCRIPTOR FIFO. 
+                                                      --Maximum value allowed is 4096. This is 16kBytes for hub descriptor FIFO
+          C_DEV0_RAM_ADDRWIDTH      : integer := 15;
+          C_DEV1_RAM_ADDRWIDTH      : integer := 15;
+          C_DEV0_NBPHYSEP           : integer := 14;
+          C_DEV1_NBPHYSEP           : integer := 14;
+          
+          C_EPUB                    : integer := 32;
+          C_DAUB                    : integer := 32; --Requirement : C_DAUB > C_DALB
+          C_DALB                    : integer := 17; --maximum allowed value is 17
                                           --minimum allowed value is 7
           C_EPFIFO_PAGE             : std_logic_vector(31 downto 0) := X"00080000";
           C_DATAFIFO_PAGE           : std_logic_vector(31 downto 0) := X"00080000";
-          C_SINGLE_BUFFER_SUPPORTED : boolean := TRUE;
-          C_DOUBLE_BUFFER_SUPPORTED : boolean := TRUE;
-          C_TOGGLE_REG_READABLE     : boolean := TRUE;
+
+          C_DEV0_SINGLE_BUFFER_SUPPORTED : boolean := TRUE;
+          C_DEV0_DOUBLE_BUFFER_SUPPORTED : boolean := TRUE;
+          C_DEV0_TOGGLE_REG_READABLE     : boolean := TRUE;
+
+          C_DEV1_SINGLE_BUFFER_SUPPORTED : boolean := TRUE;
+          C_DEV1_DOUBLE_BUFFER_SUPPORTED : boolean := TRUE;
+          C_DEV1_TOGGLE_REG_READABLE     : boolean := TRUE;
+
           C_PLL_ENABLE              : boolean := FALSE;
           C_PLL_DIVIDER             : std_logic_vector(6 downto 0) := "0010100";
+          
           C_ULPI_SUPPORT            : boolean := TRUE;
           C_UTMI_SUPPORT            : boolean := TRUE;
-          C_EXTEND_TX_DELAY         : boolean := TRUE
+          C_EXTEND_TX_DELAY         : boolean := TRUE;
+	      G_SIM_CHIRP_TIMERS        : boolean := FALSE
           );
 
   port(
@@ -52,35 +66,16 @@ entity ip_xxx_3511_hs_mem_compound is
 
        ahbs_resetn          : in  std_logic;  -- AHB resetn
 
-       hub_ahbs_haddr       : in  std_logic_vector(5 downto 2);
-       hub_ahbs_htrans      : in  std_logic_vector(1 downto 0);
-       hub_ahbs_hwrite      : in  std_logic;
-       hub_ahbs_hwdata      : in  std_logic_vector(31 downto 0);
-       hub_ahbs_hsel        : in  std_logic;
-       hub_ahbs_hreadyin    : in  std_logic;
-       hub_ahbs_hrdata      : out std_logic_vector(31 downto 0);
-       hub_ahbs_hreadyout   : out std_logic;
-       hub_ahbs_hresp       : out std_logic_vector(1 downto 0);
-
-       hub_desc_ahbs_dma_haddr     : in  std_logic_vector(RAM_ADDRWIDTH-1+5 downto 0);
-       hub_desc_ahbs_dma_htrans    : in  std_logic_vector(1 downto 0);
-       hub_desc_ahbs_dma_hwrite    : in  std_logic;
-       hub_desc_ahbs_dma_hwdata    : in  std_logic_vector(AHB_DATAWIDTH-1 downto 0);
-       hub_desc_ahbs_dma_hsel      : in  std_logic;
-       hub_desc_ahbs_dma_hreadyin  : in  std_logic;
-       hub_desc_ahbs_dma_hrdata    : out std_logic_vector(AHB_DATAWIDTH-1 downto 0);
-       hub_desc_ahbs_dma_hreadyout : out std_logic;
-       hub_desc_ahbs_dma_hresp     : out std_logic_vector(1 downto 0);
-       hub_desc_ahbs_dma_hsize     : in  std_logic_vector(2 downto 0);
-       hub_desc_ahbs_dma_hburst    : in  std_logic_vector(2 downto 0);
-
-       hub_desc_mem_q       : in  std_logic_vector(RAM_DATAWIDTH-1 downto 0);
-       hub_desc_mem_d       : out std_logic_vector(RAM_DATAWIDTH-1 downto 0);
-       hub_desc_mem_cs      : out std_logic;
-       hub_desc_mem_a       : out std_logic_vector(RAM_ADDRWIDTH-1 downto 0);
-       hub_desc_mem_web_out : out std_logic;
-       hub_desc_mem_bsel    : out std_logic_vector(RAM_DATAWIDTH-1 downto 0);
-
+       hub_ahbs_haddr            : in  std_logic_vector(log2(C_HUB_FIFO_SIZE)-1+2 downto 2);
+       hub_ahbs_htrans           : in  std_logic_vector(1 downto 0);
+       hub_ahbs_hwrite           : in  std_logic;
+       hub_ahbs_hwdata           : in  std_logic_vector(31 downto 0);
+       hub_ahbs_hsel             : in  std_logic;
+       hub_ahbs_hreadyin         : in  std_logic;
+       hub_ahbs_hrdata           : out std_logic_vector(31 downto 0);
+       hub_ahbs_hreadyout        : out std_logic;
+       hub_ahbs_hresp            : out std_logic_vector(1 downto 0);
+              
        dev0_ahbs_haddr           : in  std_logic_vector(5 downto 2);
        dev0_ahbs_htrans          : in  std_logic_vector(1 downto 0);
        dev0_ahbs_hwrite          : in  std_logic;
@@ -91,25 +86,25 @@ entity ip_xxx_3511_hs_mem_compound is
        dev0_ahbs_hreadyout       : out std_logic;
        dev0_ahbs_hresp           : out std_logic_vector(1 downto 0);
               
-       dev0_ahbs_dma_haddr       : in  std_logic_vector(RAM_ADDRWIDTH-1+5 downto 0); 
+       dev0_ahbs_dma_haddr       : in  std_logic_vector(C_DEV0_RAM_ADDRWIDTH-1+3 downto 0); 
        dev0_ahbs_dma_htrans      : in  std_logic_vector(1 downto 0);  
        dev0_ahbs_dma_hwrite      : in  std_logic; 
-       dev0_ahbs_dma_hwdata      : in  std_logic_vector(AHB_DATAWIDTH-1 downto 0); 
+       dev0_ahbs_dma_hwdata      : in  std_logic_vector(31 downto 0); 
        dev0_ahbs_dma_hsel        : in  std_logic;
        dev0_ahbs_dma_hreadyin    : in  std_logic; 
-       dev0_ahbs_dma_hrdata      : out std_logic_vector(AHB_DATAWIDTH-1 downto 0); 
+       dev0_ahbs_dma_hrdata      : out std_logic_vector(31 downto 0); 
        dev0_ahbs_dma_hreadyout   : out std_logic; 
        dev0_ahbs_dma_hresp       : out std_logic_vector(1 downto 0);
        dev0_ahbs_dma_hsize       : in  std_logic_vector(2 downto 0);  
        dev0_ahbs_dma_hburst      : in  std_logic_vector(2 downto 0);  
        
        -- RAM interface signals
-       dev0_mem_q                : in  std_logic_vector(RAM_DATAWIDTH-1 downto 0);
-       dev0_mem_d                : out std_logic_vector(RAM_DATAWIDTH-1 downto 0);
+       dev0_mem_q                : in  std_logic_vector(63 downto 0);
+       dev0_mem_d                : out std_logic_vector(63 downto 0);
        dev0_mem_cs               : out std_logic;
-       dev0_mem_a                : out std_logic_vector(RAM_ADDRWIDTH-1 downto 0);
+       dev0_mem_a                : out std_logic_vector(C_DEV0_RAM_ADDRWIDTH-1 downto 0);
        dev0_mem_web_out          : out std_logic;
-       dev0_mem_bsel             : out std_logic_vector(RAM_DATAWIDTH-1 downto 0);
+       dev0_mem_bsel             : out std_logic_vector(63 downto 0);
 
        -- Interrupt controller signals
        dev0_usb_irq             : out std_logic;
@@ -125,24 +120,24 @@ entity ip_xxx_3511_hs_mem_compound is
        dev1_ahbs_hreadyout      : out std_logic;
        dev1_ahbs_hresp          : out std_logic_vector(1 downto 0);
 
-       dev1_ahbs_dma_haddr      : in  std_logic_vector(RAM_ADDRWIDTH-1+5 downto 0);
+       dev1_ahbs_dma_haddr      : in  std_logic_vector(C_DEV1_RAM_ADDRWIDTH-1+3 downto 0);
        dev1_ahbs_dma_htrans     : in  std_logic_vector(1 downto 0);
        dev1_ahbs_dma_hwrite     : in  std_logic;
-       dev1_ahbs_dma_hwdata     : in  std_logic_vector(AHB_DATAWIDTH-1 downto 0);
+       dev1_ahbs_dma_hwdata     : in  std_logic_vector(31 downto 0);
        dev1_ahbs_dma_hsel       : in  std_logic;
        dev1_ahbs_dma_hreadyin   : in  std_logic;
-       dev1_ahbs_dma_hrdata     : out std_logic_vector(AHB_DATAWIDTH-1 downto 0);
+       dev1_ahbs_dma_hrdata     : out std_logic_vector(31 downto 0);
        dev1_ahbs_dma_hreadyout  : out std_logic;
        dev1_ahbs_dma_hresp      : out std_logic_vector(1 downto 0);
        dev1_ahbs_dma_hsize      : in  std_logic_vector(2 downto 0);
        dev1_ahbs_dma_hburst     : in  std_logic_vector(2 downto 0);
 
-       dev1_mem_q               : in  std_logic_vector(RAM_DATAWIDTH-1 downto 0);
-       dev1_mem_d               : out std_logic_vector(RAM_DATAWIDTH-1 downto 0);
+       dev1_mem_q               : in  std_logic_vector(63 downto 0);
+       dev1_mem_d               : out std_logic_vector(63 downto 0);
        dev1_mem_cs              : out std_logic;
-       dev1_mem_a               : out std_logic_vector(RAM_ADDRWIDTH-1 downto 0);
+       dev1_mem_a               : out std_logic_vector(C_DEV1_RAM_ADDRWIDTH-1 downto 0);
        dev1_mem_web_out         : out std_logic;
-       dev1_mem_bsel            : out std_logic_vector(RAM_DATAWIDTH-1 downto 0);
+       dev1_mem_bsel            : out std_logic_vector(63 downto 0);
 
        dev1_usb_irq             : out std_logic;
        dev1_usb_fiq             : out std_logic;
@@ -196,14 +191,13 @@ entity ip_xxx_3511_hs_mem_compound is
        sys_utmi_clkin_lock : in  std_logic;
 
        -- Signals for controlling hub and embedded device
-       USB_EnableHub       : in  std_logic;
+       USB_EnableHub       : in  std_logic; --Always connect hub when VBUS is available. This overrules the register bits.
        USB_self_powered    : in  std_logic;
 
       
        -- core testability
        async_disable       : in  std_logic;
        testmode            : in    std_logic; -- To be connected by integrator to a tcb test mode pin.
-       tcb_clkgate_se      : in    std_logic; -- To be connected by integrator to test infrastructure.
        usb_dma_dword_selection : out std_logic_vector(1 downto 0);
        usb_dma_write_access : out std_logic
       );
