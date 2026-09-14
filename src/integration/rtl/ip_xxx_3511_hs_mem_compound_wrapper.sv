@@ -51,24 +51,25 @@
 module ip_xxx_3511_hs_mem_compound_wrapper
   import axi_pkg::*;
 #(
-  // ---- SRAM configuration -------------------------------------------------
-  // Per-device EP-list / data-buffer SRAM address width. The IP splits this
-  // into C_DEV0_RAM_ADDRWIDTH / C_DEV1_RAM_ADDRWIDTH; both are driven from
-  // this single parameter because the two SoC SRAM instances are identical.
-  parameter int unsigned  RAM_ADDRWIDTH             = 9,
-
   // Number of 32-bit words in the hub descriptor flip-flop array. Must match
   // the IP default (172) unless the IP is reconfigured; it sets the width of
   // hub_ahbs_haddr and therefore the hub register aperture.
   parameter int unsigned  C_HUB_FIFO_SIZE           = 172,
 
+  // ---- SRAM configuration -------------------------------------------------
+  // Per-device EP-list / data-buffer SRAM address width. The IP splits this
+  // into C_DEV0_RAM_ADDRWIDTH / C_DEV1_RAM_ADDRWIDTH; 
+  parameter int unsigned  C_DEV0_RAM_ADDRWIDTH      = 9,
+  parameter int unsigned  C_DEV1_RAM_ADDRWIDTH      = 9,
+
   // ---- USB IP configuration (forwarded to VHDL entity generics) ----------
-  // C_NBPHYSEP maps to C_DEV0_NBPHYSEP. Device 1 has its own count and the
-  // IP default (12) differs from device 0, so it is a separate parameter.
+  // C_DEV0_NBPHYSEP and C_DEV1_NBPHYSEP defines the number of physical endpoints
+  // This can be different for both FW programmable devices
+  // The value for these parameters must be a multiple of 2.
   // Note: the package constant C_NBPHYSEP is now hard-coded to 2 for the hub
   // itself and is unrelated to these two per-device values.
-  parameter int unsigned  C_NBPHYSEP                = 14,
-  parameter int unsigned  C_DEV1_NBPHYSEP           = 12,
+  parameter int unsigned  C_DEV0_NBPHYSEP           = 14,
+  parameter int unsigned  C_DEV1_NBPHYSEP           = 14,
   parameter int unsigned  C_EPUB                    = 32,
   parameter int unsigned  C_DAUB                    = 32,
   parameter int unsigned  C_DALB                    = 17,
@@ -384,7 +385,8 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   // address over a 64-bit SRAM, so the word address is extended by 3 bits, not
   // 5. This matches the entity declaration
   // dev0/1_ahbs_dma_haddr(C_DEVn_RAM_ADDRWIDTH-1+3 downto 0).
-  localparam DMA_AHB_ADDR_W = RAM_ADDRWIDTH + 3;
+  localparam C_DEV0_DMA_AHB_ADDR_W = C_DEV0_RAM_ADDRWIDTH + 3;
+  localparam C_DEV1_DMA_AHB_ADDR_W = C_DEV1_RAM_ADDRWIDTH + 3;
 
   // Word-address width of the hub register/descriptor AHB port. The entity
   // declares hub_ahbs_haddr(log2(C_HUB_FIFO_SIZE)-1+2 downto 2), so with the
@@ -805,9 +807,9 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   // the physical endpoint count are likewise per device now.
   ip_xxx_3511_hs_mem_compound #(
     .C_HUB_FIFO_SIZE                (C_HUB_FIFO_SIZE),
-    .C_DEV0_RAM_ADDRWIDTH           (RAM_ADDRWIDTH),
-    .C_DEV1_RAM_ADDRWIDTH           (RAM_ADDRWIDTH),
-    .C_DEV0_NBPHYSEP                (C_NBPHYSEP),
+    .C_DEV0_RAM_ADDRWIDTH           (C_DEV0_RAM_ADDRWIDTH),
+    .C_DEV1_RAM_ADDRWIDTH           (C_DEV1_RAM_ADDRWIDTH),
+    .C_DEV0_NBPHYSEP                (C_DEV0_NBPHYSEP),
     .C_DEV1_NBPHYSEP                (C_DEV1_NBPHYSEP),
     .C_EPUB                         (C_EPUB),
     .C_DAUB                         (C_DAUB),
