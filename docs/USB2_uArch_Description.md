@@ -890,6 +890,25 @@ implementation references of the RTL blocks shown in the diagram.
 
 ---
 
+#### Detailed RTL Architecture Reference
+
+The following diagram provides the complete implementation-level view of the
+architecture. It identifies the RTL components and functional logic involved
+in each path, the operations performed by each block, and the names and
+directions of the signals composing the main internal interfaces.
+
+The diagram also shows the function-selection and routing logic, endpoint
+resources, memory-access paths, response paths, and clock-domain crossings,
+providing a detailed visual reference for RTL navigation, integration, and
+simulation debug.
+
+![USB Two-Port Compound Device Detailed Block Diagram](USB_uArch_Detailed_Block_Diagram.svg)
+
+**Navigation tip:** Click the diagram to open it separately, then select
+**Raw** to inspect and navigate it at full resolution.
+
+---
+
 ### USB 2.0 UTMI or ULPI PHY
 
 The external PHY implements the electrical and low-level signaling interface
