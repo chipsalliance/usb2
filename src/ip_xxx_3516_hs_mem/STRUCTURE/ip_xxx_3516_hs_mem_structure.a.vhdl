@@ -96,7 +96,6 @@ library ieee;
 use ieee.numeric_std.all;
 use ieee.std_logic_1164.all;
 
-library rtl;
 
 
 architecture structure of ip_xxx_3516_hs_mem is
@@ -887,18 +886,17 @@ library ieee;
 use ieee.numeric_std.all;
 use ieee.std_logic_1164.all;
 
-library rtl;
 
 configuration ip_xxx_3516_hs_mem_structure_cfg of ip_xxx_3516_hs_mem is
   for structure
     for ip_xxx_3515_hs_inst: ip_xxx_3515_hs
-       use configuration rtl.ip_xxx_3515_hs_structure_cfg;
+       use configuration work.ip_xxx_3515_hs_structure_cfg;
     end for;
     for ip_xxx_3511_hs_inst: ip_xxx_3511_hs
-       use configuration rtl.ip_xxx_3511_hs_structure_cfg;
+       use configuration work.ip_xxx_3511_hs_structure_cfg;
     end for;
     for ahb_dma_slave_1 : ahb_dma_slave
-       use entity rtl.ahb_dma_slave(rtl);
+       use entity work.ahb_dma_slave(rtl);
     end for;
   end for;
 end ip_xxx_3516_hs_mem_structure_cfg;

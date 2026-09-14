@@ -19,9 +19,8 @@ library IEEE;
 use IEEE.std_logic_1164.ALL;
 use IEEE.numeric_std.ALL;
 
-library usb_lib;
-use usb_lib.usb_general_subcmp_pkg.all;
-use usb_lib.usb_ep_config_pkg.all;
+use work.usb_general_subcmp_pkg.all;
+use work.usb_ep_config_pkg.all;
 
 entity usb_ep0_hub_descr is
 generic(C_NWORDS : integer := 128; --Number of 32 bits words

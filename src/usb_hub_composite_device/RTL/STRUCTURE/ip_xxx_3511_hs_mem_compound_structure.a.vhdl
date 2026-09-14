@@ -18,11 +18,10 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-library usb_lib;
-use usb_lib.usb_general_subcmp_pkg.all;
-use usb_lib.usb_configuration_subcmp_pkg.all;
-use usb_lib.usb_subcmp_pkg.all;
-use usb_lib.usb_ep_config_pkg.all;
+use work.usb_general_subcmp_pkg.all;
+use work.usb_configuration_subcmp_pkg.all;
+use work.usb_subcmp_pkg.all;
+use work.usb_ep_config_pkg.all;
 
 architecture structure of ip_xxx_3511_hs_mem_compound is
 

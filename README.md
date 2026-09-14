@@ -22,3 +22,7 @@ git submodule update --remote submodules/caliptra-rtl
 ```
 
 To compile: `cd tools/scripts && ./run_compile.csh` (VCS version: W-2024.09-SP1_Full64)
+
+## VHDL libraries
+
+Internal package, entity, and configuration references use `work`, meaning the current compilation library. Compile the dependent VHDL units in each selected source set into the same library; the build can choose its name, such as `rtl` or `usb_lib`. Architecture names such as `rtl` are independent of library names.

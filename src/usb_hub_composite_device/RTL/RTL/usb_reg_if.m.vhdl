@@ -18,8 +18,7 @@ library IEEE;
 use IEEE.std_logic_1164.ALL;
 use IEEE.numeric_std.ALL;
 
-library usb_lib;
-use usb_lib.usb_configuration_subcmp_pkg.all;
+use work.usb_configuration_subcmp_pkg.all;
 
 entity usb_reg_if is
 generic(C_ULPI_SUPPORT           : boolean := FALSE;

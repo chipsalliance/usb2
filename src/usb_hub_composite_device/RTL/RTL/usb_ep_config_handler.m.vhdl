@@ -18,8 +18,7 @@ library IEEE;
 use IEEE.std_logic_1164.ALL;
 use IEEE.numeric_std.ALL;
 
-library usb_lib;
-use usb_lib.usb_ep_config_pkg.all;
+use work.usb_ep_config_pkg.all;
 
 entity usb_ep_config_handler is
 generic(C_NBPHYSEP     : integer := 3;

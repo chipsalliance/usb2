@@ -60,8 +60,7 @@ library IEEE;
 use IEEE.std_logic_1164.ALL;
 use IEEE.numeric_std.ALL;
 
-library rtl;
-use rtl.usb_general_subcmp_pkg.all;
+use work.usb_general_subcmp_pkg.all;
 
 entity ahb_dma_slave is
 generic(

@@ -124,9 +124,8 @@ library IEEE;
 use IEEE.std_logic_1164.ALL;
 use IEEE.numeric_std.ALL;
 
-library rtl;
-use rtl.usb_subcmp_pkg.all;
-use rtl.usb_fs_emb_dev_cfg_pkg.all;
+use work.usb_subcmp_pkg.all;
+use work.usb_fs_emb_dev_cfg_pkg.all;
 
 entity usb_dma is
 generic(USB_DATAWIDTH      : integer := 8;
