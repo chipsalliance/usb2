@@ -22,9 +22,3 @@ git submodule update --remote submodules/caliptra-rtl
 ```
 
 To compile : ./run_compile (VCS verion : Version W-2024.09-SP1_Full64)
-
-## Integration documentation
-
-[Compound control AHB decoder microarchitecture](src/integration/rtl/README.md)
-includes Mermaid diagrams of transaction routing, address translation and
-wait-state retention, and data-phase response flow.
