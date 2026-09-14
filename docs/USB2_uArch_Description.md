@@ -26,7 +26,7 @@ and data paths, and follow representative USB transactions in simulation.
 
 ### 1. Introduction
 
-Defines the JANUS scope, USB function mapping, terminology, and distinction
+Defines the IP scope, USB function mapping, terminology, and distinction
 between the hardware-managed Hub and the RAM-based software devices.
 
 ### 2. Detailed Architecture Diagram
@@ -166,7 +166,7 @@ The following sections describe the role, connectivity, and operational behavior
 ## Top-Level Interfaces
 
 Unless otherwise stated, the dimensions and behavior described in this
-section refer to the default JANUS configuration defined in the preceding
+section refer to the default IP configuration defined in the preceding
 Top-Level Configuration Generics section.
 
 Generic expressions are retained where they provide useful integration
@@ -174,7 +174,7 @@ information.
 
 ### Interface Overview
 
-The JANUS top-level exposes interfaces for:
+The IP top-level exposes interfaces for:
 
 - system clock, reset, and power-management coordination;
 - connection to an external USB 2.0 PHY through UTMI or ULPI;
@@ -195,25 +195,15 @@ as `pie_clk` by the shared USB Protocol and Interface Engine.
 
 ---
 
-### Top-Level Interface Diagram
-
-The following diagram groups the JANUS top-level ports by functional
-category. Input groups are shown on the left side of the IP boundary, while
-output and mixed-direction interface groups are shown on the right side.
-
-images/janus_top_level_interface.png
-
----
-
 ### Interface Categories
 
 | Category | Interfaces | Purpose |
 |---|---|---|
-| System integration | Clock, reset, clock request, wake-up, VBUS, and analog control | Connects JANUS to the system clocking, reset, power-management, and analog-control infrastructure. |
+| System integration | Clock, reset, clock request, wake-up, VBUS, and analog control | Connects the IP to the system clocking, reset, power-management, and analog-control infrastructure. |
 | USB PHY | UTMI and ULPI | Connects the shared USB PIE to an external USB 2.0 PHY. |
 | Host control | Hub, DEV0, and DEV1 AHB register-control interfaces | Allows an external system master to configure and monitor the three USB functions. |
 | External memory access | Hub Descriptor RAM and DEV0/DEV1 Endpoint RAM AHB interfaces | Allows an external system master to initialize, inspect, and update the USB memories. |
-| Native memory | Hub Descriptor RAM and DEV0/DEV1 Endpoint RAM native interfaces | Connects JANUS to the three external RAM macros or memory models. |
+| Native memory | Hub Descriptor RAM and DEV0/DEV1 Endpoint RAM native interfaces | Connects the IP to the three external RAM macros or memory models. |
 | Interrupt and observation | DEV0/DEV1 IRQ and FIQ, frame toggle, and USB DMA write-access observation | Reports software-device events and exposes selected internal timing and memory-write activity. |
 | Configuration and test | Hub configuration, self-powered indication, and DFT controls | Provides static integration configuration and test support. |
 
@@ -255,12 +245,12 @@ Unless otherwise stated:
 
 ## System Integration Interfaces
 
-The system integration interfaces connect JANUS to the surrounding clock,
+The system integration interfaces connect the IP to the surrounding clock,
 reset, power-management, and analog-control infrastructure.
 
 ### Clock and Reset Interface
 
-JANUS provides two independent active-low top-level resets:
+The current IP implementation provides two independent active-low top-level resets:
 
 - `hresetn` resets the USB functional logic in the `hclk` domain;
 - `ahbs_resetn` resets the AHB-facing front-ends, AHB-to-memory adapters,
@@ -369,7 +359,7 @@ until the USB clock is running and the PIE has left the low-power state.
 
 ### VBUS and Analog Control Interface
 
-This interface connects JANUS to the USB VBUS-detection and external
+This interface connects the IP to the USB VBUS-detection and external
 analog-control logic.
 
 `USB_VBus` is supplied to `usb_pie_1`. The PIE exports the corresponding
@@ -414,7 +404,7 @@ depends on the selected PHY and the system-level power architecture.
 
 ## USB PHY Interfaces
 
-JANUS supports external USB PHY connectivity through UTMI or ULPI.
+The IP supports external USB PHY connectivity through UTMI or ULPI.
 
 The available PHY implementations are controlled by `C_UTMI_SUPPORT` and
 `C_ULPI_SUPPORT`. When both interfaces are enabled, the active PHY mode is
@@ -499,8 +489,8 @@ control.
 | `ulpi_clk` | Input | 1 | Rising edge | Clock supplied by the ULPI PHY. It becomes `pie_clk` when ULPI mode is selected. |
 | `ulpi_rxdata[7:0]` | Input | 8 | Encoded | Data received from the ULPI PHY. Depending on the operating state, it carries USB packet data, RX commands, PHY-register read data, or low-power indications. |
 | `ulpi_txdata[7:0]` | Output | 8 | Encoded | Data transmitted toward the ULPI PHY, including USB packet data, transmit commands, and PHY-register commands. |
-| `ulpi_txenable` | Output | 1 | Active high | Enables JANUS to drive the external ULPI data bus. |
-| `ulpi_dir` | Input | 1 | Encoded | Indicates the current bus direction. Low allows JANUS to drive the data bus; high indicates that the PHY is driving the bus. |
+| `ulpi_txenable` | Output | 1 | Active high | Enables the IP to drive the external ULPI data bus. |
+| `ulpi_dir` | Input | 1 | Encoded | Indicates the current bus direction. Low allows USB link to drive the data bus; high indicates that the PHY is driving the bus. |
 | `ulpi_stp` | Output | 1 | Active high | ULPI stop and control output. |
 | `ulpi_nxt` | Input | 1 | Active high | ULPI handshake input used to qualify transmitted or received information. |
 | `ulpi_ddr_sel` | Input | 1 | Encoded | Selects the low-power indication mapping on `ulpi_rxdata[7:0]`. It does not select the normal ULPI packet-transfer mode. |
@@ -525,7 +515,7 @@ detected as stopped.
 
 ## Host-Control AHB Interfaces
 
-JANUS exposes three independent AHB register-control ports:
+The current IP implementation exposes three independent AHB register-control ports:
 
 - one for the embedded Hub;
 - one for DEV0;
@@ -593,7 +583,7 @@ definitions are described separately in the Programming Model section.
 
 ## External Memory Interfaces
 
-JANUS uses three external memories:
+The current IP implementation uses three external memories:
 
 - one Hub Descriptor RAM;
 - one DEV0 Endpoint RAM;
@@ -831,7 +821,7 @@ implementation.
 
 ## Integration Requirements and Constraints
 
-The following requirements apply at the JANUS top-level boundary:
+The following requirements apply at the current IP top-level boundary:
 
 - `hresetn` and `ahbs_resetn` control different portions of the IP and must
   both be provided by the integration environment.
@@ -857,7 +847,7 @@ The following requirements apply at the JANUS top-level boundary:
 - AHB slave interfaces always return `OKAY`.
 - `async_disable` is test-only and must remain low during normal operation.
 - `tcb_clkgate_se` is unused by the current RTL.
-- Configurations differing from the documented JANUS defaults require
+- Configurations differing from the documented default configuration require
   dedicated elaboration and functional validation.
 
 ---
@@ -2538,7 +2528,7 @@ hub_port_connect
 
 # Operational Flows
 
-The previous sections describe the JANUS architecture from a structural
+The previous sections describe the compound-device architecture from a structural
 perspective: RTL blocks, clock domains, functional interfaces, endpoint
 contexts, external memories, and top-level routing.
 
@@ -2568,7 +2558,7 @@ These flows are intended to support:
 
 ## Common Transaction Model
 
-All USB transactions enter JANUS through the shared USB Protocol and
+All USB transactions enter the IP through the shared USB Protocol and
 Interface Engine.
 
 At a high level, each transaction follows this sequence:
