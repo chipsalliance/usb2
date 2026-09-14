@@ -279,7 +279,9 @@ component usb_ocp_recovery_post_sync_arb
     hclk     : in  std_logic;
     hresetn  : in  std_logic;
     sync_busreset : in std_logic;
-    sync_usbreg_dev_connect_i : in std_logic;
+    usbreg_dev_connect_i : in std_logic;
+    usbreg_setup_i : in std_logic;
+    usbreg_setup_dma_o : out std_logic;
     sync_pie_speed_i : in std_logic_vector(1 downto 0);
 
     sync_sieint_epinfo_req_i    : in  std_logic;
@@ -355,9 +357,13 @@ component usb_ocp_recovery_post_sync_arb
     ctrl_xfer_done  : out std_logic;
     ctrl_xfer_abort : out std_logic;
     fifo_batch_abort : out std_logic;
+    ctrl_length_error : out std_logic;
     ocp_path_disable_i : in  std_logic;
     ocp_claim_abort_i : in std_logic;
+    fw_protocol_error_req_i : in std_logic;
     fifo_payload_available_i : in std_logic;
+    fifo_free_dwords_i : in std_logic_vector(6 downto 0);
+    fifo_reservation_active_o : out std_logic;
     rec_claim_status : out std_logic
   );
 end component;
@@ -963,6 +969,7 @@ signal sieint_usbaddress     : std_logic_vector(6 downto 0);
 signal usbreg_usbaddress:      std_logic_vector(6 downto 0);
 signal usbreg_usbaddress_tmp:  std_logic_vector(6 downto 0);
 signal usbreg_setup :          std_logic;
+signal usbreg_setup_dma :      std_logic;
 signal pie_speed :             std_logic_vector(1 downto 0);
 signal usbreg_phy_test_mode   : std_logic_vector(2 downto 0);
 --signal usbreg_select_ext_clk : std_logic;
@@ -1523,7 +1530,7 @@ usb_dma_1 : usb_dma
       sync_sieint_sentNAK           => sync_sieint_sentNAK	,
       sync_busreset                 => sync_busreset            ,
       dma_ahb_selected              => open                     ,
-      usbreg_setup                  => usbreg_setup             ,
+      usbreg_setup                  => usbreg_setup_dma         ,
       pie_speed                     => pie_speed                ,
       usbreg_ep_list_start	    => usbreg_ep_list_start(31 downto 8),
       usbreg_ep_skip_list_start	    => usbreg_ep_list_start(31 downto 8),
@@ -1545,9 +1552,8 @@ usb_dma_1 : usb_dma
 -- ----------------------------------------------------------------------------
 -- OCP Recovery v1.1 Section 8.5 - post-synchronizer EP0 arbiter (hclk domain).
 -- Interposes on the synchronized SIE interface between usb_synchronizer and the
--- downstream consumers usb_dma and usb_reg_if.  Traps every EP0 SETUP; replays
--- non-OCP SETUPs to legacy usb_dma and routes OCP-recovery-class transfers to
--- the SV recovery stack.
+-- downstream consumers usb_dma and usb_reg_if. Every real EP0 SETUP remains on
+-- the DMA path while a parallel monitor selects ownership of later EP0 stages.
 -- ----------------------------------------------------------------------------
 usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
   generic map (
@@ -1560,7 +1566,9 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     hclk          => hclk,
     hresetn       => hresetn,
     sync_busreset => sync_busreset,
-    sync_usbreg_dev_connect_i => sync_usbreg_dev_connect,
+    usbreg_dev_connect_i => usbreg_dev_connect,
+    usbreg_setup_i => usbreg_setup,
+    usbreg_setup_dma_o => usbreg_setup_dma,
     sync_pie_speed_i => sync_pie_speed,
 
     -- Synchronizer hclk-side outputs (arbiter inputs).
@@ -1642,9 +1650,13 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     ctrl_xfer_done  => rec_ctrl_xfer_done,
     ctrl_xfer_abort => rec_ctrl_xfer_abort,
     fifo_batch_abort => rec_ctrl_fifo_batch_abort,
+    ctrl_length_error => rec_ctrl_length_error,
     ocp_path_disable_i => rec_ocp_path_disable,
     ocp_claim_abort_i => rec_ocp_claim_abort,
+    fw_protocol_error_req_i => rec_fw_protocol_error_req,
     fifo_payload_available_i => rec_fifo_payload_available,
+    fifo_free_dwords_i => rec_fifo_free_dwords,
+    fifo_reservation_active_o => rec_fifo_reservation_active,
     rec_claim_status   => rec_ctrl_claim
   );
 

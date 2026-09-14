@@ -363,11 +363,16 @@ module ip_xxx_3516_hs_mem_wrapper
    logic                          rec_ctrl_xfer_done_w;
    logic                          rec_ctrl_xfer_abort_w;
    logic                          rec_ctrl_fifo_batch_abort_w;
+   logic                          rec_ctrl_length_error_w;
    // C1 emergency-fallback chicken bit: usb_ocp_recovery_top drives this
    // (from DEVICE_RESET.OCP_PATH_DISABLE, EXT/firmware write-only) into the
    // VHDL arbiter to force legacy pass-through when set.
    logic                          rec_ocp_path_disable_w;
    logic                          rec_ocp_claim_abort_w;
+   logic                          rec_fw_protocol_error_req_w;
+   logic                          rec_ctrl_claim_w;
+   logic [6:0]                    rec_fifo_free_dwords_w;
+   logic                          rec_fifo_reservation_active_w;
 
    // -- Host AHB (Lite converter output) --
    logic [AXI_HOST_ADDR_WIDTH-1:0] host_ahb_haddr;
@@ -824,10 +829,14 @@ module ip_xxx_3516_hs_mem_wrapper
                .rec_ctrl_xfer_done  (rec_ctrl_xfer_done_w),
                .rec_ctrl_xfer_abort (rec_ctrl_xfer_abort_w),
                .rec_ctrl_fifo_batch_abort(rec_ctrl_fifo_batch_abort_w),
-               .rec_ctrl_claim      (),
+               .rec_ctrl_length_error(rec_ctrl_length_error_w),
+               .rec_ctrl_claim      (rec_ctrl_claim_w),
                .rec_ocp_path_disable (rec_ocp_path_disable_w),
                .rec_ocp_claim_abort (rec_ocp_claim_abort_w),
+               .rec_fw_protocol_error_req(rec_fw_protocol_error_req_w),
                .rec_fifo_payload_available (payload_available),
+               .rec_fifo_free_dwords(rec_fifo_free_dwords_w),
+               .rec_fifo_reservation_active(rec_fifo_reservation_active_w),
 
                // DFT: must be 0 for functional operation
                .async_disable(1'b0),
@@ -1031,8 +1040,13 @@ module ip_xxx_3516_hs_mem_wrapper
         .rec_ctrl_xfer_done (rec_ctrl_xfer_done_w),
         .rec_ctrl_xfer_abort(rec_ctrl_xfer_abort_w),
         .rec_ctrl_fifo_batch_abort(rec_ctrl_fifo_batch_abort_w),
+        .rec_ctrl_length_error(rec_ctrl_length_error_w),
+        .rec_ctrl_claim   (rec_ctrl_claim_w),
         .rec_ocp_path_disable (rec_ocp_path_disable_w),
         .rec_ocp_claim_abort(rec_ocp_claim_abort_w),
+        .rec_fw_protocol_error_req(rec_fw_protocol_error_req_w),
+        .rec_fifo_free_dwords(rec_fifo_free_dwords_w),
+        .rec_fifo_reservation_active(rec_fifo_reservation_active_w),
 
         // External reg-bus slave driven by the local AHB transaction FSM.
         .ext_aperture_offset(ahb_aperture_offset_q),

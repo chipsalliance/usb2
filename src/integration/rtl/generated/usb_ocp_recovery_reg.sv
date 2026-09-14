@@ -351,6 +351,10 @@ module usb_ocp_recovery_reg (
                 logic next;
                 logic load_next;
             } OCP_CLAIM_ABORT;
+            struct packed{
+                logic next;
+                logic load_next;
+            } OCP_PROTOCOL_ERROR_GENERAL;
         } CALIPTRA_CTRL;
     } field_combo_t;
     field_combo_t field_combo;
@@ -497,6 +501,9 @@ module usb_ocp_recovery_reg (
             struct packed{
                 logic value;
             } OCP_CLAIM_ABORT;
+            struct packed{
+                logic value;
+            } OCP_PROTOCOL_ERROR_GENERAL;
         } CALIPTRA_CTRL;
     } field_storage_t;
     field_storage_t field_storage;
@@ -1386,6 +1393,31 @@ module usb_ocp_recovery_reg (
     end
     assign hwif_out.CALIPTRA_CTRL.OCP_CLAIM_ABORT.value = field_storage.CALIPTRA_CTRL.OCP_CLAIM_ABORT.value;
     assign hwif_out.CALIPTRA_CTRL.OCP_CLAIM_ABORT.swmod = decoded_reg_strb.CALIPTRA_CTRL && decoded_req_is_wr;
+    // Field: usb_ocp_recovery_reg.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.CALIPTRA_CTRL && decoded_req_is_wr && hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.swwe) begin // SW write 1 set
+            next_c = field_storage.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value | (decoded_wr_data[2:2] & decoded_wr_biten[2:2]);
+            load_next_c = '1;
+        end else if(hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.we) begin // HW Write - we
+            next_c = hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.next;
+            load_next_c = '1;
+        end
+        field_combo.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.next = next_c;
+        field_combo.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value <= 1'h0;
+        end else if(field_combo.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.load_next) begin
+            field_storage.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value <= field_combo.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.next;
+        end
+    end
+    assign hwif_out.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value = field_storage.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value;
+    assign hwif_out.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.swmod = decoded_reg_strb.CALIPTRA_CTRL && decoded_req_is_wr;
 
     //--------------------------------------------------------------------------
     // Write response
@@ -1490,7 +1522,8 @@ module usb_ocp_recovery_reg (
     assign readback_array[38][31:8] = (decoded_reg_strb.VENDOR && !decoded_req_is_wr) ? 24'h0 : '0;
     assign readback_array[39][0:0] = (decoded_reg_strb.CALIPTRA_CTRL && !decoded_req_is_wr) ? field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value : '0;
     assign readback_array[39][1:1] = (decoded_reg_strb.CALIPTRA_CTRL && !decoded_req_is_wr) ? field_storage.CALIPTRA_CTRL.OCP_CLAIM_ABORT.value : '0;
-    assign readback_array[39][31:2] = (decoded_reg_strb.CALIPTRA_CTRL && !decoded_req_is_wr) ? 30'h0 : '0;
+    assign readback_array[39][2:2] = (decoded_reg_strb.CALIPTRA_CTRL && !decoded_req_is_wr) ? field_storage.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value : '0;
+    assign readback_array[39][31:3] = (decoded_reg_strb.CALIPTRA_CTRL && !decoded_req_is_wr) ? 29'h0 : '0;
     assign readback_array[40][0:0] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.REGION_RESET.next : '0;
     assign readback_array[40][1:1] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.OVERFLOW.next : '0;
     assign readback_array[40][2:2] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next : '0;

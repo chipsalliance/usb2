@@ -921,12 +921,23 @@ addrmap usb_ocp_recovery_reg {
             reset = 1'b0;
         } OCP_CLAIM_ABORT[1:1];
         field {
+            name = "OCP Protocol Error General";
+            desc = "Firmware-only write-one request to report OCP_PROTOCOL_ERROR_GENERAL (0xFF) after an interrupted FIFO DATA batch. Hardware accepts the request only while CALIPTRA_STATUS.BATCH_ABORTED is asserted, enters persistent USB protocol STALL, and clears this stored request after one cycle.";
+            sw = rw;
+            hw = rw;
+            we = true;
+            swwe = true;
+            swmod = true;
+            woset = true;
+            reset = 1'b0;
+        } OCP_PROTOCOL_ERROR_GENERAL[2:2];
+        field {
             name = "Reserved";
             desc = "Reserved for future Caliptra-specific control bits.";
             sw = r;
             hw = na;
-            reset = 30'h0;
-        } RESERVED_31_2[31:2];
+            reset = 29'h0;
+        } RESERVED_31_3[31:3];
     } CALIPTRA_CTRL @ 0x200;
 
     reg {

@@ -64,6 +64,8 @@ module usb_ocp_recovery_top
   input  logic                    rec_ctrl_xfer_done,
   input  logic                    rec_ctrl_xfer_abort,
   input  logic                    rec_ctrl_fifo_batch_abort,
+  input  logic                    rec_ctrl_length_error,
+  input  logic                    rec_ctrl_claim,
 
   // Emergency-fallback path-disable control: mirrors CALIPTRA_CTRL.OCP_PATH_DISABLE
   // (regblock field, EXT/firmware write-only via rb_is_ext/swwe gating -- see
@@ -74,6 +76,9 @@ module usb_ocp_recovery_top
   // registered signal.
   output logic                    rec_ocp_path_disable,
   output logic                    rec_ocp_claim_abort,
+  output logic                    rec_fw_protocol_error_req,
+  output logic [6:0]              rec_fifo_free_dwords,
+  input  logic                    rec_fifo_reservation_active,
 
   //----------------------------------------------------------------------------
   // External register-bus slave (driven by AHB sub-decoder upstream).
@@ -119,6 +124,10 @@ module usb_ocp_recovery_top
   logic                       usb_hw_ack;
   logic                       usb_hw_err;
   logic                       usb_protocol_error_set;
+  logic                       decode_protocol_error_vld;
+  logic [7:0]                 decode_protocol_error_code;
+  logic                       fw_protocol_error_req;
+  logic                       fw_protocol_error_accept;
 
   logic [7:0]                 usb_device_reset_ctrl_next;
   logic                       usb_device_reset_ctrl_we;
@@ -179,6 +188,7 @@ module usb_ocp_recovery_top
   logic                       proto_err_rd_pulse;
   logic [7:0]                 protocol_error_q;
   logic                       ocp_claim_abort_clear;
+  logic                       protocol_error_general_clear;
 
   // --- A4 status (image push not used in EP0-only mode but A4 still drives) ---
   logic                       image_push_done;
@@ -336,6 +346,8 @@ module usb_ocp_recovery_top
     .ctrl_xfer_done  (rec_ctrl_xfer_done),
     .ctrl_xfer_abort (rec_ctrl_xfer_abort),
     .proto_err_rd_pulse (proto_err_rd_pulse),
+    .protocol_error_vld (decode_protocol_error_vld),
+    .protocol_error_code(decode_protocol_error_code),
 
     .rb_cmd          (usb_rb_cmd),
     .rb_offset       (usb_rb_offset),
@@ -591,18 +603,27 @@ module usb_ocp_recovery_top
       .unsupported_cmd_pulse            ()
     );
 
-  // OCP Recovery v1.1 Sec 9.1 defines PROTOCOL_ERROR as a USB Recovery Agent
-  // transport error. Recovery progress and status publication are firmware-owned.
+  // OCP Recovery v1.1 Sec 9.1 defines first-error reporting. A completed USB
+  // DEVICE_STATUS read has clear priority; otherwise USB-detected errors win
+  // over the firmware-originated general-error request.
   always_ff @(posedge clk) begin
     if (!rst_ni) begin
       protocol_error_q <= OCP_PROTOCOL_ERROR_NONE;
     end else begin
-      if (usb_protocol_error_set
-          && (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)) begin
-        protocol_error_q <= OCP_PROTOCOL_ERROR_UNSUPPORTED_COMMAND;
-      end
       if (proto_err_rd_pulse) begin
         protocol_error_q <= OCP_PROTOCOL_ERROR_NONE;
+      end else if (decode_protocol_error_vld
+          && (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)) begin
+        protocol_error_q <= decode_protocol_error_code;
+      end else if (rec_ctrl_length_error
+          && (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)) begin
+        protocol_error_q <= OCP_PROTOCOL_ERROR_LENGTH;
+      end else if (usb_protocol_error_set
+          && (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)) begin
+        protocol_error_q <= OCP_PROTOCOL_ERROR_UNSUPPORTED_COMMAND;
+      end else if (fw_protocol_error_accept
+          && (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)) begin
+        protocol_error_q <= OCP_PROTOCOL_ERROR_GENERAL;
       end
     end
   end
@@ -620,6 +641,17 @@ module usb_ocp_recovery_top
                              && cpuif_wr_data[1];
   assign ocp_claim_abort_clear =
       rb_hwif_out.CALIPTRA_CTRL.OCP_CLAIM_ABORT.value;
+  assign fw_protocol_error_req =
+      rb_hwif_out.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.swmod
+      && rb_is_ext
+      && cpuif_req_is_wr
+      && cpuif_wr_biten[2]
+      && cpuif_wr_data[2];
+  assign protocol_error_general_clear =
+      rb_hwif_out.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value;
+  assign fw_protocol_error_accept = fw_protocol_error_req && batch_aborted;
+  assign rec_fw_protocol_error_req = fw_protocol_error_accept;
+  assign rec_fifo_free_dwords = fifo_free_dwords;
 
   assign cpuif_wr_strb = { |cpuif_wr_biten[31:24],
                            |cpuif_wr_biten[23:16],
@@ -652,7 +684,8 @@ module usb_ocp_recovery_top
                                        && (ext_aperture_offset <  OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
   assign cpuif_req_block = rb_is_ext
                            && ((ext_fifo_aperture_access
-                                && (usb_fifo_req || usb_fifo_packet_active_q))
+                                 && (usb_fifo_req || usb_fifo_packet_active_q
+                                     || rec_fifo_reservation_active))
                                || (ext_fifo_data_aperture_access
                                    && rb_rd
                                    && !payload_available));
@@ -741,6 +774,10 @@ module usb_ocp_recovery_top
     rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.swwe = rb_is_ext;
     rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.next = 1'b0;
     rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.we = ocp_claim_abort_clear;
+    rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.swwe = rb_is_ext;
+    rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.next = 1'b0;
+    rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.we =
+        protocol_error_general_clear;
 
     // CALIPTRA_STATUS (read-only, hw=w): Caliptra-specific sticky FIFO status
     // relocated out of the non-spec INDIRECT_FIFO_STATUS byte-0 bits. Driven
@@ -915,6 +952,39 @@ module usb_ocp_recovery_top
       if ($past(rst_ni) && $past(proto_err_rd_pulse)) begin
         assert (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)
           else $error("usb_ocp_recovery_top: protocol error did not clear on completed USB DEVICE_STATUS read");
+      end
+      if (fw_protocol_error_accept) begin
+        assert (batch_aborted)
+          else $error("usb_ocp_recovery_top: firmware general error accepted without an aborted FIFO batch");
+      end
+      if (fw_protocol_error_req && !batch_aborted) begin
+        assert (!rec_fw_protocol_error_req)
+          else $error("usb_ocp_recovery_top: invalid firmware general error request reached USB");
+      end
+      if (protocol_error_general_clear) begin
+        assert (rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.we
+                && !rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.next)
+          else $error("usb_ocp_recovery_top: firmware general error field did not self-clear");
+      end
+      if (decode_protocol_error_vld) begin
+        assert (decode_protocol_error_code != OCP_PROTOCOL_ERROR_NONE)
+          else $error("usb_ocp_recovery_top: decoder raised an empty protocol error");
+      end
+      if ($past(rst_ni) && $past(fw_protocol_error_accept)
+          && ($past(protocol_error_q) == OCP_PROTOCOL_ERROR_NONE)
+          && !$past(proto_err_rd_pulse)
+          && !$past(decode_protocol_error_vld)
+          && !$past(rec_ctrl_length_error)
+          && !$past(usb_protocol_error_set)) begin
+        assert (protocol_error_q == OCP_PROTOCOL_ERROR_GENERAL)
+          else $error("usb_ocp_recovery_top: firmware general error was not recorded");
+      end
+      if ($past(rst_ni)
+          && ($past(protocol_error_q) == OCP_PROTOCOL_ERROR_NONE)
+          && $past(decode_protocol_error_vld)
+          && !$past(proto_err_rd_pulse)) begin
+        assert (protocol_error_q == $past(decode_protocol_error_code))
+          else $error("usb_ocp_recovery_top: USB error lost first-error priority");
       end
     end
   end

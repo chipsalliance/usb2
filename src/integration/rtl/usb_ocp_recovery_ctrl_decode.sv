@@ -71,6 +71,8 @@ module usb_ocp_recovery_ctrl_decode (
   input  logic        ctrl_xfer_done,
   input  logic        ctrl_xfer_abort,
   output logic        proto_err_rd_pulse,
+  output logic        protocol_error_vld,
+  output logic [7:0]  protocol_error_code,
 
   // to/from regs (A3) -- word-wide reg bus, rb_offset is a WORD index
   output logic [7:0]  rb_cmd,
@@ -99,6 +101,9 @@ module usb_ocp_recovery_ctrl_decode (
   logic [7:0]  cmd_code_s;
   logic        cmd_code_valid_s;
   logic        ocp_req_valid_s;
+  logic        cmd_supported_s;
+  logic        direction_legal_s;
+  logic        length_legal_s;
   ocp_response_meta_t response_meta_s;
   logic [15:0]        read_length_s;
 
@@ -114,12 +119,77 @@ module usb_ocp_recovery_ctrl_decode (
     cmd_code_valid_s = (cmd_code_s >= OCP_CMD_MIN) && (cmd_code_s <= OCP_CMD_MAX);
     ocp_req_valid_s  = (brq_s == 8'h00) && (wvalue_s[15:8] == 8'h00)
                        && cmd_code_valid_s;
+    cmd_supported_s  = 1'b1;
+    direction_legal_s = 1'b1;
+    length_legal_s   = 1'b0;
     response_meta_s  = ocp_response_meta(cmd_code_s);
     if (response_meta_s.known && (wlength_s < {9'h000, response_meta_s.bytes})) begin
       read_length_s = wlength_s;
     end else begin
       read_length_s = {9'h000, response_meta_s.bytes};
     end
+
+    // OCP Recovery v1.1 Sec 9.2 command envelopes are rejected at SETUP
+    // time. This keeps malformed transfers from reaching register or FIFO
+    // side effects while the USB SETUP transaction itself remains ACKed.
+    unique case (cmd_code_s)
+      OCP_CMD_PROT_CAP:
+        begin
+          direction_legal_s = is_in_s;
+          length_legal_s = (wlength_s >= 16'(OCP_SPEC_LEN_PROT_CAP))
+                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
+        end
+      OCP_CMD_DEVICE_ID:
+        begin
+          direction_legal_s = is_in_s;
+          length_legal_s = (wlength_s >= 16'(OCP_SPEC_MIN_LEN_DEVICE_ID))
+                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
+        end
+      OCP_CMD_DEVICE_STATUS:
+        begin
+          direction_legal_s = is_in_s;
+          length_legal_s = (wlength_s >= 16'(OCP_SPEC_MIN_LEN_DEVICE_STATUS))
+                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
+        end
+      OCP_CMD_DEVICE_RESET:
+        begin direction_legal_s = !is_in_s; length_legal_s = (wlength_s == 16'(OCP_SPEC_LEN_DEVICE_RESET)); end
+      OCP_CMD_RECOVERY_CTRL:
+        begin direction_legal_s = !is_in_s; length_legal_s = (wlength_s == 16'(OCP_SPEC_LEN_RECOVERY_CTRL)); end
+      OCP_CMD_RECOVERY_STATUS:
+        begin
+          direction_legal_s = is_in_s;
+          length_legal_s = (wlength_s >= 16'(OCP_SPEC_LEN_RECOVERY_STATUS))
+                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
+        end
+      OCP_CMD_HW_STATUS:
+        begin
+          direction_legal_s = is_in_s;
+          length_legal_s = (wlength_s >= 16'(OCP_SPEC_MIN_LEN_HW_STATUS))
+                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
+        end
+      OCP_CMD_INDIRECT_FIFO_CTRL:
+        begin direction_legal_s = !is_in_s; length_legal_s = (wlength_s == 16'(OCP_SPEC_LEN_INDIRECT_FIFO_CTRL)); end
+      OCP_CMD_INDIRECT_FIFO_STATUS:
+        begin
+          direction_legal_s = is_in_s;
+          length_legal_s = (wlength_s >= 16'(OCP_SPEC_LEN_INDIRECT_FIFO_STATUS))
+                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
+        end
+      OCP_CMD_INDIRECT_FIFO_DATA:
+        begin
+          direction_legal_s = !is_in_s;
+          length_legal_s = (wlength_s >= 16'(OCP_SPEC_MIN_LEN_INDIRECT_FIFO_DATA))
+                           && (wlength_s <= 16'd64);
+        end
+      OCP_CMD_VENDOR:
+        begin direction_legal_s = 1'b1; length_legal_s = (wlength_s == 16'(OCP_LEN_VENDOR)); end
+      default:
+        begin
+          cmd_supported_s = 1'b0;
+          direction_legal_s = 1'b0;
+          length_legal_s = 1'b0;
+        end
+    endcase
   end
 
   //---------------------------------------------------------------------------
@@ -235,6 +305,8 @@ module usb_ocp_recovery_ctrl_decode (
     ctrl_in_resp_bytes = resp_bytes_q;
     ctrl_in_resp_known = resp_known_q;
     ctrl_set_stall = 1'b0;
+    protocol_error_vld = 1'b0;
+    protocol_error_code = OCP_PROTOCOL_ERROR_NONE;
     proto_err_rd_pulse = ctrl_xfer_done
                        && (state_q == S_WAIT)
                        && is_in_q
@@ -282,15 +354,28 @@ module usb_ocp_recovery_ctrl_decode (
           hold_be_d    = '0;
           hold_last_d  = 1'b0;
           hold_vld_d   = 1'b0;
-          if (!ocp_req_valid_s) begin
+          if ((brq_s != 8'h00) || (wvalue_s[15:8] != 8'h00)) begin
             length_d     = '0;
             resp_bytes_d = '0;
             resp_known_d = 1'b0;
+            protocol_error_vld = 1'b1;
+            protocol_error_code = OCP_PROTOCOL_ERROR_GENERAL;
             state_d = S_STALL;
-          end else if (wlength_s == 16'd0) begin
+          end else if (!ocp_req_valid_s || !cmd_supported_s ||
+                       !direction_legal_s) begin
             length_d     = '0;
             resp_bytes_d = '0;
             resp_known_d = 1'b0;
+            protocol_error_vld = 1'b1;
+            protocol_error_code = OCP_PROTOCOL_ERROR_UNSUPPORTED_COMMAND;
+            state_d = S_STALL;
+          end else if (!length_legal_s) begin
+            length_d     = '0;
+            resp_bytes_d = '0;
+            resp_known_d = 1'b0;
+            protocol_error_vld = 1'b1;
+            protocol_error_code = is_in_s ? OCP_PROTOCOL_ERROR_GENERAL
+                                          : OCP_PROTOCOL_ERROR_LENGTH;
             state_d = S_STALL;
           end else if (is_in_s) begin
             length_d     = read_length_s;
@@ -483,6 +568,12 @@ module usb_ocp_recovery_ctrl_decode (
           else $error("ctrl_decode: clipped response length exceeded wLength");
         assert (response_meta_s.known || (read_length_s == '0))
           else $error("ctrl_decode: unknown response metadata must not fall back to wLength");
+      end
+      if (protocol_error_vld) begin
+        assert (protocol_error_code != OCP_PROTOCOL_ERROR_NONE)
+          else $error("ctrl_decode: protocol error valid without a coded error");
+        assert (!rb_wr && !rb_rd)
+          else $error("ctrl_decode: rejected SETUP reached a downstream write");
       end
       assert (!(rb_wr && rb_rd))
         else $error("ctrl_decode: rb_wr and rb_rd asserted simultaneously");

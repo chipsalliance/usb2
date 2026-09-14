@@ -177,7 +177,6 @@ module usb_ocp_recovery_cms_fifo #(
   logic        push_req;
   logic        push_accept;
   logic        push_drop_full;
-  logic        push_reject;
   logic        pop_req;
   logic        pop_accept;
   logic [3:0]  push_wstrb;
@@ -202,6 +201,7 @@ module usb_ocp_recovery_cms_fifo #(
   logic        fifo_becomes_full;
   logic        fifo_becomes_empty;
   logic        terminal_image_push;
+  logic [FIFO_DEPTH_W-1:0] image_remaining_dwords;
 
   function automatic logic [31:0] fifo_index_next(input logic [31:0] index);
     logic [31:0] next_index;
@@ -282,7 +282,6 @@ module usb_ocp_recovery_cms_fifo #(
   assign push_req = usb_data_wr;
   assign push_accept = fifo_wvalid && fifo_wready;
   assign push_drop_full = push_req && fifo_full && !image_complete && !fifo_clear;
-  assign push_reject = usb_data_wr && !push_accept;
   assign push_raw_wdata = fifo_rb_wdata;
   assign push_wstrb = fifo_rb_wstrb;
   always_comb begin
@@ -301,7 +300,13 @@ module usb_ocp_recovery_cms_fifo #(
   assign fifo_becomes_empty = pop_accept
                             && (fifo_wdepth == FIFO_DEPTH_W'(1));
   assign terminal_image_push = push_accept && (image_size_q != '0)
-                            && ((accepted_push_count_q + 32'd1) >= image_size_q);
+                             && ((accepted_push_count_q + 32'd1) >= image_size_q);
+  assign image_remaining_dwords =
+      (image_size_q == '0) ? FIFO_DEPTH_W'(FIFO_DEPTH) :
+      (accepted_push_count_q >= image_size_q) ? '0 :
+      ((image_size_q - accepted_push_count_q) > 32'(FIFO_DEPTH))
+        ? FIFO_DEPTH_W'(FIFO_DEPTH)
+        : FIFO_DEPTH_W'(image_size_q - accepted_push_count_q);
 
   always_comb begin
     fifo_wvalid = push_req && !image_complete && !fifo_clear;
@@ -544,11 +549,9 @@ module usb_ocp_recovery_cms_fifo #(
   end
 
   always_comb begin
-    fifo_rb_ack = rb_req && (is_reg_cmd
-                           || usb_data_rd
-                           || (usb_data_wr && (push_accept || push_reject)));
+    fifo_rb_ack = rb_req && (is_reg_cmd || usb_data_rd || push_accept);
     fifo_rb_err = 1'b0;
-    if (usb_data_rd || push_reject) begin
+    if (usb_data_rd) begin
       fifo_rb_err = rb_req;
     end
     if (fifo_rb_sel && !(is_reg_cmd || is_fifo_data)) begin
@@ -566,7 +569,11 @@ module usb_ocp_recovery_cms_fifo #(
     fifo_overflow     = overflow_q;
     payload_available = payload_available_q;
     batch_aborted     = batch_aborted_q;
-    fifo_free_dwords  = FIFO_DEPTH_W'(FIFO_DEPTH) - fifo_wdepth;
+    if ((FIFO_DEPTH_W'(FIFO_DEPTH) - fifo_wdepth) < image_remaining_dwords) begin
+      fifo_free_dwords = FIFO_DEPTH_W'(FIFO_DEPTH) - fifo_wdepth;
+    end else begin
+      fifo_free_dwords = image_remaining_dwords;
+    end
     image_size        = {image_size_q[29:0], 2'b00};
     bytes_pushed      = {accepted_push_count_q[29:0], 2'b00};
 
@@ -597,6 +604,8 @@ module usb_ocp_recovery_cms_fifo #(
         else $error("usb_ocp_recovery_cms_fifo: FIFO flush (INDIRECT_FIFO_CTRL reset) collided with a data push/pop; clr_i and the synchronous control-plane reset assume mutual exclusivity");
       assert (!(fifo_abort_i && (push_accept || pop_accept)))
         else $error("usb_ocp_recovery_cms_fifo: abort accepted a FIFO transfer");
+      assert (!(fifo_abort_i && fifo_flush))
+        else $error("usb_ocp_recovery_cms_fifo: batch abort collided with FIFO reset");
       assert (!(usb_data_rd && ext_data_rd))
         else $error("usb_ocp_recovery_cms_fifo: both sources attempted DATA pop");
       assert (!((usb_data_wr || usb_data_rd || usb_ctrl_word0_wr || usb_ctrl_word1_wr)
@@ -649,6 +658,10 @@ module usb_ocp_recovery_cms_fifo #(
       if (usb_data_wr && fifo_rb_ack && !fifo_rb_err) begin
         assert (push_accept)
           else $error("usb_ocp_recovery_cms_fifo: successful USB DATA write did not enter FIFO");
+      end
+      if (usb_data_wr) begin
+        assert (push_accept)
+          else $error("usb_ocp_recovery_cms_fifo: preaccepted USB push was rejected");
       end
       if (usb_data_rd) begin
         assert (!pop_accept)
