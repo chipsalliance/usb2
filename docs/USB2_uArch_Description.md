@@ -11,7 +11,7 @@ Endpoint Data Manager, while using different endpoint implementations:
 ```text
 Embedded Hub
   Hardware-managed EP0 and EP1 IN
-  External Descriptor RAM
+  Internal control and descriptor register file
 
 DEV0 and DEV1
   Software-controlled register interfaces
@@ -33,7 +33,7 @@ between the hardware-managed Hub and the RAM-based software devices.
 
 Provides the main visual reference for the complete architecture, including
 the shared PIE and DMA, clock-domain crossing, Hub subsystem, DEV0/DEV1
-subsystems, routing logic, AHB interfaces, and external RAMs.
+subsystems, routing logic, AHB interfaces, and external Endpoint RAMs.
 
 ### 3. Top-Level Configuration Generics
 
@@ -139,10 +139,10 @@ The selected-function index controls:
 - DMA endpoint-state update routing;
 - grant and read-data response selection.
 
-The embedded Hub uses a register-based endpoint implementation. Its EP0 and
-EP1 IN runtime contexts are maintained by dedicated hardware, while
-descriptors and the SETUP request decode table are stored in an external Hub
-Descriptor RAM.
+The embedded Hub uses a register-based implementation. Its EP0 and EP1 IN
+runtime contexts are maintained by dedicated hardware, while Hub control,
+descriptors, stored responses, and SETUP request decode information are
+maintained in an internal register file.
 
 DEV0 and DEV1 use independent Endpoint RAMs containing their Endpoint Lists,
 endpoint contexts, and TX/RX payload buffers. Each RAM can be accessed both
@@ -183,10 +183,10 @@ The IP top-level exposes interfaces for:
 
 - system clock, reset, and power-management coordination;
 - connection to an external USB 2.0 PHY through UTMI or ULPI;
-- independent AHB control of the embedded Hub, DEV0, and DEV1;
-- external AHB access to the Hub Descriptor RAM and the DEV0 and DEV1
-  Endpoint RAMs;
-- native connection to the three external RAM macros or memory models;
+- independent AHB control of the embedded Hub, DEV0, and DEV1, including
+  access to the internal Hub control and descriptor register file;
+- external AHB access to the DEV0 and DEV1 Endpoint RAMs;
+- native connection to the two external Endpoint RAM macros or memory models;
 - independent DEV0 and DEV1 interrupt reporting;
 - static configuration and testability;
 - USB frame timing and internal USB DMA write-access observation.
@@ -206,9 +206,9 @@ as `pie_clk` by the shared USB Protocol and Interface Engine.
 |---|---|---|
 | System integration | Clock, reset, clock request, wake-up, VBUS, and analog control | Connects the IP to the system clocking, reset, power-management, and analog-control infrastructure. |
 | USB PHY | UTMI and ULPI | Connects the shared USB PIE to an external USB 2.0 PHY. |
-| Host control | Hub, DEV0, and DEV1 AHB register-control interfaces | Allows an external system master to configure and monitor the three USB functions. |
-| External memory access | Hub Descriptor RAM and DEV0/DEV1 Endpoint RAM AHB interfaces | Allows an external system master to initialize, inspect, and update the USB memories. |
-| Native memory | Hub Descriptor RAM and DEV0/DEV1 Endpoint RAM native interfaces | Connects the IP to the three external RAM macros or memory models. |
+| Host control | Hub, DEV0, and DEV1 AHB register-control interfaces | Allows an external system master to configure and monitor the three USB functions and to initialize the internal Hub control and descriptor register file. |
+| External memory access | DEV0/DEV1 Endpoint RAM AHB interfaces | Allows an external system master to initialize, inspect, and update the software-device Endpoint RAMs. |
+| Native memory | DEV0/DEV1 Endpoint RAM native interfaces | Connects the IP to the two external Endpoint RAM macros or memory models. |
 | Interrupt and observation | DEV0/DEV1 IRQ and FIQ, frame toggle, and USB DMA write-access observation | Reports software-device events and exposes selected internal timing and memory-write activity. |
 | Configuration and test | Hub configuration, self-powered indication, and DFT controls | Provides static integration configuration and test support. |
 
@@ -588,9 +588,8 @@ definitions are described separately in the Programming Model section.
 
 ## External Memory Interfaces
 
-The current IP implementation uses three external memories:
+The current IP implementation uses two external memories:
 
-- one Hub Descriptor RAM;
 - one DEV0 Endpoint RAM;
 - one DEV1 Endpoint RAM.
 
@@ -605,7 +604,7 @@ memory port.
 
 ### Common RAM AHB Behavior
 
-All three external RAM interfaces use separate instances of
+The two external Endpoint RAM interfaces use separate instances of
 `ahb_dma_slave`.
 
 The common behavior is:
@@ -620,33 +619,10 @@ The common behavior is:
 - `HRESP[1:0]` permanently set to `OKAY`.
 
 For DEV0 and DEV1, the internal requester is the shared Endpoint Data
-Manager. For the Hub Descriptor RAM, the internal requester is the read-only
-Hub EP0 path.
+Manager.
 
 The `_dma_` substring in the top-level signal names is inherited from the
 legacy internal module name. These ports remain AHB slave interfaces.
-
-### Hub Descriptor RAM AHB Slave Interface
-
-This interface allows an external system master to initialize, read, and
-update the memory used by the Hub EP0 control path.
-
-| Signal | Direction | Width | Description |
-|---|---:|---:|---|
-| `hub_desc_ahbs_dma_haddr[RAM_ADDRWIDTH+4:0]` | Input | `RAM_ADDRWIDTH + 5` | Byte-addressed AHB address used by the memory adapter. |
-| `hub_desc_ahbs_dma_htrans[1:0]` | Input | 2 | AHB transfer type. Bit 1 identifies an active `NONSEQ` or `SEQ` transfer. |
-| `hub_desc_ahbs_dma_hwrite` | Input | 1 | Transfer direction: high for write and low for read. |
-| `hub_desc_ahbs_dma_hwdata[AHB_DATAWIDTH-1:0]` | Input | `AHB_DATAWIDTH` | AHB write-data bus. |
-| `hub_desc_ahbs_dma_hsel` | Input | 1 | Hub Descriptor RAM AHB slave-select input. |
-| `hub_desc_ahbs_dma_hreadyin` | Input | 1 | AHB transfer-ready input used to qualify a new transfer. |
-| `hub_desc_ahbs_dma_hrdata[AHB_DATAWIDTH-1:0]` | Output | `AHB_DATAWIDTH` | AHB read-data bus. |
-| `hub_desc_ahbs_dma_hreadyout` | Output | 1 | AHB ready output. It may be deasserted while the RAM is owned by the Hub EP0 path. |
-| `hub_desc_ahbs_dma_hresp[1:0]` | Output | 2 | AHB transfer response. Permanently returns `OKAY`. |
-| `hub_desc_ahbs_dma_hsize[2:0]` | Input | 3 | AHB transfer size. Byte, half-word, and word accesses are supported through `HSIZE[1:0]`. |
-| `hub_desc_ahbs_dma_hburst[2:0]` | Input | 3 | AHB burst type. Exposed at the boundary but not used by the current RTL. |
-
-The internal Hub EP0 requester accesses the Hub Descriptor RAM in read-only
-mode.
 
 ### Software-Device Endpoint RAM AHB Slave Interfaces
 
@@ -681,17 +657,6 @@ The three native RAM interfaces share the following conventions:
 - chip select retained as required by the adapter read-data timing.
 
 Internal USB memory requests have priority over external AHB requests.
-
-### Hub Descriptor RAM Native Interface
-
-| Signal | Direction | Width | Description |
-|---|---:|---:|---|
-| `hub_desc_mem_q[RAM_DATAWIDTH-1:0]` | Input | `RAM_DATAWIDTH` | Read-data bus from the Hub Descriptor RAM. |
-| `hub_desc_mem_d[RAM_DATAWIDTH-1:0]` | Output | `RAM_DATAWIDTH` | Write-data bus to the Hub Descriptor RAM. Hub EP0 requests are read-only, so writes originate from the external AHB interface. |
-| `hub_desc_mem_cs` | Output | 1 | Active-high RAM chip select. |
-| `hub_desc_mem_a[RAM_ADDRWIDTH-1:0]` | Output | `RAM_ADDRWIDTH` | Native RAM word address. |
-| `hub_desc_mem_web_out` | Output | 1 | Active-low write enable. Low identifies a write; high identifies a read. |
-| `hub_desc_mem_bsel[RAM_DATAWIDTH-1:0]` | Output | `RAM_DATAWIDTH` | Active-high write-selection mask derived from the access size and address. |
 
 ### Software-Device Endpoint RAM Native Interfaces
 
@@ -868,9 +833,7 @@ The following requirements apply at the current IP top-level boundary:
 | `ulpi_*` | USB PHY | ULPI |
 | `hub_ahbs_*` | Host control | Hub Control AHB |
 | `dev0_ahbs_*`, `dev1_ahbs_*` | Host control | Software-Device Control AHB |
-| `hub_desc_ahbs_dma_*` | External memory access | Hub Descriptor RAM AHB |
 | `dev0_ahbs_dma_*`, `dev1_ahbs_dma_*` | External memory access | Endpoint RAM AHB |
-| `hub_desc_mem_*` | Native memory | Hub Descriptor RAM |
 | `dev0_mem_*`, `dev1_mem_*` | Native memory | Endpoint RAM |
 | `dev0_usb_irq`, `dev0_usb_fiq`, `dev1_usb_irq`, `dev1_usb_fiq` | Interrupt | Software-Device Interrupts |
 | `USB_FrameToggle` | Observation | Frame Timing |
@@ -1135,7 +1098,7 @@ stored internally in `setup_bytes[63:0]`.
 
 After the Hub SETUP-decode trigger is received, the handler:
 
-1. reads the Hub device-link entry from the Hub Descriptor RAM;
+1. reads the Hub device-link entry from the internal control and descriptor register file;
 2. locates the associated SETUP decode table;
 3. compares the stored SETUP packet against table patterns and masks;
 4. obtains the internal request code and response-buffer selection;
@@ -1155,8 +1118,8 @@ Short standard-request responses are generated internally from current
 device or endpoint state and protocol-defined constant fields. The generated
 response is stored as a snapshot when SETUP decoding completes.
 
-Longer stored responses, particularly USB descriptors, are read from the Hub
-Descriptor RAM.
+Longer stored responses, particularly USB descriptors, are read from the
+internal Hub control and descriptor register file.
 
 Requests belonging to the USB Hub Class are dispatched to
 `usb_app_hw_hub_1` using the decoded request code, `wValue`, and `wIndex`.
@@ -1169,10 +1132,10 @@ Hub Class response
 Descriptor or stored response data
 ```
 
-During SETUP-table decoding, the handler actively controls the Hub Descriptor
-RAM interface. During a subsequent EP0 IN data stage, the endpoint data
-manager initiates the read and the handler acts as the EP0 response gateway
-and response-source multiplexer.
+During SETUP-table decoding, the handler reads the required information from
+the internal Hub control and descriptor register file. During a subsequent
+EP0 IN data stage, the endpoint data manager initiates the read and the
+handler acts as the EP0 response gateway and response-source multiplexer.
 
 ---
 
@@ -1306,54 +1269,28 @@ The decoder contains no state or arbitration.
 
 ---
 
-### `hub_desc_ahb_dma_slave` - Hub Descriptor RAM Access Adapter
+### Hub Control and Descriptor Register File
 
-**Entity:** `ahb_dma_slave`  
-**Source:** `RTL/ahb_dma_slave.m.vhdl`  
-**Clock domain:** `hclk`
-
-`hub_desc_ahb_dma_slave` connects the Hub Descriptor RAM to two requesters:
-
-- the internal read-only request generated by the Hub EP0 handler;
-- the external Hub Descriptor RAM AHB interface.
-
-The internal Hub EP0 requester has priority over an external AHB request.
-When an internal read is active, an external AHB access can be delayed using
-the AHB ready response.
-
-The adapter performs:
-
-- internal-request and external-AHB arbitration;
-- AHB wait-state generation;
-- byte-address to native RAM-address conversion;
-- write-data alignment;
-- write-selection mask generation;
-- read-data selection;
-- native RAM control generation.
-
-The internal EP0 path is read-only. External AHB accesses can read and write
-the Hub Descriptor RAM.
-
----
-
-### Hub Descriptor RAM
-
-The external Hub Descriptor RAM stores the data required by the hardware Hub
-EP0 implementation.
+The internal Hub Control and Descriptor Register File contains the
+software-controlled Hub enable and upstream-connect state together with the
+information required by the hardware-managed Hub EP0 implementation.
 
 Its contents include:
 
+- Hub function enable and upstream-connect control;
 - USB descriptors and other stored EP0 response data;
 - the Hub SETUP request decode table;
 - request comparison patterns and masks;
 - internal request identifiers;
 - response and data-buffer references.
 
-The RAM does not store the runtime endpoint context of Hub EP0 or Hub EP1 IN.
-That state is maintained by `usb_ep_config_handler_1`.
+The register file is accessible through the Hub control AHB interface and is
+used internally by the Hub EP0 request handler for SETUP decoding and
+descriptor or stored-response retrieval.
 
-The eight-byte SETUP packet received from the USB bus is also not stored in
-this RAM. It is stored in internal registers within `hub_ep0_handler_1`.
+The Hub EP0 and EP1 IN runtime contexts remain maintained separately by
+`usb_ep_config_handler_1`. The received eight-byte SETUP packet is stored
+internally within `hub_ep0_handler_1`.
 
 ---
 
@@ -2238,7 +2175,7 @@ For EP0 response reads, address bits `[13:12]` select:
 ```text
 00: Standard-request response generated by the EP0 handler
 01: Hub Class response generated by the Hub controller
-1x: Descriptor or stored response read from Hub Descriptor RAM
+1x: Descriptor or stored response read from the internal Hub control and descriptor register file
 ```
 
 The response sources are selected exclusively. Data from different sources
@@ -2282,26 +2219,26 @@ SETUP-received trigger into the Hub EP0 handler.
 
 ### Hub Descriptor and Response Read
 
-**Connection:** `hub_ep0_handler_1` and `hub_desc_ahb_dma_slave`
+**Connection:** `hub_ep0_handler_1` and the internal Hub control and descriptor register file
 
-#### EP0 handler to RAM adapter
+##### EP0 handler to internal register file
 
 ```text
 ep0_mem_req
 ep0_mem_addr[11:0]
 ```
 
-#### RAM adapter to EP0 handler
+##### Internal register file to EP0 handler
 
 ```text
 ep0_mem_gnt
 ep0_mem_rdata[RAM_DATAWIDTH-1:0]
 ```
 
-- `ep0_mem_req` requests a read from the Hub Descriptor RAM.
+- `ep0_mem_req` requests a read from the internal Hub control and descriptor register file.
 - `ep0_mem_addr[11:0]` provides the DWORD address.
 - `ep0_mem_gnt` indicates that the requested data is available.
-- `ep0_mem_rdata[RAM_DATAWIDTH-1:0]` returns the selected RAM word.
+- `ep0_mem_rdata[RAM_DATAWIDTH-1:0]` returns the selected register-file word.
 
 The interface is read-only from the perspective of `hub_ep0_handler_1`.
 
@@ -2310,9 +2247,10 @@ The handler uses this interface in two operating modes:
 1. autonomous SETUP decode-table access;
 2. DMA-initiated descriptor or stored-response access.
 
-During SETUP decoding, the handler generates the RAM requests autonomously.
-During an EP0 IN data stage, the DMA initiates the read and the handler acts
-as the gateway between the Hub function path and the Descriptor RAM.
+During SETUP decoding, the handler autonomously reads the required information
+from the internal register file. During an EP0 IN data stage, the DMA initiates
+the read and the handler acts as the gateway between the Hub function path and
+the internal control and descriptor register file.
 
 ---
 
@@ -2648,8 +2586,8 @@ EP0 SETUP storage and request decode:
 Hub and port class behavior:
   usb_app_hw_hub_1
 
-Descriptors, decode tables, and stored responses:
-  Hub Descriptor RAM
+Hub control, descriptors, decode tables, and stored responses:
+  Internal Hub control and descriptor register file
 
 Hub Status Change EP1 IN payload:
   usb_app_hw_hub_1
@@ -2757,11 +2695,8 @@ hub_ep0_handler_1
 usb_ep_config_handler_1
   Hub EP0 runtime-context storage
 
-hub_desc_ahb_dma_slave
-  Hub Descriptor RAM access arbitration and adaptation
-
-Hub Descriptor RAM
-  Device link and Setup Decode Table storage
+Hub Control and Descriptor Register File
+  Hub control, descriptor, stored-response, and Setup Decode Table storage
 ```
 
 ## Hub EP0 Context Lookup
@@ -2861,7 +2796,7 @@ setup_bytes[63:0]
 
 The SETUP packet is stored inside the EP0 handler.
 
-It is not stored in the Hub Descriptor RAM.
+It is stored separately from the internal Hub control and descriptor register file.
 
 The operation can be summarized as:
 
@@ -2935,10 +2870,10 @@ usbreg_setup_to_decode[0] = 1
 
 the handler begins the autonomous Hub Setup Decode Table lookup.
 
-## Autonomous Hub Descriptor RAM Access
+## Internal Hub Control and Descriptor Register File Access
 
-During SETUP decoding, `hub_ep0_handler_1` becomes the active internal
-requester of the Hub Descriptor RAM.
+During SETUP decoding, `hub_ep0_handler_1` reads the required information
+from the internal Hub control and descriptor register file.
 
 The interface is:
 
@@ -2949,19 +2884,16 @@ ep0_mem_gnt
 ep0_mem_rdata[RAM_DATAWIDTH-1:0]
 ```
 
+```text
 The path is:
 
 ```text
 hub_ep0_handler_1
   -> ep0_mem_*
-  -> hub_desc_ahb_dma_slave
-  -> Hub Descriptor RAM
+  -> Internal Hub Control and Descriptor Register File
 ```
 
 The handler's access is read-only.
-
-`hub_desc_ahb_dma_slave` gives the internal EP0 request priority over an
-external AHB request to the same RAM.
 
 The Setup Decode FSM uses the following main states:
 
@@ -3187,14 +3119,14 @@ sources:
   Hub Class response generated by usb_app_hw_hub_1
 
 1x:
-  Descriptor or stored response read from the Hub Descriptor RAM
+  Descriptor or stored response read from the internal Hub control and descriptor register file
 ```
 
 The EP0 handler therefore performs two distinct roles:
 
 ```text
 During SETUP decoding:
-  Active requester of the Hub Descriptor RAM
+  Active reader of the internal Hub control and descriptor register file
 
 During an EP0 IN data stage:
   Passive EP0 response gateway and response-source mux
@@ -3474,7 +3406,7 @@ Common Hub SETUP flow
 The descriptor response is not stored in the 32-bit standard-response
 container.
 
-The descriptor is stored in the external Hub Descriptor RAM.
+The descriptor is stored in the internal Hub control and descriptor register file.
 
 The matching Setup Decode Table entry supplies the response or data-buffer
 reference used to locate the descriptor.
@@ -3500,11 +3432,11 @@ When the host sends the first descriptor IN token:
 1. The PIE selects the Hub.
 2. The PIE requests the Hub EP0 IN context.
 3. `usb_dma_1` reads the context through Hub region `11`.
-4. The context indicates that the payload resides in the Descriptor RAM or
-   stored-response region.
+4. The context indicates that the payload resides in the descriptor or
+   stored-response region of the internal Hub control and descriptor register file.
 5. `usb_dma_1` generates a payload read through Hub region `00`.
 6. Inside `hub_ep0_handler_1`, address bits `[13:12] = 1x` select the
-   Descriptor RAM response path.
+   internal Hub control and descriptor register-file response path..
 7. The handler translates the DMA payload address into:
 
 ```text
@@ -3512,17 +3444,15 @@ ep0_mem_addr[11:0]
 ```
 
 8. The handler asserts `ep0_mem_req`.
-9. `hub_desc_ahb_dma_slave` grants the internal read access to the physical
-   Descriptor RAM port.
-10. The Hub Descriptor RAM returns the selected word.
-11. The RAM adapter returns the word through `ep0_mem_rdata`.
-12. The EP0 handler forwards the word through `upd_dma_rdata_ep0`.
-13. `usb_dma_1` selects the required bytes.
-14. The data crosses `usb_synchronizer_1`.
-15. The PIE transmits the descriptor DATA packet.
-16. The host returns the handshake.
-17. The PIE reports completion.
-18. `usb_dma_1` updates the remaining byte count and payload position.
+9. The internal Hub control and descriptor register file returns the selected
+   word through `ep0_mem_rdata`.
+10. The EP0 handler forwards the word through `upd_dma_rdata_ep0`.
+11. `usb_dma_1` selects the required bytes.
+12. The data crosses `usb_synchronizer_1`.
+13. The PIE transmits the descriptor DATA packet.
+14. The host returns the handshake.
+15. The PIE reports completion.
+16. `usb_dma_1` updates the remaining byte count and payload position.
 
 For a descriptor larger than one maximum-size packet, the endpoint remains
 active and the same context and payload-read sequence repeats for each
@@ -3538,21 +3468,18 @@ hub_ep0_handler_1
   Performs address adaptation, request forwarding,
   and response-source selection
 
-hub_desc_ahb_dma_slave
-  Arbitrates the Descriptor RAM port
-
-Hub Descriptor RAM
-  Stores the descriptor payload
+Internal Hub Control and Descriptor Register File
+  Stores and provides the descriptor payload
 ```
 
 This differs from the SETUP decode phase:
 
 ```text
 SETUP decode:
-  hub_ep0_handler_1 autonomously initiates the RAM reads
+  hub_ep0_handler_1 autonomously reads the internal register file
 
 Descriptor DATA stage:
-  usb_dma_1 initiates the RAM reads
+  usb_dma_1 initiates the register-file reads
   hub_ep0_handler_1 acts as a passive gateway
 ```
 
@@ -3609,7 +3536,7 @@ Common Hub SETUP flow
   -> EP0 IN context activated
   -> host IN token
   -> DMA context read
-  -> DMA-driven Descriptor RAM read
+  -> DMA-driven read from the internal Hub control and descriptor register file
   -> descriptor DATA packet
   -> byte-count and payload-position update
   -> final zero-length OUT status stage
@@ -4771,8 +4698,8 @@ EP0 SETUP storage and standard-request processing:
 Hub and downstream-port class behavior:
   usb_app_hw_hub_1
 
-Descriptors and stored responses:
-  Hub Descriptor RAM
+Hub control, descriptors, and stored responses:
+  Internal Hub control and descriptor register file
 
 Hub Status Change EP1 IN payload:
   usb_app_hw_hub_1
