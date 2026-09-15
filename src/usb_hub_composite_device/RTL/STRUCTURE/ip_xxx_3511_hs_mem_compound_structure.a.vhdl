@@ -623,7 +623,8 @@ component usb_ep0_hub_descr
         reg_raddr            : in  std_logic_vector((log2(C_NWORDS))-1 downto 0);
         reg_rdata            : out std_logic_vector(31 downto 0);
         reg_write            : in  std_logic;
-        usb_self_powered     : in  std_logic;
+        usb_self_powered_pin : in  std_logic;
+        usb_self_powered_ff  : out std_logic;
         ep0_mem_req          : in  std_logic;
         ep0_mem_gnt          : out std_logic;
         ep0_mem_addr         : in  std_logic_vector((log2(C_NWORDS))-1 downto 0);
@@ -2012,7 +2013,8 @@ usb_ep0_hub_descr_1 : usb_ep0_hub_descr
       reg_raddr            => hub_reg_raddr,
       reg_rdata            => hub_reg_rdata,
       reg_write            => hub_reg_write,      
-      usb_self_powered     => usb_self_powered_pin,
+      usb_self_powered_ff  => usb_self_powered_ff,
+	  usb_self_powered_pin => usb_self_powered_pin,
       ep0_mem_req          => ep0_mem_req,
       ep0_mem_gnt          => ep0_mem_gnt,
       ep0_mem_addr         => ep0_mem_addr(C_HUB_FIFO_ADDRWIDTH-1 downto 0),
