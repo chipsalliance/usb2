@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<crr:UniversalDevice xmlns:crr="http://apif.freescale.net/schemas/regs/1.4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://apif.freescale.net/schemas/regs/1.4 http://apif.freescale.net/schemas/regs/1.4/regs.xsd">
+  <!-- OCP Recovery v1.1 register map as exposed by usb_ocp_recovery_regs.sv (A3) -->
+  <!-- Commands 0x22..0x2F, byte-addressable within each command's payload.   -->
+  <!-- All byte fields are little-endian packed; wide arrays are described    -->
+  <!-- as a single flat byte-stream field for documentation purposes.         -->
+  <GeneralPeriphery>
+    <GeneralParameters>
+      <instance_header>
+        <instance_description>OCP Recovery v1.1 register set over USB (commands 0x22..0x2F)</instance_description>
+        <template_parameters/>
+      </instance_header>
+      <general_parameter_defs>
+        <string_general_parameter name="peripheralType" value="USB_OCP_RECOVERY" description="Peripheral/Component Type"/>
+      </general_parameter_defs>
+    </GeneralParameters>
+    <dynamic_parameters/>
+    <register_defs>
+      <address_block name="USB_OCP_RECOVERY" byte_order="littleEndian" lau="8">
+        <base_address/>
+        <bit_order order="lsb0"/>
+
+        <!-- =================================================================
+             0x22 PROT_CAP : 16 B, RO
+             Sec 9.2 Tbl 9-3. Sourced from A6 prot_cap_in[127:0].
+             ================================================================= -->
+        <register_def id="PROT_CAP" name="PROT_CAP" width="128">
+          <brief_description>Protocol Capabilities (command code 0x22). Sourced from static prot_cap_in from A6.</brief_description>
+          <address offset="0x00"/>
+          <reset_value value="0x0" mask="0x0"/>
+          <bit_field id="MAGIC" name="MAGIC" position="0" width="64" access="RO">
+            <brief_description>Bytes 0..7: ASCII magic "OCP RECV" identifying protocol.</brief_description>
+          </bit_field>
+          <bit_field id="MAJOR_VER" name="MAJOR_VER" position="64" width="8" access="RO">
+            <brief_description>Byte 8: Protocol major version (=1 for v1.1).</brief_description>
+          </bit_field>
+          <bit_field id="MINOR_VER" name="MINOR_VER" position="72" width="8" access="RO">
+            <brief_description>Byte 9: Protocol minor version (=1 for v1.1).</brief_description>
+          </bit_field>
+          <bit_field id="CAPABILITIES" name="CAPABILITIES" position="80" width="16" access="RO">
+            <brief_description>Bytes 10..11: Capabilities bitmap. b0=Identification, b1=Forced Recovery, b2=Mgmt Reset, b3=Device Reset, b4=Device Status, b5=Recovery Memory, b6=Local C-Image, b7=Push C-Image, b8=Interface Isolation, b9=Hardware Status, b10=Vendor Command, b11..15 reserved.</brief_description>
+          </bit_field>
+          <bit_field id="NUM_CMS_REGIONS" name="NUM_CMS_REGIONS" position="96" width="8" access="RO">
+            <brief_description>Byte 12: Number of Component Memory Space (CMS) regions supported.</brief_description>
+          </bit_field>
+          <bit_field id="MAX_RESPONSE_TIME" name="MAX_RESPONSE_TIME" position="104" width="8" access="RO">
+            <brief_description>Byte 13: Max response time, encoded as 2^N microseconds.</brief_description>
+          </bit_field>
+          <bit_field id="HEARTBEAT_PERIOD" name="HEARTBEAT_PERIOD" position="112" width="16" access="RO">
+            <brief_description>Bytes 14..15: Heartbeat period in milliseconds (0=disabled).</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x23 DEVICE_ID : 24 B, RO
+             Sec 9.2 Tbl 9-4. Sourced from A6 device_id_in[191:0].
+             ================================================================= -->
+        <register_def id="DEVICE_ID" name="DEVICE_ID" width="192">
+          <brief_description>Device Identification (command code 0x23). Sourced from static device_id_in from A6.</brief_description>
+          <address offset="0x10"/>
+          <reset_value value="0x0" mask="0x0"/>
+          <bit_field id="DESC_TYPE" name="DESC_TYPE" position="0" width="8" access="RO">
+            <brief_description>Byte 0: Descriptor type. 0=PCI, 1=IANA, 2=UUID, 3=PnP, 4=ACPI, 5..15=reserved, 0xFF=NVMe-MI.</brief_description>
+          </bit_field>
+          <bit_field id="VENDOR_STRING_LEN" name="VENDOR_STRING_LEN" position="8" width="8" access="RO">
+            <brief_description>Byte 1: Length of optional vendor string appended to ID (0 if none).</brief_description>
+          </bit_field>
+          <bit_field id="DESC_PAYLOAD" name="DESC_PAYLOAD" position="16" width="176" access="RO">
+            <brief_description>Bytes 2..23: Descriptor-specific payload (VID/PID/subsys/UUID per DESC_TYPE).</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x24 DEVICE_STATUS : 64 B advertised, RO
+             Sec 9.2 Tbl 9-5. Bytes 0,2,3 live; others 0 this rev.
+             ================================================================= -->
+        <register_def id="DEVICE_STATUS" name="DEVICE_STATUS" width="512">
+          <brief_description>Device Status (command code 0x24). Bytes 0, 2, 3 are live from fsm; remaining bytes are 0 this revision.</brief_description>
+          <address offset="0x28"/>
+          <reset_value value="0x0" mask="0x0"/>
+          <bit_field id="DEVICE_STATUS" name="DEVICE_STATUS" position="0" width="8" access="RO">
+            <brief_description>Byte 0: 0=Status Pending, 1=Healthy, 2=Device Error, 3=Recovery Mode, 4=Recovery Pending, 5=Running Recovery Image, 0xE=Boot Failure, 0xF=Fatal Error, others reserved. Driven by device_status_in.</brief_description>
+          </bit_field>
+          <bit_field id="RESERVED_B1" name="RESERVED_B1" position="8" width="8" access="RO">
+            <brief_description>Byte 1: Reserved, returns 0.</brief_description>
+          </bit_field>
+          <bit_field id="PROTOCOL_ERROR" name="PROTOCOL_ERROR" position="16" width="8" access="RO">
+            <brief_description>Byte 2: Protocol error code. 0=None, 1=Unsupported/Write command, 2=Unsupported Parameter, 3=Length Write Error, 4=CRC Error, others reserved. Driven by device_status_protocol_err_in.</brief_description>
+          </bit_field>
+          <bit_field id="RECOVERY_REASON" name="RECOVERY_REASON" position="24" width="8" access="RO">
+            <brief_description>Byte 3: Recovery Reason Code, per Sec 9.2 Tbl 9-6. Driven by device_status_reason_in.</brief_description>
+          </bit_field>
+          <bit_field id="HEARTBEAT" name="HEARTBEAT" position="32" width="16" access="RO">
+            <brief_description>Bytes 4..5: Heartbeat counter. Returns 0 in this revision.</brief_description>
+          </bit_field>
+          <bit_field id="VENDOR_STATUS_LEN" name="VENDOR_STATUS_LEN" position="48" width="8" access="RO">
+            <brief_description>Byte 6: Vendor status payload length. Returns 0 in this revision.</brief_description>
+          </bit_field>
+          <bit_field id="VENDOR_STATUS_PAYLOAD" name="VENDOR_STATUS_PAYLOAD" position="56" width="456" access="RO">
+            <brief_description>Bytes 7..63: Vendor status payload. Returns 0 in this revision.</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x25 DEVICE_RESET : 3 B, WO (reads return 0)
+             Sec 9.2 Tbl 9-7. Byte 0 write generates fsm pulse.
+             ================================================================= -->
+        <register_def id="DEVICE_RESET" name="DEVICE_RESET" width="24">
+          <brief_description>Device Reset (command code 0x25). Write-only: reads return 0. Write to byte 0 emits device_reset_wr pulse to fsm.</brief_description>
+          <address offset="0x68"/>
+          <reset_value value="0x0" mask="0xFFFFFF"/>
+          <bit_field id="RESET_CONTROL" name="RESET_CONTROL" position="0" width="8" access="WO">
+            <brief_description>Byte 0: 0=No Reset, 1=Reset Device, 2=Reset Management, 3=Reset Interface. Strobes device_reset_wr.</brief_description>
+          </bit_field>
+          <bit_field id="FORCED_RECOVERY" name="FORCED_RECOVERY" position="8" width="8" access="WO">
+            <brief_description>Byte 1: 0=No Effect, 0x0F=Enter Forced Recovery on next reset. Stored in device_reset_forced_q.</brief_description>
+          </bit_field>
+          <bit_field id="INTERFACE_CONTROL" name="INTERFACE_CONTROL" position="16" width="8" access="WO">
+            <brief_description>Byte 2: Interface isolation/mask control bits. Stored in device_reset_iface_q.</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x26 RECOVERY_CTRL : 3 B, RW
+             Sec 9.2 Tbl 9-9. Byte 2 write generates activate pulse.
+             ================================================================= -->
+        <register_def id="RECOVERY_CTRL" name="RECOVERY_CTRL" width="24">
+          <brief_description>Recovery Control (command code 0x26). Byte 2 write emits recovery_ctrl_wr activation pulse to fsm.</brief_description>
+          <address offset="0x6B"/>
+          <reset_value value="0x0" mask="0xFFFFFF"/>
+          <bit_field id="CMS" name="CMS" position="0" width="8" access="RW">
+            <brief_description>Byte 0: Component Memory Space (CMS) region index to target. Stored in recovery_ctrl_cms_q.</brief_description>
+          </bit_field>
+          <bit_field id="RECOVERY_IMAGE_SEL" name="RECOVERY_IMAGE_SEL" position="8" width="8" access="RW">
+            <brief_description>Byte 1: 0=No Image / Use Local, 1=Use Recovery Image from Memory Window, 2=Use Stored Recovery Image on Device. Stored in recovery_ctrl_img_sel_q.</brief_description>
+          </bit_field>
+          <bit_field id="ACTIVATE_REC_IMAGE" name="ACTIVATE_REC_IMAGE" position="16" width="8" access="RW">
+            <brief_description>Byte 2: 0=Do Not Activate, 0x0F=Activate Recovery Image. Write strobes recovery_ctrl_wr to fsm.</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x27 RECOVERY_STATUS : 2 B, RO
+             Sec 9.2 Tbl 9-10.
+             ================================================================= -->
+        <register_def id="RECOVERY_STATUS" name="RECOVERY_STATUS" width="16">
+          <brief_description>Recovery Status (command code 0x27). Live from fsm.</brief_description>
+          <address offset="0x6E"/>
+          <reset_value value="0x0" mask="0x0"/>
+          <bit_field id="DEV_REC_STATUS" name="DEV_REC_STATUS" position="0" width="8" access="RO">
+            <brief_description>Byte 0: Low nibble = Recovery Status (0=Not in recovery,1=Awaiting image,2=Booting image,3=Success,0xC=Auth error,0xD=Entry error,0xE=Recovery failed,0xF=Forced recovery). High nibble = Recovery Image Index. Driven by recovery_status_in.</brief_description>
+          </bit_field>
+          <bit_field id="VENDOR_REC_STATUS" name="VENDOR_REC_STATUS" position="8" width="8" access="RO">
+            <brief_description>Byte 1: Vendor-defined recovery status. Driven by recovery_vendor_status_in.</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x28 HW_STATUS : 4 B, RO (writes strobed to fsm)
+             Sec 9.2 Tbl 9-11.
+             ================================================================= -->
+        <register_def id="HW_STATUS" name="HW_STATUS" width="32">
+          <brief_description>Hardware Status (command code 0x28). Reads return fsm inputs. Writes emit hw_status_wr pulse and latch hw_status_wdata.</brief_description>
+          <address offset="0x70"/>
+          <reset_value value="0x0" mask="0x0"/>
+          <bit_field id="DEVICE_HW_STATUS" name="DEVICE_HW_STATUS" position="0" width="8" access="RO">
+            <brief_description>Byte 0: HW status bitmap. b0=Temp Critical, b1=Soft Error, b2=Fatal Error, b3..7 reserved. Driven by hw_status_in.</brief_description>
+          </bit_field>
+          <bit_field id="VENDOR_HW_STATUS_LEN" name="VENDOR_HW_STATUS_LEN" position="8" width="8" access="RO">
+            <brief_description>Byte 1: Vendor HW status payload length. Returns 0 in this revision.</brief_description>
+          </bit_field>
+          <bit_field id="CTEMP" name="CTEMP" position="16" width="8" access="RO">
+            <brief_description>Byte 2: Composite temperature in C (2's complement, -128..127). Returns 0 in this revision.</brief_description>
+          </bit_field>
+          <bit_field id="RESERVED_B3" name="RESERVED_B3" position="24" width="8" access="RO">
+            <brief_description>Byte 3: Reserved, returns 0.</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x29 INDIRECT_CTRL : 6 B, RW (handled locally in A3)
+             Sec 9.2 Tbl 9-12.
+             ================================================================= -->
+        <register_def id="INDIRECT_CTRL" name="INDIRECT_CTRL" width="48">
+          <brief_description>Indirect FIFO Control (command code 0x29). Selects CMS region and byte offset for indirect accesses. Locally stored in A3.</brief_description>
+          <address offset="0x74"/>
+          <reset_value value="0x0" mask="0xFFFFFFFFFFFF"/>
+          <bit_field id="CMS_REGION" name="CMS_REGION" position="0" width="8" access="RW">
+            <brief_description>Byte 0: CMS region index. Stored in indirect_ctrl_cms_q.</brief_description>
+          </bit_field>
+          <bit_field id="RESERVED_B1" name="RESERVED_B1" position="8" width="8" access="RW">
+            <brief_description>Byte 1: Reserved. Stored in indirect_ctrl_rsvd_q.</brief_description>
+          </bit_field>
+          <bit_field id="IMAGE_OFFSET" name="IMAGE_OFFSET" position="16" width="32" access="RW">
+            <brief_description>Bytes 2..5: 32-bit little-endian byte offset into the selected CMS image. Stored in indirect_ctrl_img_offset_q.</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x2A INDIRECT_STATUS : 8 B, RO - routed to A4 (cms_fifo)
+             Sec 9.2 Tbl 9-13. Field layout owned by A4.
+             ================================================================= -->
+        <register_def id="INDIRECT_STATUS" name="INDIRECT_STATUS" width="64">
+          <brief_description>Indirect FIFO Status (command code 0x2A). Routed to A4 cms_fifo via fifo_rb_* pass-through. Field layout owned by A4.</brief_description>
+          <address offset="0x7A"/>
+          <reset_value value="0x0" mask="0x0"/>
+          <bit_field id="STATUS_FLAGS" name="STATUS_FLAGS" position="0" width="8" access="RO">
+            <brief_description>Byte 0: b0=Empty, b1=Full, b2=Region in Use, b3=Region Type, b4..7 reserved. Driven by A4.</brief_description>
+          </bit_field>
+          <bit_field id="REGION_TYPE" name="REGION_TYPE" position="8" width="8" access="RO">
+            <brief_description>Byte 1: Region type: 0=Code/Recovery Img, 1=Log, 2..0xBF reserved, 0xC0..0xFF Vendor. Driven by A4.</brief_description>
+          </bit_field>
+          <bit_field id="REGION_SIZE" name="REGION_SIZE" position="16" width="48" access="RO">
+            <brief_description>Bytes 2..7: Region size / max image size in 4-byte units (little-endian). Driven by A4.</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x2B INDIRECT_DATA : 252 B window, RW - routed to A4
+             ================================================================= -->
+        <register_def id="INDIRECT_DATA" name="INDIRECT_DATA" width="2016">
+          <brief_description>Indirect Data window (command code 0x2B). 252-byte window into CMS region at offset indirect_ctrl_img_offset_q. Routed to A4 cms_fifo; byte-stream access only.</brief_description>
+          <address offset="0x82"/>
+          <reset_value value="0x0" mask="0x0"/>
+          <bit_field id="DATA_WINDOW" name="DATA_WINDOW" position="0" width="2016" access="RW">
+            <brief_description>Bytes 0..251: Byte-addressable data window. A4 enforces offset/length bounds and may raise rb_err beyond region limits.</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x2C INDIRECT_FIFO_CTRL : 6 B, WO - routed to A4
+             ================================================================= -->
+        <register_def id="INDIRECT_FIFO_CTRL" name="INDIRECT_FIFO_CTRL" width="48">
+          <brief_description>Indirect FIFO Control push-mode (command code 0x2C). Write-only. Routed to A4.</brief_description>
+          <address offset="0x17E"/>
+          <reset_value value="0x0" mask="0xFFFFFFFFFFFF"/>
+          <bit_field id="CMS_REGION" name="CMS_REGION" position="0" width="8" access="WO">
+            <brief_description>Byte 0: Target CMS region for push. Consumed by A4.</brief_description>
+          </bit_field>
+          <bit_field id="RESET_CTRL" name="RESET_CTRL" position="8" width="8" access="WO">
+            <brief_description>Byte 1: b0=Reset FIFO pointers, b1..7 reserved. Consumed by A4.</brief_description>
+          </bit_field>
+          <bit_field id="IMAGE_SIZE" name="IMAGE_SIZE" position="16" width="32" access="WO">
+            <brief_description>Bytes 2..5: Image size in 4-byte units (little-endian). Consumed by A4.</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x2D INDIRECT_FIFO_STATUS : 20 B, RO - routed to A4
+             ================================================================= -->
+        <register_def id="INDIRECT_FIFO_STATUS" name="INDIRECT_FIFO_STATUS" width="160">
+          <brief_description>Indirect FIFO Status (command code 0x2D). Routed to A4. Field layout owned by A4.</brief_description>
+          <address offset="0x184"/>
+          <reset_value value="0x0" mask="0x0"/>
+          <bit_field id="FIFO_FLAGS" name="FIFO_FLAGS" position="0" width="8" access="RO">
+            <brief_description>Byte 0: b0=Empty, b1=Full, b2=Region in Use, b3=Region Type, b4..7 reserved.</brief_description>
+          </bit_field>
+          <bit_field id="RESERVED_B1" name="RESERVED_B1" position="8" width="8" access="RO">
+            <brief_description>Byte 1: Reserved.</brief_description>
+          </bit_field>
+          <bit_field id="WRITE_INDEX" name="WRITE_INDEX" position="16" width="32" access="RO">
+            <brief_description>Bytes 2..5: Write index (4-byte units, LE).</brief_description>
+          </bit_field>
+          <bit_field id="READ_INDEX" name="READ_INDEX" position="48" width="32" access="RO">
+            <brief_description>Bytes 6..9: Read index (4-byte units, LE).</brief_description>
+          </bit_field>
+          <bit_field id="FIFO_SIZE" name="FIFO_SIZE" position="80" width="32" access="RO">
+            <brief_description>Bytes 10..13: FIFO size in 4-byte units (LE).</brief_description>
+          </bit_field>
+          <bit_field id="MAX_TRANSFER_SIZE" name="MAX_TRANSFER_SIZE" position="112" width="32" access="RO">
+            <brief_description>Bytes 14..17: Max supported transfer size (4-byte units, LE).</brief_description>
+          </bit_field>
+          <bit_field id="RESERVED_B18_19" name="RESERVED_B18_19" position="144" width="16" access="RO">
+            <brief_description>Bytes 18..19: Reserved.</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x2E INDIRECT_FIFO_DATA : 4 B FIFO endpoint, RW - routed to A4
+             Accessed as a streaming word; offset always 0.
+             ================================================================= -->
+        <register_def id="INDIRECT_FIFO_DATA" name="INDIRECT_FIFO_DATA" width="32">
+          <brief_description>Indirect FIFO Data (command code 0x2E). Streaming push/pop endpoint (4-byte aligned). Routed to A4. Each access advances the FIFO pointer.</brief_description>
+          <address offset="0x198"/>
+          <reset_value value="0x0" mask="0x0"/>
+          <bit_field id="FIFO_DATA" name="FIFO_DATA" position="0" width="32" access="RW">
+            <brief_description>Bytes 0..3: Streaming FIFO data word (little-endian). Push on write, pop on read. A4 signals empty/full via INDIRECT_FIFO_STATUS and emits rb_err on overflow/underflow.</brief_description>
+          </bit_field>
+        </register_def>
+
+        <!-- =================================================================
+             0x2F VENDOR : 256 B stub, RW
+             Writes accepted (ack, no storage). Reads return 0.
+             ================================================================= -->
+        <register_def id="VENDOR" name="VENDOR" width="2048">
+          <brief_description>Vendor-Defined (command code 0x2F). Stub in this revision: writes ack with no storage; reads return 0 for all offsets.</brief_description>
+          <address offset="0x19C"/>
+          <reset_value value="0x0" mask="0x0"/>
+          <bit_field id="VENDOR_PAYLOAD" name="VENDOR_PAYLOAD" position="0" width="2048" access="RW">
+            <brief_description>Bytes 0..255: Vendor-defined payload. Unimplemented this rev.</brief_description>
+          </bit_field>
+        </register_def>
+
+      </address_block>
+    </register_defs>
+  </GeneralPeriphery>
+</crr:UniversalDevice>

@@ -20,6 +20,7 @@ ${USB_ROOT}/ip_xxx_3511/RTL/usb_host_reg_if.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_host_sof_timer.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_host_synchronizer.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_pie.m.vhdl
+${USB_ROOT}/ip_xxx_3511/RTL/usb_ocp_recovery_post_sync_arb.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_reg_if.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_rgen.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_sie.m.vhdl
