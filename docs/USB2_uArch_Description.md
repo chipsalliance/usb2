@@ -647,7 +647,7 @@ external access to their Endpoint RAMs.
 
 ### Common Native RAM Behavior
 
-The three native RAM interfaces share the following conventions:
+The two software-device native RAM interfaces share the following conventions:
 
 - synchronous operation relative to `hclk`;
 - active-high chip select;
@@ -1551,8 +1551,8 @@ status.
   architecture.
 - Function selection, context selection, SETUP routing, Endpoint RAM
   selection, and DMA update routing are implemented in top-level logic.
-- Internal USB accesses have priority over external AHB accesses to the three
-  external RAMs.
+- Internal USB accesses have priority over external AHB accesses to the two
+  DEV0 and DEV1 Endpoint RAMs.
 - The architecture diagram intentionally represents some top-level signal
   paths as functional connections rather than reproducing every intermediate
   RTL net.
@@ -2909,7 +2909,7 @@ SETUP_DONE
 
 ## Device-Link Lookup
 
-The first RAM lookup is performed in:
+The first register-file lookup is performed in:
 
 ```text
 READ_DEV_LINK
@@ -2939,8 +2939,9 @@ ep0_mem_rdata[11:0]
 
 and proceeds to the first Setup Decode Table entry.
 
-The start address of the decode table is therefore defined by the Descriptor
-RAM contents rather than being hardcoded in the EP0 handler.
+The start address of the decode table is therefore defined by the internal
+Hub control and descriptor register-file contents rather than being hardcoded
+in the EP0 handler.
 
 ## Lower SETUP Comparison
 
@@ -2998,8 +2999,8 @@ If the comparison fails:
 - the handler terminates the lookup with no valid request when
   `setup_last = 1`.
 
-The next-entry operation updates the RAM address according to the table-entry
-layout and restarts the comparison sequence.
+The next-entry operation updates the register-file address according to the
+table-entry layout and restarts the comparison sequence.
 
 ## Upper SETUP Comparison
 
