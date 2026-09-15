@@ -18,8 +18,7 @@ library IEEE;
 use IEEE.std_logic_1164.ALL;
 use IEEE.numeric_std.ALL;
 
-library usb_lib;
-use usb_lib.usb_subcmp_pkg.all;
+use work.usb_subcmp_pkg.all;
 
 entity usb_dma is
 generic(USB_DATAWIDTH      : integer := 8;

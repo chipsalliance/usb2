@@ -18,9 +18,8 @@ library IEEE;
 use IEEE.std_logic_1164.ALL;
 use IEEE.numeric_std.ALL;
 
-library usb_lib;
-use usb_lib.usb_subcmp_pkg.all;
-use usb_lib.usb_ep_config_pkg.all;
+use work.usb_subcmp_pkg.all;
+use work.usb_ep_config_pkg.all;
 
 entity usb_app_hw_hub is
 generic(C_HUB_NB_PORTS     : integer := 2;    --This can be maximum 255 according to USB spec 

@@ -72,10 +72,9 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-LIBRARY rtl;
-USE rtl.usb_general_subcmp_pkg.all;
-USE rtl.usb_subcmp_pkg.all;
-USE rtl.usb_configuration_subcmp_pkg.all;
+USE work.usb_general_subcmp_pkg.all;
+USE work.usb_subcmp_pkg.all;
+USE work.usb_configuration_subcmp_pkg.all;
 
 entity usb_sie is
   port  (

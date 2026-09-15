@@ -18,8 +18,7 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-LIBRARY usb_lib;
-USE usb_lib.usb_subcmp_pkg.all;
+USE work.usb_subcmp_pkg.all;
 
 entity usb_pie is
       generic (

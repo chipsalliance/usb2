@@ -1,15 +1,15 @@
 -work rtl
 +incdir+${USB_COMPILE_DIR}/../../src/integration/rtl
-+incdir+${CALIPTRA_RTL_ROOT}/src/caliptra_prim/rtl
-+incdir+${CALIPTRA_RTL_ROOT}/src/libs/rtl
++incdir+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim/rtl
++incdir+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/libs/rtl
 
 // Caliptra AXI package and primitives
-${CALIPTRA_RTL_ROOT}/src/axi/rtl/axi_pkg.sv
-${CALIPTRA_RTL_ROOT}/src/caliptra_prim/rtl/caliptra_prim_util_pkg.sv
-${CALIPTRA_RTL_ROOT}/src/caliptra_prim/rtl/caliptra_prim_fifo_sync_cnt.sv
-${CALIPTRA_RTL_ROOT}/src/caliptra_prim/rtl/caliptra_prim_fifo_sync.sv
-${CALIPTRA_RTL_ROOT}/src/axi/rtl/axi_if.sv
-${CALIPTRA_RTL_ROOT}/src/axi/rtl/axi_addr.v
+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/axi/rtl/axi_pkg.sv
+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_util_pkg.sv
+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_fifo_sync_cnt.sv
+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_fifo_sync.sv
+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/axi/rtl/axi_if.sv
+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/axi/rtl/axi_addr.v
 
 // AXI-to-AHB converter
 ${USB_COMPILE_DIR}/../../src/integration/rtl/axilite_to_ahb.sv

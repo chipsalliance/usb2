@@ -50,9 +50,8 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-library rtl;
-use rtl.usb_general_subcmp_pkg.all;
-use rtl.usb_subcmp_pkg.all;
+use work.usb_general_subcmp_pkg.all;
+use work.usb_subcmp_pkg.all;
 
 package usb_configuration_app_cmsis_dap_jtag_pkg is
 

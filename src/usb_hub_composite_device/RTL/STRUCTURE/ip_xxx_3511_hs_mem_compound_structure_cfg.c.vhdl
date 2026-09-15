@@ -18,57 +18,56 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-library usb_lib;
-use usb_lib.usb_general_subcmp_pkg.all;
-use usb_lib.usb_configuration_subcmp_pkg.all;
-use usb_lib.usb_subcmp_pkg.all;
+use work.usb_general_subcmp_pkg.all;
+use work.usb_configuration_subcmp_pkg.all;
+use work.usb_subcmp_pkg.all;
 
 configuration ip_xxx_3511_hs_mem_compound_structure_cfg of ip_xxx_3511_hs_mem_compound is
   for structure
     for usb_pie_1: usb_pie
-      use entity usb_lib.usb_pie(rtl);
+      use entity work.usb_pie(rtl);
     end for;
     for usb_synchronizer_1: usb_synchronizer
-      use entity usb_lib.usb_synchronizer(rtl);
+      use entity work.usb_synchronizer(rtl);
     end for;
     for usb_reg_if_1 : usb_reg_if
-      use entity usb_lib.usb_reg_if(rtl);
+      use entity work.usb_reg_if(rtl);
     end for;
     for usb_reg_if_2 : usb_reg_if
-      use entity usb_lib.usb_reg_if(rtl);
+      use entity work.usb_reg_if(rtl);
     end for;
     for usb_dma_1 : usb_dma
-      use entity usb_lib.usb_dma(rtl);
+      use entity work.usb_dma(rtl);
     end for;
     for ahb_dma_slave_1 : ahb_dma_slave
-      use entity usb_lib.ahb_dma_slave(rtl);
+      use entity work.ahb_dma_slave(rtl);
     end for;
     for ahb_dma_slave_2 : ahb_dma_slave
-      use entity usb_lib.ahb_dma_slave(rtl);
+      use entity work.ahb_dma_slave(rtl);
     end for;
     for usb_ahb_slave_1 : usb_ahb_slave
-      use entity usb_lib.usb_ahb_slave(rtl);
+      use entity work.usb_ahb_slave(rtl);
     end for;
     for usb_ahb_slave_2 : usb_ahb_slave
-      use entity usb_lib.usb_ahb_slave(rtl);
+      use entity work.usb_ahb_slave(rtl);
     end for;
     for usb_ahb_slave_0 : usb_ahb_slave
-      use entity usb_lib.usb_ahb_slave(rtl);
+      use entity work.usb_ahb_slave(rtl);
     end for;
     for usb_ep0_hub_descr_1 : usb_ep0_hub_descr
-      use entity usb_lib.usb_ep0_hub_descr(rtl);
+      use entity work.usb_ep0_hub_descr(rtl);
     end for;
     for usb_mux_1 : usb_mux
-      use entity usb_lib.usb_mux(rtl);
+      use entity work.usb_mux(rtl);
     end for;
     for usb_ep0_handler_1 : usb_ep0_handler
-      use entity usb_lib.usb_ep0_handler(rtl);
+      use entity work.usb_ep0_handler(rtl);
     end for;
     for usb_ep_config_handler_1 : usb_ep_config_handler
-      use entity usb_lib.usb_ep_config_handler(rtl);
+      use entity work.usb_ep_config_handler(rtl);
     end for;
     for usb_app_hw_hub_1 : usb_app_hw_hub
-      use entity usb_lib.usb_app_hw_hub(rtl);
+      use entity work.usb_app_hw_hub(rtl);
     end for;
   end for;
 end ip_xxx_3511_hs_mem_compound_structure_cfg;
