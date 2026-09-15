@@ -197,9 +197,7 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   // DFT / testability
   // =========================================================================
   input  logic testmode,
-  input  logic async_disable,
-  output logic [1:0] usb_dma_dword_selection,
-  output logic usb_dma_write_access
+  input  logic async_disable
 );
   // The fixed high-speed descriptor and setup-request image occupies 172 words.
   localparam int unsigned HUB_FIFO_SIZE_MIN = 172;
@@ -484,6 +482,9 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   // =========================================================================
   // ip_xxx_3511_hs_mem_compound instantiation  (VHDL entity, mixed-language)
   // =========================================================================
+  logic [1:0] unused_dma_dword_sel_w;
+  logic       unused_dma_write_access_w;
+  
   ip_xxx_3511_hs_mem_compound #(
     .C_HUB_FIFO_SIZE(C_HUB_FIFO_SIZE),
     .C_DEV0_RAM_ADDRWIDTH(C_DEV0_RAM_ADDRWIDTH),
@@ -633,8 +634,8 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     // ---- DFT ----
     .async_disable(async_disable),
     .testmode(testmode),
-    .usb_dma_dword_selection(usb_dma_dword_selection),
-    .usb_dma_write_access(usb_dma_write_access)
+    .usb_dma_dword_selection(unused_dma_dword_sel_w),
+    .usb_dma_write_access(unused_dma_write_access_w)
   );
 
   `CALIPTRA_ASSERT_INIT(HubFifoSize_A,

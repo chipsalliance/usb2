@@ -64,8 +64,7 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-library rtl;
-use rtl.usb_general_subcmp_pkg.all;
+use work.usb_general_subcmp_pkg.all;
 
 
 package usb_fs_hub_cfg_pkg is

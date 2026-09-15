@@ -241,10 +241,9 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-LIBRARY rtl;
-USE rtl.usb_general_subcmp_pkg.all;
-USE rtl.usb_configuration_subcmp_pkg.all;
-USE rtl.usb_subcmp_pkg.all;
+USE work.usb_general_subcmp_pkg.all;
+USE work.usb_configuration_subcmp_pkg.all;
+USE work.usb_subcmp_pkg.all;
 
 architecture structure of ip_xxx_3511_hs is
 
@@ -2073,27 +2072,26 @@ utmi_suspendm     <= '1' when ((clock_on = '1') or (clk_off_counter /= 0) or pwr
 end structure;
 
 ----------------------------------------------------------------------
-LIBRARY rtl;
 
 configuration ip_xxx_3511_hs_structure_cfg of ip_xxx_3511_hs is
   for structure
     for usb_pie_1: usb_pie
-      use entity rtl.usb_pie(rtl);
+      use entity work.usb_pie(rtl);
     end for;
     for usb_synchronizer_1: usb_synchronizer
-      use entity rtl.usb_synchronizer(rtl);
+      use entity work.usb_synchronizer(rtl);
     end for;
     for usb_reg_if_1 : usb_reg_if
-      use entity rtl.usb_reg_if(rtl);
+      use entity work.usb_reg_if(rtl);
     end for;
     for usb_dma_1 : usb_dma
-      use entity rtl.usb_dma(rtl);
+      use entity work.usb_dma(rtl);
     end for;
     for usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
       use entity rtl.usb_ocp_recovery_post_sync_arb(rtl);
     end for;
     for usb_ahb_slave_1 : usb_ahb_slave
-      use entity rtl.usb_ahb_slave(rtl);
+      use entity work.usb_ahb_slave(rtl);
     end for;
   end for;
 end ip_xxx_3511_hs_structure_cfg;

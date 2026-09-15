@@ -18,8 +18,7 @@ library IEEE;
 use IEEE.std_logic_1164.ALL;
 use IEEE.numeric_std.ALL;
 
-library usb_lib;
-use usb_lib.usb_general_subcmp_pkg.all;
+use work.usb_general_subcmp_pkg.all;
 
 entity ahb_dma_slave is
 generic(

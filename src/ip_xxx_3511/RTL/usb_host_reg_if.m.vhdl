@@ -170,7 +170,7 @@ use IEEE.std_logic_1164.ALL;
 use IEEE.numeric_std.ALL;
 
 --library rtl;
---use rtl.usb_configuration_subcmp_pkg.all;
+--use work.usb_configuration_subcmp_pkg.all;
 
 entity usb_host_reg_if is
 generic(
