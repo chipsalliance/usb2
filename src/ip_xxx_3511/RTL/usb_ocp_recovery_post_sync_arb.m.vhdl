@@ -28,6 +28,9 @@ entity usb_ocp_recovery_post_sync_arb is
 
     sync_busreset : in std_logic;
     usbreg_dev_connect_i : in std_logic;
+    pie_dev_selected_i : in std_logic_vector(1 downto 0);
+    dev0_port_reset_i : in std_logic;
+    dev0_usbreg_dev_connect_i : in std_logic;
     usbreg_setup_i : in std_logic;
     usbreg_setup_dma_o : out std_logic;
     sync_pie_speed_i : in std_logic_vector(1 downto 0);
@@ -122,6 +125,10 @@ end entity usb_ocp_recovery_post_sync_arb;
 
 architecture rtl of usb_ocp_recovery_post_sync_arb is
 
+  constant C_HUB_SEL  : integer := 0;
+  constant C_DEV0_SEL : integer := 1;
+  constant C_DEV1_SEL : integer := 2;
+
 begin
 
   -- ======================================================================
@@ -189,6 +196,11 @@ begin
     signal drop_dma_valid_seen_r : std_logic;
     signal usbreg_setup_dma_c : std_logic;
     signal dma_success_c : std_logic;
+    signal dev0_selected_c : std_logic;
+    signal dev0_local_reset_c : std_logic;
+    signal dma_owner_r : std_logic_vector(1 downto 0);
+    signal setup_dma_owner_r : std_logic_vector(1 downto 0);
+    signal setup_dma_match_c : std_logic;
 
     signal xfer_dir_in_r       : std_logic;              -- SETUP dir (1=IN)
     signal nbytes_r            : unsigned(15 downto 0);  -- Full SETUP wLength
@@ -297,19 +309,28 @@ begin
     -- ------------------------------------------------------------------
     -- Control decodes.
     -- ------------------------------------------------------------------
-    trig <= '1' when (sync_sieint_epinfo_req_i = '1')
-                  and (sync_sieint_epinfo_setup_i = '1')
-                  and (sync_sieint_epinfo_epnr_i = "0000")
-               else '0';
-    new_setup_c <= '1' when (sync_sieint_epinfo_req_i = '1')
-                           and (sync_sieint_epinfo_setup_i = '1')
-                           and (sync_sieint_epinfo_epnr_i = "0000")
-                   else '0';
+    dev0_selected_c <= '1' when
+      unsigned(pie_dev_selected_i) = to_unsigned(C_DEV0_SEL, 2) else '0';
+    dev0_local_reset_c <= dev0_port_reset_i or
+                          not dev0_usbreg_dev_connect_i or
+                          not usbreg_dev_connect_i;
+
+    trig <= '1' when (dev0_selected_c = '1')
+                   and (sync_sieint_epinfo_req_i = '1')
+                   and (sync_sieint_epinfo_setup_i = '1')
+                   and (sync_sieint_epinfo_epnr_i = "0000")
+                else '0';
+    new_setup_c <= '1' when (dev0_selected_c = '1')
+                            and (sync_sieint_epinfo_req_i = '1')
+                            and (sync_sieint_epinfo_setup_i = '1')
+                            and (sync_sieint_epinfo_epnr_i = "0000")
+                    else '0';
 
     claim_q <= ep0_ocp_owner_r;
-    ocp_ep0_req_c <= '1' when (sync_sieint_epinfo_req_i = '1')
-                                  and (sync_sieint_epinfo_epnr_i = "0000")
-                             else '0';
+    ocp_ep0_req_c <= '1' when (dev0_selected_c = '1')
+                                   and (sync_sieint_epinfo_req_i = '1')
+                                   and (sync_sieint_epinfo_epnr_i = "0000")
+                              else '0';
     ocp_resp_sel_c <= '0' when (sync_sieint_epinfo_req_i = '1') and
                                    (sync_sieint_epinfo_setup_i = '1') else
                       '1' when ((wire_ocp_r = '1') or
@@ -330,17 +351,26 @@ begin
                else '0';
     incoming_is_ocp_c <= '1' when
                     (sync_sieint_rxdata_i(6 downto 5) = "01")
+                and (dev0_selected_c = '1')
                 and (sync_sieint_rxdata_i(4 downto 0) = "00001")
                 and (sync_sieint_rxdata_i(15 downto 8) = OCP_RECOVERY_TRANSFER)
                 and (sync_sieint_rxdata_i(39 downto 32) = REC_IFACE_SLV)
                 and (sync_sieint_rxdata_i(47 downto 40) = x"00")
                 and (ocp_path_disable_i = '0')
               else '0';
+    setup_dma_match_c <= '1' when
+      (wire_dma_r = '1') and
+      (dma_setup_r = '1') and
+      (dma_epnr_r = "0000") and
+      (dma_owner_r = setup_dma_owner_r) and
+      (setup_dma_owner_r =
+       std_logic_vector(to_unsigned(C_DEV0_SEL, 2))) else '0';
 
     -- usb_dma samples usbreg_setup in IDLE and READ_EPINFO_SKIP. The immediate
     -- term covers the request edge and the held term covers skip scanning until
     -- the matched DMA response-valid interval begins.
-    usbreg_setup_dma_c <= usbreg_setup_i and not (trig or setup_pending_r);
+    usbreg_setup_dma_c <= usbreg_setup_i and
+      not ((trig or setup_pending_r) and dev0_selected_c);
     usbreg_setup_dma_o <= usbreg_setup_dma_c;
 
     -- Stage-end pulse (hclk endtransfer is already single-cycle; qualify with
@@ -543,7 +573,7 @@ begin
                        (st_end_c and tx_launch_ready_c)
                          when ((st = T_DATA) or (st = T_STATUS))
                               and (ocp_ep0_txn_r = '1') else '0';
-    ctrl_xfer_abort <= '1' when (usbreg_dev_connect_i = '0')
+    ctrl_xfer_abort <= '1' when (dev0_local_reset_c = '1')
                                  or (ocp_claim_abort_i = '1')
                                  or (rx_length_error_r = '1')
                                  or (setup_length_error_c = '1')
@@ -561,7 +591,7 @@ begin
                                           or (st = T_STATUS))
                                      and (rx_drain_done_r = '0')
                                      and ((sync_busreset = '1')
-                                          or (usbreg_dev_connect_i = '0')
+                                          or (dev0_local_reset_c = '1')
                                           or (ocp_claim_abort_i = '1')
                                           or (new_setup_c = '1'))
                             else '0';
@@ -600,9 +630,10 @@ begin
         setup_pending_low_seen_r <= '0';
         drop_setup_success_r <= '0';
         drop_dma_valid_seen_r <= '0';
+        setup_dma_owner_r <= (others => '0');
         ep0_ocp_owner_r <= '0';
       elsif rising_edge(hclk) then
-        if (sync_busreset = '1') or (usbreg_dev_connect_i = '0')
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1')
            or (ocp_claim_abort_i = '1') then
           st <= T_IDLE;
           cap_done <= '0';
@@ -616,11 +647,12 @@ begin
           replacement_stall_r <= '0';
           fifo_reservation_r <= '0';
           ep0_ocp_owner_r <= '0';
-          if (sync_busreset = '1') or (usbreg_dev_connect_i = '0') then
+          if (sync_busreset = '1') or (dev0_local_reset_c = '1') then
             setup_pending_r <= '0';
             setup_pending_low_seen_r <= '0';
             drop_setup_success_r <= '0';
             drop_dma_valid_seen_r <= '0';
+            setup_dma_owner_r <= (others => '0');
           end if;
         else
           setup_complete_v := (end_seen = '1') or
@@ -643,16 +675,20 @@ begin
             cap_rx_nbytes <= (others => '0');
             setup_pending_r <= '1';
             setup_pending_low_seen_r <= '0';
+            setup_dma_owner_r <= pie_dev_selected_i;
           elsif setup_pending_r = '1' then
-            if epinfo_sync_valid_dma = '0' then
+            if (setup_dma_match_c = '1') and
+               (epinfo_sync_valid_dma = '0') then
               setup_pending_low_seen_r <= '1';
-            elsif setup_pending_low_seen_r = '1' then
+            elsif (setup_dma_match_c = '1') and
+                  (setup_pending_low_seen_r = '1') then
               setup_pending_r <= '0';
               setup_pending_low_seen_r <= '0';
             end if;
           end if;
 
           if (drop_setup_success_r = '1') and
+             (setup_dma_match_c = '1') and
              (epinfo_sync_valid_dma = '1') then
             drop_dma_valid_seen_r <= '1';
           end if;
@@ -708,7 +744,7 @@ begin
             sp_sent <= '0';
             tx_response_bytes_r <= (others => '0');
             tx_response_known_r <= '0';
-          elsif fw_protocol_error_req_i = '1' then
+          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
             ep0_ocp_owner_r <= '1';
             st <= T_PROT_STALL;
           else
@@ -724,7 +760,8 @@ begin
                   nbytes_r <= unsigned(sync_sieint_rxdata_i(63 downto 48));
                   if incoming_is_ocp_c = '1' then
                     drop_setup_success_r <= '1';
-                    drop_dma_valid_seen_r <= '0';
+                    drop_dma_valid_seen_r <=
+                      epinfo_sync_valid_dma and setup_dma_match_c;
                   end if;
                 end if;
                 -- The SIE final byte count becomes valid at packet completion,
@@ -815,6 +852,7 @@ begin
         dma_epnr_r <= (others => '0');
         dma_epdir_r <= '0';
         dma_setup_r <= '0';
+        dma_owner_r <= (others => '0');
         rsp_snap_valid_r <= '0';
         rsp_snap_active_r <= '0';
         rsp_snap_stall_r <= '0';
@@ -842,7 +880,7 @@ begin
           rsp_snap_maxpacket_r <= (others => '0');
           rsp_snap_iso_r <= '0';
           rsp_snap_ratefeedback_r <= '0';
-        elsif (usbreg_dev_connect_i = '0') or
+        elsif (dev0_local_reset_c = '1') or
               (ocp_claim_abort_i = '1') then
           ocp_ep0_txn_r <= '0';
           wire_ocp_r <= '0';
@@ -884,7 +922,8 @@ begin
             real_setup_data_seen_r <= '0';
           end if;
           if sync_sieint_epinfo_req_i = '1' then
-            if (sync_sieint_epinfo_epnr_i = "0000")
+            if (dev0_selected_c = '1')
+               and (sync_sieint_epinfo_epnr_i = "0000")
                and (sync_sieint_epinfo_setup_i = '0')
                and (claim_q = '1') then
               ocp_ep0_txn_r <= '1';
@@ -911,6 +950,7 @@ begin
               dma_epnr_r <= sync_sieint_epinfo_epnr_i;
               dma_epdir_r <= sync_sieint_epinfo_epdir_i;
               dma_setup_r <= sync_sieint_epinfo_setup_i;
+              dma_owner_r <= pie_dev_selected_i;
               if sync_sieint_epinfo_epnr_i /= "0000" then
                 non_ep0_txn_r <= '1';
               else
@@ -955,7 +995,7 @@ begin
         rx_length_error_r <= '0';
         if (claim_q = '0') or (new_setup_c = '1')
            or (ocp_claim_abort_i = '1') or (sync_busreset = '1')
-           or (usbreg_dev_connect_i = '0') then
+           or (dev0_local_reset_c = '1') then
           rx_captured_beats_r <= (others => '0');
           rx_word_index_r     <= (others => '0');
           rx_total_words_r    <= (others => '0');
@@ -1036,7 +1076,7 @@ begin
       elsif rising_edge(hclk) then
         if (claim_q = '0') or (new_setup_c = '1')
            or (ocp_claim_abort_i = '1') or (sync_busreset = '1')
-           or (usbreg_dev_connect_i = '0') then
+           or (dev0_local_reset_c = '1') then
           tx_curr_data_r       <= (others => '0');
           tx_curr_valid_r      <= '0';
           tx_next_data_r       <= (others => '0');
@@ -1124,7 +1164,8 @@ begin
     -- transaction bundle. SETUP is always a physical DMA transaction.
     -- ------------------------------------------------------------------
     dma_req_forward_c <= sync_sieint_epinfo_req_i
-      when (sync_sieint_epinfo_epnr_i /= "0000")
+      when (dev0_selected_c = '0')
+        or (sync_sieint_epinfo_epnr_i /= "0000")
         or (sync_sieint_epinfo_setup_i = '1')
         or (claim_q = '0')
       else '0';
@@ -1142,8 +1183,11 @@ begin
     sync_sieint_endtransfer_o <= sync_sieint_endtransfer_i
       when (wire_dma_r = '1') else '0';
     dma_success_c <= sync_sieint_success_i
-      when (wire_dma_r = '1') and (drop_setup_success_r = '0')
+      when (wire_dma_r = '1')
+        and ((drop_setup_success_r = '0') or
+             (setup_dma_match_c = '0'))
         and not ((sync_sieint_rxdatavalid_i = '1') and
+                 (dev0_selected_c = '1') and
                  (incoming_is_ocp_c = '1'))
       else '0';
     sync_sieint_success_o <= dma_success_c;
@@ -1155,7 +1199,9 @@ begin
     -- A link-valid SETUP retains all firmware-visible USB side effects for both
     -- owner classes. Only the claimed DMA success is suppressed.
     setup_received_c <= sync_sieint_setup_received_i
-      when (sync_busreset = '0') and (usbreg_dev_connect_i = '1') else '0';
+      when (sync_busreset = '0') and
+           not ((dev0_selected_c = '1') and
+                (dev0_local_reset_c = '1')) else '0';
     sync_sieint_setup_received_o <= setup_received_c;
 
     sync_sieint_error_o     <= sync_sieint_error_i;
@@ -1256,6 +1302,10 @@ begin
       variable prev_stall_release_v : boolean := false;
       variable expect_local_cleanup_v : boolean := false;
       variable expect_bus_reset_cleanup_v : boolean := false;
+      variable expect_claim_hold_v : boolean := false;
+      variable prev_drop_mask_v : std_logic := '0';
+      variable prev_setup_dma_owner_v : std_logic_vector(1 downto 0) :=
+                                        (others => '0');
     begin
       if rising_edge(hclk) and (hresetn = '1') then
         if expect_drop_clear_v then
@@ -1264,13 +1314,13 @@ begin
             severity failure;
         end if;
         if expect_drop_hold_v and (sync_busreset = '0') and
-           (usbreg_dev_connect_i = '1') then
+           (dev0_local_reset_c = '0') then
           assert drop_setup_success_r = '1'
             report "post_sync_arb: claimed SETUP mask retired before valid_seen fall"
             severity failure;
         end if;
         if expect_pending_hold_v and (sync_busreset = '0') and
-           (usbreg_dev_connect_i = '1') then
+           (dev0_local_reset_c = '0') then
           assert setup_pending_r = '1'
             report "post_sync_arb: SETUP pending retired before matched low-high"
             severity failure;
@@ -1318,10 +1368,39 @@ begin
             report "post_sync_arb: bus reset did not clear DMA tracking"
             severity failure;
         end if;
+        if expect_claim_hold_v then
+          assert claim_q = '1'
+            report "post_sync_arb: unrelated device traffic cleared Device 0 claim"
+            severity failure;
+        end if;
+        if (prev_drop_mask_v = '1') and (drop_setup_success_r = '0') then
+          assert prev_setup_dma_owner_v =
+                 std_logic_vector(to_unsigned(C_DEV0_SEL, 2))
+            report "post_sync_arb: SETUP mask retired for a non-Device 0 DMA owner"
+            severity failure;
+        end if;
+        if (drop_setup_success_r = '1') and
+           (wire_dma_r = '1') and
+           (setup_dma_match_c = '0') then
+          assert dma_success_c = sync_sieint_success_i
+            report "post_sync_arb: Device 0 SETUP mask suppressed unrelated DMA success"
+            severity failure;
+        end if;
+        if (drop_setup_success_r = '1') and
+           (setup_dma_match_c = '1') and
+           (sync_sieint_success_i = '1') then
+          assert dma_success_c = '0'
+            report "post_sync_arb: claimed Device 0 SETUP success was not suppressed"
+            severity failure;
+        end if;
         assert not ((wire_dma_r = '1') and (wire_ocp_r = '1'))
           report "post_sync_arb: DMA and OCP wire owners overlap"
           severity failure;
         if trig = '1' then
+          assert unsigned(pie_dev_selected_i) =
+                 to_unsigned(C_DEV0_SEL, pie_dev_selected_i'length)
+            report "post_sync_arb: accepted recovery SETUP was not owned by Device 0"
+            severity failure;
           assert sync_sieint_epinfo_setup_i = '1'
                  and sync_sieint_epinfo_epnr_i = "0000"
             report "post_sync_arb: invalid mirrored SETUP classification"
@@ -1333,6 +1412,15 @@ begin
           assert dma_req_forward_c = '1'
             report "post_sync_arb: real SETUP request was not forwarded to DMA"
             severity failure;
+        end if;
+        if (unsigned(pie_dev_selected_i) = to_unsigned(C_HUB_SEL, 2)) or
+           (unsigned(pie_dev_selected_i) = to_unsigned(C_DEV1_SEL, 2)) then
+          if sync_sieint_epinfo_req_i = '1' then
+            assert (dma_req_forward_c = '1') and (ocp_resp_sel_c = '0') and
+                   (setup_pkt_vld_c = '0')
+              report "post_sync_arb: unrelated device traffic entered recovery"
+              severity failure;
+          end if;
         end if;
         if (trig = '1') or (setup_pending_r = '1') then
           assert usbreg_setup_dma_c = '0'
@@ -1349,7 +1437,8 @@ begin
             report "post_sync_arb: firmware protocol error preempted a SETUP"
             severity failure;
         end if;
-        if drop_setup_success_r = '1' then
+        if (drop_setup_success_r = '1') and
+           (setup_dma_match_c = '1') then
           assert dma_success_c = '0'
             report "post_sync_arb: claimed SETUP success reached DMA"
             severity failure;
@@ -1461,13 +1550,14 @@ begin
            (cap_rxdata(23 downto 16) = OCP_INDIRECT_FIFO_DATA) and
            ((st = T_META_WAIT) or (st = T_DATA) or (st = T_STATUS)) and
            (rx_drain_done_r = '0') and
-           ((sync_busreset = '1') or (usbreg_dev_connect_i = '0') or
+           ((sync_busreset = '1') or (dev0_local_reset_c = '1') or
             (ocp_claim_abort_i = '1') or (new_setup_c = '1')) then
           assert fifo_batch_abort_c = '1'
             report "post_sync_arb: incomplete FIFO command missed batch abort"
             severity failure;
         end if;
-        if (sync_busreset = '1') or (usbreg_dev_connect_i = '0') then
+        if (sync_busreset = '1') or
+           ((dev0_selected_c = '1') and (dev0_local_reset_c = '1')) then
           assert setup_received_c = '0'
             report "post_sync_arb: SETUP notification escaped reset/disconnect gate"
             severity failure;
@@ -1511,39 +1601,45 @@ begin
                                 (drop_dma_valid_seen_r = '1') and
                                (epinfo_sync_valid_dma = '0') and
                                (sync_busreset = '0') and
-                                (usbreg_dev_connect_i = '1') and
+                                 (dev0_local_reset_c = '0') and
                                 (ocp_claim_abort_i = '0');
         expect_drop_hold_v := (drop_setup_success_r = '1') and
                               not ((drop_dma_valid_seen_r = '1') and
                                    (epinfo_sync_valid_dma = '0')) and
                               (sync_busreset = '0') and
-                              (usbreg_dev_connect_i = '1');
+                              (dev0_local_reset_c = '0');
         expect_pending_hold_v := (setup_pending_r = '1') and
                                  not ((setup_pending_low_seen_r = '1') and
                                       (epinfo_sync_valid_dma = '1')) and
                                  (trig = '0') and
                                   (sync_busreset = '0') and
-                                  (usbreg_dev_connect_i = '1');
+                                   (dev0_local_reset_c = '0');
         expect_snapshot_clear_v := (sync_busreset = '1') or
-                                   (usbreg_dev_connect_i = '0') or
+                                   (dev0_local_reset_c = '1') or
                                    (ocp_claim_abort_i = '1');
         expect_replacement_stall_v :=
             (trig = '1') and (replacement_stall_r = '1') and
-            (sync_busreset = '0') and (usbreg_dev_connect_i = '1') and
+            (sync_busreset = '0') and (dev0_local_reset_c = '0') and
             (ocp_claim_abort_i = '0');
         expect_fw_stall_v := (fw_protocol_error_req_i = '1') and
                              (ep0_ocp_owner_r = '1') and
                              (trig = '0') and (sync_busreset = '0') and
-                             (usbreg_dev_connect_i = '1') and
+                             (dev0_local_reset_c = '0') and
                              (ocp_claim_abort_i = '0');
         prev_stall_release_v := (new_setup_c = '1') or
                                 (sync_busreset = '1') or
-                                (usbreg_dev_connect_i = '0') or
+                                 (dev0_local_reset_c = '1') or
                                 (ocp_claim_abort_i = '1');
         expect_local_cleanup_v := (sync_busreset = '1') or
-                                  (usbreg_dev_connect_i = '0') or
-                                  (ocp_claim_abort_i = '1');
+                                  (dev0_local_reset_c = '1') or
+                                   (ocp_claim_abort_i = '1');
         expect_bus_reset_cleanup_v := (sync_busreset = '1');
+        expect_claim_hold_v := (claim_q = '1') and
+          (sync_sieint_epinfo_req_i = '1') and
+          (dev0_selected_c = '0') and (sync_busreset = '0') and
+          (dev0_local_reset_c = '0') and (ocp_claim_abort_i = '0');
+        prev_drop_mask_v := drop_setup_success_r;
+        prev_setup_dma_owner_v := setup_dma_owner_r;
       end if;
     end process assertions_proc;
     -- pragma translate_on

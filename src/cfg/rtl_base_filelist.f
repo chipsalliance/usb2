@@ -7,7 +7,6 @@ ${USB_ROOT}/ip_xxx_3511/INTERFACE/ip_xxx_3511.e.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/ip_xxx_3511_cmp_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_cfg_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_configuration_app_cmsis_dap_jtag_pkg.p.vhdl
-${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_ep_config_hub_cmsis_dap_jtag_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_ep_config_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_fs_hub_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_ahb_master.m.vhdl

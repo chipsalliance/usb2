@@ -872,135 +872,47 @@ module ip_xxx_3516_hs_mem_wrapper
     logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] rec_offset;
     assign rec_offset = dev_ahb_local_offset - {1'b0, OCP_RECOVERY_APERTURE_OFFSET_BYTES};
 
-    // -- AHB address-phase strobe to capture in IDLE --
-    logic rec_ahb_addr_phase;
-    assign rec_ahb_addr_phase = dev_ahb_hsel
-                              & dev_ahb_htrans[1]
-                              & dev_ahb_hreadymux
-                              & rec_addr_in_window;
-
     // -- Exposed async FIFO read-port nets (dev_axi_aclk domain) --
     logic        fifo_rd_valid;
     logic        fifo_rd_ready;
     logic [31:0] fifo_rd_data;
     logic [$clog2(usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS+1)-1:0] fifo_rd_depth;
 
-    // -- Captured AHB transaction metadata --
-    logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] ahb_aperture_offset_q;
-    logic        ahb_wr_q;
-    logic [31:0] ahb_wdata_q;
-
-    // -- AHB transaction FSM --
-    typedef enum logic [1:0] {
-      A_IDLE      = 2'd0,  // wait for an address phase in the recovery aperture
-      A_DATA      = 2'd1,  // capture write data
-      A_AWAIT_ACK = 2'd2,  // hold the local request until recovery responds
-      A_COMPLETE  = 2'd3   // complete the AHB data phase
-    } a_state_e;
-    a_state_e a_state_q, a_state_d;
-
-    logic [31:0] rdata_axi_q;
-    logic        err_axi_q;
-    logic        rec_ext_rb_wr;
-    logic        rec_ext_rb_rd;
-    logic [31:0] rec_ext_rb_rdata;
-    logic        rec_ext_rb_ack;
-    logic        rec_ext_rb_err;
-
-    always_comb begin
-      a_state_d = a_state_q;
-      unique case (a_state_q)
-        A_IDLE:      if (rec_ahb_addr_phase) a_state_d = A_DATA;
-        A_DATA:                              a_state_d = A_AWAIT_ACK;
-        A_AWAIT_ACK: if (rec_ext_rb_ack)    a_state_d = A_COMPLETE;
-        A_COMPLETE:                          a_state_d = A_IDLE;
-        default:                             a_state_d = A_IDLE;
-      endcase
-    end
-
     assign fifo_rd_ready = 1'b0;
+
+    logic rec_data_phase_q;
+    logic [31:0] rec_ahb_hrdata;
+    logic rec_ahb_hreadyout;
+    logic [1:0] rec_ahb_hresp;
 
     always_ff @(posedge dev_axi_aclk or negedge dev_axi_aresetn) begin
       if (!dev_axi_aresetn) begin
-        a_state_q             <= A_IDLE;
-        ahb_aperture_offset_q <= '0;
-        ahb_wr_q              <= 1'b0;
-        ahb_wdata_q           <= '0;
-        rdata_axi_q           <= '0;
-        err_axi_q             <= 1'b0;
-      end else begin
-        a_state_q <= a_state_d;
-
-        // The adapter owns all per-register decode. AHB accesses are word
-        // native, so preserve the documented DWORD alignment of this aperture.
-        if (a_state_q == A_IDLE && rec_ahb_addr_phase) begin
-          ahb_aperture_offset_q <= {rec_offset[OCP_RECOVERY_APERTURE_ADDR_W-1:2], 2'b00};
-          ahb_wr_q              <= dev_ahb_hwrite;
-        end
-
-        // hwdata is on the bus during the AHB data phase (one cycle
-        // after address phase, when this FSM is in A_DATA).
-        if (a_state_q == A_DATA && ahb_wr_q) begin
-          ahb_wdata_q <= dev_ahb_hwdata[31:0];
-        end
-
-        // ext_rb_ack can be combinational for register reads or delayed while
-        // a payload-gated FIFO access waits. Capture on the completing cycle.
-        if (a_state_q == A_AWAIT_ACK && rec_ext_rb_ack) begin
-          rdata_axi_q <= rec_ext_rb_rdata;
-          err_axi_q   <= rec_ext_rb_err;
-        end
-
+        rec_data_phase_q <= 1'b0;
+      end else if (dev_ahb_hreadymux) begin
+        rec_data_phase_q <= dev_ahb_hsel && dev_ahb_htrans[1] &&
+                            rec_addr_in_window;
       end
     end
 
-    // The recovery stack shares dev_axi_aclk. Hold the request level until its
-    // acknowledgement so regblock and FIFO accesses cannot be reissued early.
-    assign rec_ext_rb_wr = (a_state_q == A_AWAIT_ACK) &&  ahb_wr_q;
-    assign rec_ext_rb_rd = (a_state_q == A_AWAIT_ACK) && !ahb_wr_q;
-
-    // -- AHB response mux --
-    // rec_ahb_owns_now follows a_state_q != A_IDLE so the AHB master sees
-    // a stalled hreadyout during the recovery transaction and a one-cycle
-    // hreadyout=1 completion response.
-    logic rec_ahb_owns_now;
-    assign rec_ahb_owns_now = (a_state_q != A_IDLE);
-
-    // hreadyout: 1 in A_COMPLETE (final beat completes), 0 otherwise
-    // when we own the beat.  Outside our window, pass legacy through.
-    assign dev_ahb_hreadyout = rec_ahb_owns_now
-                             ? (a_state_q == A_COMPLETE)
+    assign dev_ahb_hreadyout = rec_data_phase_q
+                             ? rec_ahb_hreadyout
                              : legacy_dev_hreadyout;
-    assign dev_ahb_hrdata    = rec_ahb_owns_now
-                             ? rdata_axi_q[31:0]
+    assign dev_ahb_hrdata    = rec_data_phase_q
+                             ? rec_ahb_hrdata
                              : legacy_dev_hrdata;
-    assign dev_ahb_hresp     = rec_ahb_owns_now
-                             ? { 1'b0, err_axi_q }
+    assign dev_ahb_hresp     = rec_data_phase_q
+                             ? rec_ahb_hresp
                              : legacy_dev_hresp;
 
     // SVA: legacy IP must NOT respond when we own the beat.
     // pragma translate_off
     property p_legacy_silent_when_rec_owns;
       @(posedge dev_axi_aclk) disable iff (!dev_axi_aresetn)
-        rec_ahb_owns_now |-> (legacy_dev_hreadyout === 1'b1);
+        rec_data_phase_q |-> (legacy_dev_hreadyout === 1'b1);
     endproperty
     // (legacy_dev_hreadyout stays high when uut's hsel is gated off.)
     assert property (p_legacy_silent_when_rec_owns)
       else $error("rec/legacy AHB sub-decoder collision");
-
-    property p_ext_request_only_while_awaiting_ack;
-      @(posedge dev_axi_aclk) disable iff (!dev_axi_aresetn)
-        (rec_ext_rb_wr || rec_ext_rb_rd) |-> (a_state_q == A_AWAIT_ACK);
-    endproperty
-    assert property (p_ext_request_only_while_awaiting_ack)
-      else $error("recovery EXT request outside AHB await-ack state");
-
-    property p_ext_ack_matches_active_request;
-      @(posedge dev_axi_aclk) disable iff (!dev_axi_aresetn)
-        rec_ext_rb_ack |-> (rec_ext_rb_wr || rec_ext_rb_rd);
-    endproperty
-    assert property (p_ext_ack_matches_active_request)
-      else $error("recovery EXT acknowledgement without an active request");
 
     // pragma translate_on
 
@@ -1048,14 +960,16 @@ module ip_xxx_3516_hs_mem_wrapper
         .rec_fifo_free_dwords(rec_fifo_free_dwords_w),
         .rec_fifo_reservation_active(rec_fifo_reservation_active_w),
 
-        // External reg-bus slave driven by the local AHB transaction FSM.
-        .ext_aperture_offset(ahb_aperture_offset_q),
-        .ext_rb_wr      (rec_ext_rb_wr),
-        .ext_rb_rd      (rec_ext_rb_rd),
-        .ext_rb_wdata   (ahb_wdata_q),
-        .ext_rb_rdata   (rec_ext_rb_rdata),
-        .ext_rb_ack     (rec_ext_rb_ack),
-        .ext_rb_err     (rec_ext_rb_err),
+        .rec_ahb_haddr   (rec_offset),
+        .rec_ahb_htrans  (dev_ahb_htrans),
+        .rec_ahb_hsize   (dev_ahb_hsize),
+        .rec_ahb_hwrite  (dev_ahb_hwrite),
+        .rec_ahb_hwdata  (dev_ahb_hwdata),
+        .rec_ahb_hsel    (dev_ahb_hsel & rec_addr_in_window),
+        .rec_ahb_hreadyin(dev_ahb_hreadymux),
+        .rec_ahb_hrdata  (rec_ahb_hrdata),
+        .rec_ahb_hreadyout(rec_ahb_hreadyout),
+        .rec_ahb_hresp   (rec_ahb_hresp),
 
 
         // Static capability tie-offs (from parameters)

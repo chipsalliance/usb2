@@ -5,7 +5,7 @@
 // OCP Recovery v1.1 USB transport integration wrapper.  This module accepts
 // the pre-filtered EP0 recovery stream from usb_ocp_recovery_post_sync_arb, decodes the
 // class request, arbitrates USB-vs-external register access, and connects the
-// regblock, CMS FIFO backing store, and recovery FSM.
+// regblock, CMS FIFO backing store, and protocol-error state.
 //
 // Instantiates:
 //   A2 : usb_ocp_recovery_ctrl_decode (SV)
@@ -22,7 +22,9 @@ module usb_ocp_recovery_top
 #(
   parameter int           CMS_ADDR_W     = 16,
   parameter int           NUM_CMS        = 2,
-  parameter int           FIFO_DEPTH_DWORDS = usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS
+  parameter int           FIFO_DEPTH_DWORDS = usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS,
+  parameter int           RECOVERY_LOCAL_ADDR_WIDTH =
+      usb_ocp_recovery_pkg::OCP_RECOVERY_APERTURE_ADDR_W
 )(
   input  logic                    clk,
   input  logic                    rst_ni,
@@ -81,17 +83,18 @@ module usb_ocp_recovery_top
   input  logic                    rec_fifo_reservation_active,
 
   //----------------------------------------------------------------------------
-  // External register-bus slave (driven by AHB sub-decoder upstream).
-  // The aperture-relative byte offset routes directly to the generated
-  // register CPU interface.
+  // AHB slave for the aperture-local Recovery register window.
   //----------------------------------------------------------------------------
-  input  logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] ext_aperture_offset,
-  input  logic                    ext_rb_wr,
-  input  logic                    ext_rb_rd,
-  input  logic [31:0]             ext_rb_wdata,
-  output logic [31:0]             ext_rb_rdata,
-  output logic                    ext_rb_ack,
-  output logic                    ext_rb_err,
+  input  logic [RECOVERY_LOCAL_ADDR_WIDTH-1:0] rec_ahb_haddr,
+  input  logic [1:0]              rec_ahb_htrans,
+  input  logic [2:0]              rec_ahb_hsize,
+  input  logic                    rec_ahb_hwrite,
+  input  logic [31:0]             rec_ahb_hwdata,
+  input  logic                    rec_ahb_hsel,
+  input  logic                    rec_ahb_hreadyin,
+  output logic [31:0]             rec_ahb_hrdata,
+  output logic                    rec_ahb_hreadyout,
+  output logic [1:0]              rec_ahb_hresp,
 
   //----------------------------------------------------------------------------
   // Static capability inputs (tied by SoC integrator).
@@ -182,6 +185,24 @@ module usb_ocp_recovery_top
   logic                       ext_fifo_aperture_access;
   logic                       ext_fifo_data_aperture_access;
 
+  // --- AHB slave client and internal external-master request ---
+  logic                       ahb_dv;
+  logic                       ahb_hld;
+  logic                       ahb_err;
+  logic                       ahb_write;
+  logic [31:0]                ahb_wdata;
+  logic [RECOVERY_LOCAL_ADDR_WIDTH-1:0] ahb_addr;
+  logic [31:0]                ahb_rdata;
+  logic                       ahb_hresp;
+  logic                       ahb_access_invalid_q;
+  logic                       ext_rb_wr;
+  logic                       ext_rb_rd;
+  logic [31:0]                ext_rb_wdata;
+  logic [31:0]                ext_rb_rdata;
+  logic                       ext_rb_ack;
+  logic                       ext_rb_err;
+  logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] ext_aperture_offset;
+
   // OCP Recovery v1.1 Sec 9.2 defines PROTOCOL_ERROR clear-on-read for the
   // Recovery Agent USB command. The control decoder pulses this only after a
   // completed USB DEVICE_STATUS read; firmware cpuif reads are non-destructive.
@@ -214,10 +235,9 @@ module usb_ocp_recovery_top
   // Firmware cpuif arbiter. USB register and FIFO commands bypass this
   // arbitration through their dedicated hardware paths.
   //
-  // EXT in-flight gating: once EXT is granted, hold off subsequent EXT
-  // grants until its ack lands. This protects multi-cycle cms_fifo accesses
-  // while the upstream AHB transaction holds wr/rd high awaiting completion.
-  // Without the gate, a held-high EXT request would be re-issued to A3/A4.
+  // EXT in-flight gating: once EXT is granted, retain its command until its
+  // ack lands. This protects multi-cycle cms_fifo accesses while the register
+  // adapter suppresses repeated CPU-interface request pulses.
   // USB side already pulses rb_wr per word from ctrl_decode and is
   // intentionally not gated to preserve its 1-cycle ack semantics.
   //////////////////////////////////////////////////////////////////////////////
@@ -228,6 +248,68 @@ module usb_ocp_recovery_top
   logic       grant_usb;
   logic       grant_ext;
   logic       ext_in_flight_q;
+  logic       ext_write_q;
+
+  initial begin
+    assert (RECOVERY_LOCAL_ADDR_WIDTH == OCP_RECOVERY_APERTURE_ADDR_W)
+      else $fatal(1, "Recovery AHB address width must match the register aperture");
+  end
+
+  ahb_slv_sif #(
+    .AHB_DATA_WIDTH   (32),
+    .CLIENT_DATA_WIDTH(32),
+    .AHB_ADDR_WIDTH   (RECOVERY_LOCAL_ADDR_WIDTH),
+    .CLIENT_ADDR_WIDTH(RECOVERY_LOCAL_ADDR_WIDTH)
+  ) u_rec_ahb_slv_sif (
+    .hclk       (clk),
+    .hreset_n   (rst_ni),
+    .haddr_i    (rec_ahb_haddr),
+    .hwdata_i   (rec_ahb_hwdata),
+    .hsel_i     (rec_ahb_hsel),
+    .hwrite_i   (rec_ahb_hwrite),
+    .hready_i   (rec_ahb_hreadyin),
+    .htrans_i   (rec_ahb_htrans),
+    .hsize_i    (rec_ahb_hsize),
+    .hresp_o    (ahb_hresp),
+    .hreadyout_o(rec_ahb_hreadyout),
+    .hrdata_o   (rec_ahb_hrdata),
+    .dv         (ahb_dv),
+    .hld        (ahb_hld),
+    .err        (ahb_err),
+    .write      (ahb_write),
+    .wdata      (ahb_wdata),
+    .addr       (ahb_addr),
+    .rdata      (ahb_rdata)
+  );
+
+  assign rec_ahb_hresp = {1'b0, ahb_hresp};
+  assign ext_aperture_offset = ahb_addr[OCP_RECOVERY_APERTURE_ADDR_W-1:0];
+  assign ext_rb_wdata = ahb_wdata;
+  // ext_rb_wr/ext_rb_rd are held level across the AHB dv window: the internal
+  // cpuif arbiter uses ext_in_flight_q as the one-shot guard, granting the
+  // register-block or FIFO request exactly once per transfer even when USB
+  // priority momentarily blocks a grant. Held levels also keep the aperture
+  // offset stable across multi-cycle cms_fifo accesses.
+  assign ext_rb_wr = ahb_dv && !ahb_access_invalid_q && ahb_write;
+  assign ext_rb_rd = ahb_dv && !ahb_access_invalid_q && !ahb_write;
+  assign ahb_rdata = ext_rb_rdata;
+  assign ahb_hld = ahb_dv && !ahb_access_invalid_q && !ext_rb_ack;
+  assign ahb_err = ahb_dv &&
+                   (ahb_access_invalid_q ||
+                    (ext_rb_ack && ext_rb_err));
+
+  // Aligned-word validation. Register on the address-phase acceptance so the
+  // data-phase err/hld terms observe the qualified transfer. AHB address decode
+  // and combo selection have already filtered non-recovery accesses; the local
+  // check enforces the word-only policy of the shared AHB slave.
+  always_ff @(posedge clk) begin
+    if (!rst_ni) begin
+      ahb_access_invalid_q <= 1'b0;
+    end else if (rec_ahb_hreadyin && rec_ahb_hsel && rec_ahb_htrans[1]) begin
+      ahb_access_invalid_q <= (rec_ahb_hsize != 3'b010) ||
+                              (rec_ahb_haddr[1:0] != 2'b00);
+    end
+  end
 
   always_comb begin
     usb_req_now = usb_rb_wr | usb_rb_rd;
@@ -248,8 +330,9 @@ module usb_ocp_recovery_top
       // cms_fifo read keeps its aperture offset stable until it acks.
       rb_cmd    = '0;
       rb_offset = '0;
-      rb_wr     = ext_rb_wr;
-      rb_rd     = ext_rb_rd;
+      rb_wr     = grant_ext || (ext_in_flight_q && ext_write_q);
+      rb_rd     = (grant_ext && !ext_rb_wr) ||
+                  (ext_in_flight_q && !ext_write_q);
       rb_wdata  = ext_rb_wdata;
       rb_wstrb  = 4'hF;
     end
@@ -259,9 +342,11 @@ module usb_ocp_recovery_top
     if (!rst_ni) begin
       owner_q          <= 2'b00;
       ext_in_flight_q  <= 1'b0;
+      ext_write_q      <= 1'b0;
     end else begin
       if (grant_ext)      owner_q <= 2'b10;
       else                owner_q <= 2'b00;
+      if (grant_ext)      ext_write_q <= ext_rb_wr;
 
       // EXT in-flight: set when grant_ext fires, cleared when its ack
       // returns.  Same-cycle ack (cms_fifo register combinational
@@ -280,8 +365,8 @@ module usb_ocp_recovery_top
   assign usb_rb_ack   = usb_is_fifo_cmd ? fifo_rb_ack   : usb_hw_ack;
   assign usb_rb_err   = usb_is_fifo_cmd ? fifo_rb_err   : usb_hw_err;
 
-  // EXT is word-native: return the full 32-bit read word. The aperture offset
-  // is held stable by the AHB sub-decoder across the request handshake. The ack/err
+  // EXT is word-native: return the full 32-bit read word. The shared AHB slave
+  // holds the aperture offset across the request handshake. The ack/err
   // are qualified with ext_in_flight_q so a multi-cycle cms_fifo SRAM read,
   // which acks several cycles after the one-cycle grant_ext (owner_q==EXT only
   // lasts that one cycle), is still forwarded back to the SoC AXI master.
@@ -939,6 +1024,14 @@ module usb_ocp_recovery_top
         else $error("usb_ocp_recovery_top: usb master asserted wr+rd");
       assert (!(ext_rb_wr && ext_rb_rd))
         else $error("usb_ocp_recovery_top: ext master asserted wr+rd");
+      if (ahb_dv && ahb_access_invalid_q) begin
+        assert (!(ext_rb_wr || ext_rb_rd))
+          else $error("usb_ocp_recovery_top: invalid AHB access reached the register bus");
+      end
+      if (ext_rb_wr || ext_rb_rd) begin
+        assert (ahb_dv)
+          else $error("usb_ocp_recovery_top: register request without AHB client dv");
+      end
       assert (!(usb_rb_ack && ext_rb_ack))
         else $error("usb_ocp_recovery_top: ack routed to both masters");
       if (usb_fifo_req) begin
