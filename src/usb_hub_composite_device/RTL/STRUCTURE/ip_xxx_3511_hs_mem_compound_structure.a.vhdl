@@ -1057,6 +1057,7 @@ signal usbreg_setup_to_dma_raw  : std_logic;
 signal usbreg_setup_to_decode   : std_logic_vector(C_NBDEV-1 downto 0);
 signal pie_dev_selected         : integer range 0 to C_NBDEV+1;
 signal sync_pie_dev_selected    : integer range 0 to C_NBDEV+1;
+signal sync_pie_dev_selected_slv: std_logic_vector(1 downto 0);
 
 
 signal dma_ep_list_start        : std_logic_vector(23 downto 0);
@@ -1665,8 +1666,7 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     hresetn => hresetn,
     sync_busreset => sync_busreset,
     usbreg_dev_connect_i => dev0_usbreg_dev_connect,
-    pie_dev_selected_i =>
-      std_logic_vector(to_unsigned(sync_pie_dev_selected, 2)),
+    pie_dev_selected_i => sync_pie_dev_selected_slv,
     dev0_port_reset_i => upd_dev0_portreset,
     dev0_usbreg_dev_connect_i => dev0_usbreg_dev_connect,
     usbreg_setup_i => usbreg_setup_to_dma_raw,
@@ -1749,6 +1749,9 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     fifo_reservation_active_o => rec_fifo_reservation_active,
     rec_claim_status => rec_ctrl_claim
   );
+
+sync_pie_dev_selected_slv <=
+  std_logic_vector(to_unsigned(sync_pie_dev_selected, 2));
 
 usb_dma_1 : usb_dma
   generic map (USB_DATAWIDTH        => USBPIE_DATAWIDTH,
@@ -2619,6 +2622,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
                        ((VBusDebounced = '1' xor pie_vbusvalid = '1') and phy_mode = '0') or
                        (dp_s         /= dp and sync_usbreg_dev_connect = '1') or
                        (dm_s         /= dm and sync_usbreg_dev_connect = '1') or
+                       (sync_usbreg_dev_connect /= usb_dev_connect)      or
                        pie_lowpower_n = '1'                              or
                        sys_dev_wakeup_n = '0'                            or
                        (ulpi_int_lp = '1' and phy_mode = '1')            or
