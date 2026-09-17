@@ -427,10 +427,14 @@ begin
         usb_self_powered_lock <= usb_self_powered;
         if usb_self_powered = '1' then
           ep0_mem(C_ADDR_SP1)(31 downto 24) <= X"C0";
-          ep0_mem(C_ADDR_SP2)(31 downto 24) <= X"C0";
+          if C_HIGH_SPEED then
+            ep0_mem(C_ADDR_SP2)(31 downto 24) <= X"C0";
+          end if;
         else
-          ep0_mem(C_ADDR_SP1)(31 downto 24) <= X"00";
-          ep0_mem(C_ADDR_SP2)(31 downto 24) <= X"00";
+          ep0_mem(C_ADDR_SP1)(31 downto 24) <= X"80";
+          if C_HIGH_SPEED then
+            ep0_mem(C_ADDR_SP2)(31 downto 24) <= X"80";
+          end if;
         end if;
       end if;
       if (reg_write = '1')                                                  and
