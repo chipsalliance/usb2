@@ -3583,7 +3583,7 @@ begin
         end loop;
 
         if DevAddrEnabled and
-           (to_integer(unsigned(rxdata_16(10 downto 7))) <= C_NBPHYSEP) then
+           (to_integer(unsigned(rxdata_16(10 downto 7))) <= C_NBPHYSEP/2) then
            epinfo_req_r   <= '1'; -- this register value is transmitted to the dma handler and is also used in the others states of protocol FSM
            -- to indicate if ep/address are valid
            epinfo_epnr_r  <=  rxdata_16(10 downto 7);
