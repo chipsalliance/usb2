@@ -172,11 +172,9 @@ begin
       if ep0_setupdone = '1' then
         case ep0_request is
           when C_CLASS_REQ_CLEAR_FEATURE =>
-            if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
-              null;
-            elsif to_integer(unsigned(ep0_windex)) = 0 then  --ClearHubFeature
-              -- TODO : complete transfer - anything to set ???
-            else                                             --ClearPortFeature
+            if to_integer(unsigned(ep0_windex)) = 0 then  --ClearHubFeature
+              null; -- TODO : complete transfer - anything to set ???
+            elsif to_integer(unsigned(ep0_windex(15 downto 0))) <= C_HUB_NB_PORTS then --ClearPortFeature
               var_port := to_integer(unsigned(ep0_windex)) - 1;
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
@@ -207,18 +205,14 @@ begin
             end if;
     
           when C_CLASS_REQ_GET_STATUS =>
-            if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
-              null;
-            else                                             --GetHubStatus / GetPortStatus
+            if to_integer(unsigned(ep0_windex(15 downto 0))) <= C_HUB_NB_PORTS then --GetHubStatus / GetPortStatus
               data_index <= to_integer(unsigned(ep0_windex));
             end if;
     
           when C_CLASS_REQ_SET_FEATURE =>
-            if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
-              null;
-            elsif to_integer(unsigned(ep0_windex)) = 0 then  --SetHubFeature
-              -- TODO : complete transfer - anything to set ???
-            else                                             --SetPortFeature
+            if to_integer(unsigned(ep0_windex)) = 0 then  --SetHubFeature
+              null; -- TODO : complete transfer - anything to set ???
+            elsif to_integer(unsigned(ep0_windex(15 downto 0))) <= C_HUB_NB_PORTS then --SetPortFeature
               var_port := to_integer(unsigned(ep0_windex)) - 1;
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect

@@ -463,10 +463,11 @@ begin
             end loop;
             if nbytes > (RAM_DATAWIDTH/8)-1 then
               var_nbytes := RAM_DATAWIDTH/8;
+              nbytes     <= nbytes - (RAM_DATAWIDTH/8);
             else
               var_nbytes := nbytes rem (RAM_DATAWIDTH/8);
+              nbytes     <= 0;
             end if;   
-            nbytes      <= nbytes - var_nbytes;
             if var_pointer + var_nbytes < FIFO_NBYTES then
               var_pointer := var_pointer + var_nbytes;
             else --This should never happen. var_pointer must always be smaller than or equal to FIFO_NBYTES
@@ -1155,8 +1156,7 @@ begin
   -- is bigger than NBPHYS_EP+1. This will prevent a possible range constraint 
   -- violation
   endpoint_nr_dir <= to_integer(unsigned(epinfo_addr(7 downto 3))) 
-                     when to_integer(unsigned(sync_sieint_epinfo_epnr & sync_sieint_epinfo_epdir))
-                                              <= C_NBPHYSEP+1
+                     when to_integer(unsigned(epinfo_addr(7 downto 3))) <= C_NBPHYSEP+1
                      else 0;
 
   epinfo_addr     (31 downto  8) <= usbreg_ep_list_start(31 downto 8);

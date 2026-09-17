@@ -23,7 +23,7 @@ use work.usb_general_subcmp_pkg.all;
 use work.usb_ep_config_pkg.all;
 
 entity usb_ep0_hub_descr is
-generic(C_NWORDS : integer := 128; --Number of 32 bits words
+generic(C_NWORDS : integer := 172; --Number of 32 bits words in hub descriptor table
         C_HIGH_SPEED     : boolean := TRUE);
 port (
       -- interface to AHB slave module
@@ -36,7 +36,8 @@ port (
       reg_rdata         : out std_logic_vector(31 downto 0);
       reg_write         : in  std_logic;
       
-      usb_self_powered  : in  std_logic;
+      usb_self_powered_pin : in  std_logic;
+      usb_self_powered_ff  : out std_logic;
       
       ep0_mem_req       : in  std_logic;
       ep0_mem_gnt       : out std_logic;
@@ -53,8 +54,13 @@ architecture RTL of usb_ep0_hub_descr is
 
 type t_ep0_mem is array (0 to C_NWORDS-1) of std_logic_vector(31 downto 0);
 
-signal ep0_mem : t_ep0_mem;
-signal hub_write_lock : std_logic;
+signal ep0_mem                    : t_ep0_mem;
+signal hub_write_lock             : std_logic;
+signal usb_self_powered           : std_logic;
+signal usb_self_powered_s         : std_logic;
+signal usb_self_powered_edge      : std_logic;
+signal usb_self_powered_lock      : std_logic;
+signal hub_self_powered           : std_logic;
 
 constant C_HUB_CS : integer := 15; --Register address for HUB Control and Status register (Hub enable and Hub DCON bits)
 
@@ -112,9 +118,9 @@ begin
   var_result(var_address)( 7 downto  0) := X"01";
   var_result(var_address)(15 downto  8) := X"01";
   var_result(var_address)(23 downto 16) := X"00";
-  var_result(var_address)(31 downto 24) := X"80";
+  var_result(var_address)(31 downto 24) := X"80"; -- Bit 6 is indicating if it is self-powered or bus-powered
   var_address := var_address+1;
-  var_result(var_address)( 7 downto  0) := X"14"; -- 20 mA max current consumption
+  var_result(var_address)( 7 downto  0) := X"14"; -- 40 mA max current consumption
   var_result(var_address)(15 downto  8) := X"09";
   var_result(var_address)(23 downto 16) := X"04";
   var_result(var_address)(31 downto 24) := X"00";
@@ -183,9 +189,9 @@ begin
     var_result(var_address)( 7 downto  0) := X"01";
     var_result(var_address)(15 downto  8) := X"01";
     var_result(var_address)(23 downto 16) := X"00";
-    var_result(var_address)(31 downto 24) := X"80";
+    var_result(var_address)(31 downto 24) := X"80"; --Bit 6 is indicating if it is self-powered or bus-powered
     var_address := var_address+1;
-    var_result(var_address)( 7 downto  0) := X"FA";
+    var_result(var_address)( 7 downto  0) := X"FA"; --500 mA max current consumption
     var_result(var_address)(15 downto  8) := X"09";
     var_result(var_address)(23 downto 16) := X"04";
     var_result(var_address)(31 downto 24) := X"00";
@@ -379,28 +385,25 @@ begin
 end;
 
 constant C_EP0_ROM  : t_ep0_mem := func_ep0_rom(C_HIGH_SPEED);
-constant C_ADDR_SP1 : integer := 17;
-constant C_ADDR_SP2 : integer := 65;
+constant C_ADDR_SP1 : integer := 17; --Location in the Standard configuration descriptor of the hub
+constant C_ADDR_SP2 : integer := 65; --Location in the Other speed configuration descriptor of the hub
 
 begin
 
   ep0_mem_gnt      <= ep0_mem_req;
   
-  PROC_ROM : process(ep0_mem_req, ep0_mem_addr, usb_self_powered )
+  PROC_ROM : process(ep0_mem_req, ep0_mem_addr, ep0_mem )
   variable var_mem_addr_integer : integer range 0 to C_NWORDS-1;
   begin
-    if ep0_mem_req = '1' then --This is required to prevent range constraint violations (as ep0_mem_addr is also used for data transfer) 
+    if ep0_mem_req = '1' and
+       to_integer(unsigned(ep0_mem_addr(log2(C_NWORDS)-1 downto 1)&'1')) < C_NWORDS then  
       var_mem_addr_integer       := to_integer(unsigned(ep0_mem_addr(log2(C_NWORDS)-1 downto 1)&'0'));
-      ep0_mem_rdata(31 downto 0) <= C_EP0_ROM(var_mem_addr_integer); 
+      ep0_mem_rdata(31 downto 0) <= ep0_mem(var_mem_addr_integer); 
       var_mem_addr_integer       := to_integer(unsigned(ep0_mem_addr(log2(C_NWORDS)-1 downto 1)&'1'));
-      ep0_mem_rdata(63 downto 32) <= C_EP0_ROM(var_mem_addr_integer); 
+      ep0_mem_rdata(63 downto 32) <= ep0_mem(var_mem_addr_integer); 
       
-      if (usb_self_powered = '1') and ((to_integer(unsigned(ep0_mem_addr)) = C_ADDR_SP1) or (to_integer(unsigned(ep0_mem_addr)) = C_ADDR_SP2)) then
-        ep0_mem_rdata(63 downto 56) <= X"C0";
-      else
-      end if;
     else
-      ep0_mem_rdata <= (others => '1');
+      ep0_mem_rdata <= X"DEADBEEFDEADBEAF";
     end if;
   end process PROC_ROM;
   
@@ -415,21 +418,45 @@ begin
   PROC_REG_WRITE : process(sys_rst_n, sys_clk)
   begin
     if sys_rst_n = '0' then
-      ep0_mem <= C_EP0_ROM;
+      ep0_mem                <= C_EP0_ROM;
+      usb_self_powered_s     <= '0';
+      usb_self_powered_lock  <= '0';
     elsif sys_clk'event and sys_clk = '1' then
-      if reg_write = '1' and hub_write_lock = '0' and to_integer(unsigned(reg_waddr)) < C_NWORDS then
+      usb_self_powered_s <= usb_self_powered;  
+      if (usb_self_powered_edge = '1') then --Any edge detection on usb_self_powered_pin will change the state.
+        usb_self_powered_lock <= usb_self_powered;
+        if usb_self_powered = '1' then
+          ep0_mem(C_ADDR_SP1)(31 downto 24) <= X"C0";
+          if C_HIGH_SPEED then
+            ep0_mem(C_ADDR_SP2)(31 downto 24) <= X"C0";
+          end if;
+        else
+          ep0_mem(C_ADDR_SP1)(31 downto 24) <= X"80";
+          if C_HIGH_SPEED then
+            ep0_mem(C_ADDR_SP2)(31 downto 24) <= X"80";
+          end if;
+        end if;
+      end if;
+      if (reg_write = '1')                                                  and
+         (hub_write_lock = '0' or to_integer(unsigned(reg_waddr))=C_HUB_CS) and --Hub Control and Status register is always writeable
+         (to_integer(unsigned(reg_waddr)) < C_NWORDS)                       then
         ep0_mem(to_integer(unsigned(reg_waddr))) <= reg_wdata;
       end if;
       if USB_EnableHub = '1' then --If the input signal USB_EnableHub is set to 1b, it overrules the hub register bits.
         ep0_mem(C_HUB_CS)(0) <= '1';
         ep0_mem(C_HUB_CS)(16) <= '1';
       end if;
-    end if;  
+    end if;
   end process PROC_REG_WRITE;
 
-  hub_enable     <= ep0_mem(C_HUB_CS)(0);
-  hub_dcon       <= ep0_mem(C_HUB_CS)(16);
-  hub_write_lock <= ep0_mem(C_HUB_CS)(0) and ep0_mem(C_HUB_CS)(16);
+  usb_self_powered      <= usb_self_powered_pin or hub_self_powered;  
+  usb_self_powered_edge <= usb_self_powered xor usb_self_powered_s;
+  usb_self_powered_ff   <= usb_self_powered_lock;
+
+  hub_enable       <= ep0_mem(C_HUB_CS)(0);
+  hub_dcon         <= ep0_mem(C_HUB_CS)(16);
+  hub_self_powered <= ep0_mem(C_HUB_CS)(18);
+  hub_write_lock   <= ep0_mem(C_HUB_CS)(0) and ep0_mem(C_HUB_CS)(16);
 
 
 end RTL; --usb_ep0_hub_descr

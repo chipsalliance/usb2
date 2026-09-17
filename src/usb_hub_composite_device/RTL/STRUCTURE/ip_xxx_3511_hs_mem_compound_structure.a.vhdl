@@ -522,7 +522,7 @@ component usb_ep0_handler
         C_NBPHYSEP     : integer := 2;
         C_NBDEV        : integer := 1;
         C_DATAWIDTH    : integer := 32;
-        C_EPNBYTEWIDTH : integer := 10
+        C_EPNBYTEWIDTH : integer := 15
     );
     port(
         clk                     : in  std_logic;
@@ -623,7 +623,8 @@ component usb_ep0_hub_descr
         reg_raddr            : in  std_logic_vector((log2(C_NWORDS))-1 downto 0);
         reg_rdata            : out std_logic_vector(31 downto 0);
         reg_write            : in  std_logic;
-        usb_self_powered     : in  std_logic;
+        usb_self_powered_pin : in  std_logic;
+        usb_self_powered_ff  : out std_logic;
         ep0_mem_req          : in  std_logic;
         ep0_mem_gnt          : out std_logic;
         ep0_mem_addr         : in  std_logic_vector((log2(C_NWORDS))-1 downto 0);
@@ -2012,7 +2013,8 @@ usb_ep0_hub_descr_1 : usb_ep0_hub_descr
       reg_raddr            => hub_reg_raddr,
       reg_rdata            => hub_reg_rdata,
       reg_write            => hub_reg_write,      
-      usb_self_powered     => usb_self_powered_pin,
+      usb_self_powered_ff  => usb_self_powered_ff,
+      usb_self_powered_pin => usb_self_powered_pin,
       ep0_mem_req          => ep0_mem_req,
       ep0_mem_gnt          => ep0_mem_gnt,
       ep0_mem_addr         => ep0_mem_addr(C_HUB_FIFO_ADDRWIDTH-1 downto 0),
@@ -2034,7 +2036,6 @@ begin
 end process proc_usb_self_powered_pin_sync;
 
 usb_self_powered_pin <= usb_self_powered_pin_ss;
-usb_self_powered_ff  <= usb_self_powered_pin;
   
 usb_app_hw_hub_1 : usb_app_hw_hub
   generic map(C_HUB_NB_PORTS => 2,
@@ -2399,6 +2400,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
                        ((VBusDebounced = '1' xor pie_vbusvalid = '1') and phy_mode = '0') or
                        (dp_s         /= dp and sync_usbreg_dev_connect = '1') or
                        (dm_s         /= dm and sync_usbreg_dev_connect = '1') or
+                       (sync_usbreg_dev_connect /= usb_dev_connect)      or
                        pie_lowpower_n = '1'                              or
                        sys_dev_wakeup_n = '0'                            or
                        (ulpi_int_lp = '1' and phy_mode = '1')            or
