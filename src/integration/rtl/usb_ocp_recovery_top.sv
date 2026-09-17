@@ -131,6 +131,7 @@ module usb_ocp_recovery_top
   logic [7:0]                 decode_protocol_error_code;
   logic                       fw_protocol_error_req;
   logic                       fw_protocol_error_accept;
+  logic                       device_reset_cmd_enabled;
 
   logic [7:0]                 usb_device_reset_ctrl_next;
   logic                       usb_device_reset_ctrl_we;
@@ -330,8 +331,9 @@ module usb_ocp_recovery_top
       // cms_fifo read keeps its aperture offset stable until it acks.
       rb_cmd    = '0;
       rb_offset = '0;
-      rb_wr     = grant_ext || (ext_in_flight_q && ext_write_q);
-      rb_rd     = (grant_ext && !ext_rb_wr) ||
+      rb_wr     = (grant_ext && ext_rb_wr) ||
+                  (ext_in_flight_q && ext_write_q);
+      rb_rd     = (grant_ext && ext_rb_rd) ||
                   (ext_in_flight_q && !ext_write_q);
       rb_wdata  = ext_rb_wdata;
       rb_wstrb  = 4'hF;
@@ -430,6 +432,7 @@ module usb_ocp_recovery_top
     .ctrl_set_stall  (rec_ctrl_set_stall),
     .ctrl_xfer_done  (rec_ctrl_xfer_done),
     .ctrl_xfer_abort (rec_ctrl_xfer_abort),
+    .device_reset_cmd_enabled(device_reset_cmd_enabled),
     .proto_err_rd_pulse (proto_err_rd_pulse),
     .protocol_error_vld (decode_protocol_error_vld),
     .protocol_error_code(decode_protocol_error_code),
@@ -444,6 +447,13 @@ module usb_ocp_recovery_top
     .rb_ack          (usb_rb_ack),
     .rb_err          (usb_rb_err)
   );
+
+  assign device_reset_cmd_enabled =
+      rb_hwif_out.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value |
+      rb_hwif_out.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value |
+      rb_hwif_out.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value |
+      rb_hwif_out.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value |
+      rb_hwif_out.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value;
 
   //////////////////////////////////////////////////////////////////////////////
   // A3 : word-wide reg-bus adapter + peakrdl-generated regblock

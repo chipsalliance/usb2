@@ -70,6 +70,7 @@ module usb_ocp_recovery_ctrl_decode (
   output logic        ctrl_set_stall,
   input  logic        ctrl_xfer_done,
   input  logic        ctrl_xfer_abort,
+  input  logic        device_reset_cmd_enabled,
   output logic        proto_err_rd_pulse,
   output logic        protocol_error_vld,
   output logic [7:0]  protocol_error_code,
@@ -152,7 +153,18 @@ module usb_ocp_recovery_ctrl_decode (
                            && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
         end
       OCP_CMD_DEVICE_RESET:
-        begin direction_legal_s = !is_in_s; length_legal_s = (wlength_s == 16'(OCP_SPEC_LEN_DEVICE_RESET)); end
+        begin
+          cmd_supported_s = device_reset_cmd_enabled;
+          direction_legal_s = 1'b1;
+          if (is_in_s) begin
+            length_legal_s =
+                (wlength_s >= 16'(OCP_SPEC_LEN_DEVICE_RESET)) &&
+                (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
+          end else begin
+            length_legal_s =
+                (wlength_s == 16'(OCP_SPEC_LEN_DEVICE_RESET));
+          end
+        end
       OCP_CMD_RECOVERY_CTRL:
         begin direction_legal_s = !is_in_s; length_legal_s = (wlength_s == 16'(OCP_SPEC_LEN_RECOVERY_CTRL)); end
       OCP_CMD_RECOVERY_STATUS:
@@ -168,7 +180,17 @@ module usb_ocp_recovery_ctrl_decode (
                            && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
         end
       OCP_CMD_INDIRECT_FIFO_CTRL:
-        begin direction_legal_s = !is_in_s; length_legal_s = (wlength_s == 16'(OCP_SPEC_LEN_INDIRECT_FIFO_CTRL)); end
+        begin
+          direction_legal_s = 1'b1;
+          if (is_in_s) begin
+            length_legal_s =
+                (wlength_s >= 16'(OCP_SPEC_LEN_INDIRECT_FIFO_CTRL)) &&
+                (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
+          end else begin
+            length_legal_s =
+                (wlength_s == 16'(OCP_SPEC_LEN_INDIRECT_FIFO_CTRL));
+          end
+        end
       OCP_CMD_INDIRECT_FIFO_STATUS:
         begin
           direction_legal_s = is_in_s;
