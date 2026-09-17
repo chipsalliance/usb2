@@ -24,7 +24,7 @@ entity usb_ep0_handler is
 generic(C_NBPHYSEP  : integer := 2;
         C_NBDEV     : integer := 1;
         C_DATAWIDTH : integer := 32;
-        C_EPNBYTEWIDTH : integer := 10); --should be 15 for highspeed
+        C_EPNBYTEWIDTH : integer := 15); --must be 15 for highspeed
 port (
       clk               : in  std_logic; 
       rst_n             : in  std_logic; 
