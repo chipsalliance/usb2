@@ -17,24 +17,24 @@
 addrmap usb_hub #(
     longint unsigned FIFO_WORDS = 172
 ) {
-    name = "USB HUB Descriptor Storage";
-    desc = "Bus-visible HUB storage initialized from the built-in C_EP0_ROM image. Word 15 controls HUB operation; all other implemented words are software-readable and writable shadow storage. The current EP0 response path reads C_EP0_ROM directly, so shadow-memory writes do not alter USB descriptor responses. Addresses at or above FIFO_WORDS within the rounded bus aperture read zero and ignore writes. Once CONTROL.ENABLE and CONTROL.DCON are both set, software cannot unlock the storage; deasserting USB_EnableHub does not clear either bit.";
+    name = "USB HUB Descriptor and SETUP Table Storage";
+    desc = "Bus-visible HUB descriptor and SETUP-response table initialized from C_EP0_ROM. The live EP0 lookup path reads this software-accessible storage, so descriptor and SETUP-table writes affect subsequent USB responses. Word 15 controls HUB selection, connection, and self-powered reporting. While CONTROL.ENABLE and CONTROL.DCON are both one, descriptor and SETUP-table words are write-locked, but CONTROL remains writable so software can disconnect or disable the HUB and release the lock. The synchronized USB_EnableHub input continuously forces ENABLE and DCON to one while asserted. Word addresses at or above FIFO_WORDS within the rounded power-of-two bus aperture read zero and ignore writes while returning an OKAY bus response.";
 
     external mem {
-        desc = "Software-readable and writable shadow words 0 through 14. Reset restores the corresponding C_EP0_ROM words. Writes are ignored while CONTROL.ENABLE and CONTROL.DCON are both set, and do not alter the current EP0 descriptor-response source.";
+        desc = "Software-readable and writable live table words 0 through 14. Reset restores the corresponding C_EP0_ROM words. Writes affect subsequent EP0 descriptor or SETUP responses and are ignored while CONTROL.ENABLE and CONTROL.DCON are both set.";
         mementries = 15;
         memwidth = 32;
         sw = rw;
     } DESCRIPTOR_LOW @ 0x00;
 
     reg {
-        desc = "Controls HUB operation and upstream connection. All HUB storage becomes permanently software-write-locked until reset once ENABLE and DCON are both set.";
+        desc = "Controls selection of HUB mode, the upstream connection request, and self-powered reporting. CONTROL is always software-writable. Other implemented table words are write-locked while ENABLE and DCON are both one; clearing either field releases that lock unless USB_EnableHub remains asserted.";
         field {
             sw = rw;
             hw = rw;
             hwset = true;
             precedence = hw;
-            desc = "Set to one to enable HUB operation. The USB_EnableHub hardware override can also set this field. Once ENABLE and DCON are both set, software writes to all HUB storage, including this field, are ignored until reset.";
+            desc = "Set to one to select the HUB as the upstream USB device and enable HUB-specific device and port routing. When zero, the upstream connection path uses Device 0 instead. The synchronized USB_EnableHub input continuously forces this field and DCON to one while asserted. This field remains software-writable while the table lock is active.";
         } ENABLE[0:0] = 0;
         field {
             sw = rw;
@@ -46,17 +46,27 @@ addrmap usb_hub #(
             hw = rw;
             hwset = true;
             precedence = hw;
-            desc = "Set to one to connect the HUB device to the upstream USB bus. The USB_EnableHub hardware override can also set this field. Once ENABLE and DCON are both set, software writes to all HUB storage, including this field, are ignored until reset.";
+            desc = "Requests connection of the HUB device to the upstream USB bus. The effective HUB connection is DCON qualified by synchronized debounced VBUS and is selected upstream when ENABLE is one. The synchronized USB_EnableHub input continuously forces this field and ENABLE to one while asserted. This field remains software-writable while the table lock is active.";
         } DCON[16:16] = 0;
         field {
             sw = rw;
             hw = na;
             desc = "Stored and read back by the register interface but unused by HUB logic. Software should write zero.";
-        } RESERVED_HIGH[31:17] = 0;
+        } RESERVED_17[17:17] = 0;
+        field {
+            sw = rw;
+            hw = r;
+            desc = "Selects self-powered reporting when set. The effective self-powered state is this field OR the synchronized USB_self_powered pin. A change in the effective state overwrites the bmAttributes byte in table word 17 with 0xC0 for self-powered or 0x80 for bus-powered and, for the high-speed configuration, applies the same overwrite to table word 65. Other software-programmed bits in those bytes are not preserved across the update. The output consumed by HUB request handling is the registered effective state.";
+        } SELF_POWERED[18:18] = 0;
+        field {
+            sw = rw;
+            hw = na;
+            desc = "Stored and read back by the register interface but unused by HUB logic. Software should write zero.";
+        } RESERVED_HIGH[31:19] = 0;
     } CONTROL @ 0x3c;
 
     external mem {
-        desc = "Software-readable and writable shadow words 16 through FIFO_WORDS minus one. Reset restores the corresponding C_EP0_ROM words. Writes are ignored while CONTROL.ENABLE and CONTROL.DCON are both set, and do not alter the current EP0 descriptor-response source.";
+        desc = "Software-readable and writable live table words 16 through FIFO_WORDS minus one, including descriptor data, SETUP match entries, and table link words. Reset restores the corresponding C_EP0_ROM words. Writes affect subsequent EP0 descriptor or SETUP responses and are ignored while CONTROL.ENABLE and CONTROL.DCON are both set. Changes in effective self-powered state overwrite the bmAttributes byte in word 17 and, for high-speed configuration, word 65.";
         mementries = FIFO_WORDS - 16;
         memwidth = 32;
         sw = rw;
