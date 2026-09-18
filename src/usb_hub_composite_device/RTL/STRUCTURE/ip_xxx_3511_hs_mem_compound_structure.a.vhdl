@@ -284,7 +284,6 @@ component usb_ocp_recovery_post_sync_arb
     hclk : in std_logic;
     hresetn : in std_logic;
     sync_busreset : in std_logic;
-    usbreg_dev_connect_i : in std_logic;
     pie_dev_selected_i : in std_logic_vector(1 downto 0);
     dev0_port_reset_i : in std_logic;
     dev0_usbreg_dev_connect_i : in std_logic;
@@ -1666,7 +1665,6 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     hclk => hclk,
     hresetn => hresetn,
     sync_busreset => sync_busreset,
-    usbreg_dev_connect_i => dev0_usbreg_dev_connect,
     pie_dev_selected_i => sync_pie_dev_selected_slv,
     dev0_port_reset_i => upd_dev0_portreset,
     dev0_usbreg_dev_connect_i => dev0_usbreg_dev_connect,

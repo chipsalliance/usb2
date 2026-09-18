@@ -27,7 +27,6 @@ entity usb_ocp_recovery_post_sync_arb is
     hresetn  : in  std_logic;
 
     sync_busreset : in std_logic;
-    usbreg_dev_connect_i : in std_logic;
     pie_dev_selected_i : in std_logic_vector(1 downto 0);
     dev0_port_reset_i : in std_logic;
     dev0_usbreg_dev_connect_i : in std_logic;
@@ -313,8 +312,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     dev0_selected_c <= '1' when
       unsigned(pie_dev_selected_i) = to_unsigned(C_DEV0_SEL, 2) else '0';
     dev0_local_reset_c <= dev0_port_reset_i or
-                          not dev0_usbreg_dev_connect_i or
-                          not usbreg_dev_connect_i;
+                          not dev0_usbreg_dev_connect_i;
 
     trig <= '1' when (dev0_selected_c = '1')
                    and (sync_sieint_epinfo_req_i = '1')
