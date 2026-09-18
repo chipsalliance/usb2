@@ -310,7 +310,7 @@ usb_axi_aresetn
 
 async_disable
   -> DFT-specific override of selected asynchronous reset and wake-up paths
-```text
+```
 
 ---
 
@@ -441,7 +441,7 @@ stable until the PHY asserts `utmi_txready`.
 
 | Signal | Direction | Width | Active Level or Encoding | Description |
 |---|---:|---:|---|---|
-| `utmi_reset` | Output | 1 | Active high | Active-high reset output for the external UTMI PHY. It is generated from `hresetn` by the top-level reset-extension logic and remains asserted for the implemented reset-extension interval. |
+| `utmi_reset` | Output | 1 | Active high | Active-high reset output for the external UTMI PHY. It is generated from `usb_axi_aresetn` by the reset-extension logic and remains asserted for the implemented reset-extension interval. |
 | `utmi_suspendm` | Output | 1 | Active low | Controls PHY suspend. A low value requests suspend. |
 | `utmi_xcvrselect` | Output | 1 | Encoded | Selects the UTMI transceiver. The current RTL drives zero for High-Speed operation and one for Full-Speed operation. |
 | `utmi_termselect` | Output | 1 | Encoded | Selects the PHY termination mode. The current RTL drives zero during normal High-Speed operation and one during Full-Speed operation and selected reset, chirp, suspend, and resume states. |
