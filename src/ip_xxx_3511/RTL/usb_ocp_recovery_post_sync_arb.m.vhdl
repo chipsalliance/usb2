@@ -129,8 +129,6 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   constant C_DEV0_SEL : integer := 1;
   constant C_DEV1_SEL : integer := 2;
 
-begin
-
   -- ======================================================================
   -- Mirrored SETUP monitor + claimed OCP transfer engine.
   --
@@ -146,163 +144,166 @@ begin
   -- identity keeps non-EP0 DMA traffic independent of retained EP0 ownership.
   -- FIFO writes reserve the exact requested DWORD capacity across PING/retry.
   -- ======================================================================
-  gen_trap : block
 
-    constant BYTES_PER_BEAT   : integer := USB_DATAWIDTH / 8;   -- 8 for 64b
-    constant RX_PACKET_BEATS  : integer := 8;
-    constant TX_MAXBYTES      : integer := 64;
-    constant REC_IFACE_SLV    : std_logic_vector(7 downto 0)
-             := std_logic_vector(to_unsigned(C_REC_IFACE_NUM, 8));
-    -- OCP Recovery v1.1 Sec 8.5: class-specific control transfer bRequest.
-    constant OCP_RECOVERY_TRANSFER : std_logic_vector(7 downto 0) := x"00";
-    constant OCP_INDIRECT_FIFO_DATA : std_logic_vector(7 downto 0) := x"2F";
+  constant BYTES_PER_BEAT   : integer := USB_DATAWIDTH / 8;   -- 8 for 64b
+  constant RX_PACKET_BEATS  : integer := 8;
+  constant TX_MAXBYTES      : integer := 64;
+  constant REC_IFACE_SLV    : std_logic_vector(7 downto 0)
+           := std_logic_vector(to_unsigned(C_REC_IFACE_NUM, 8));
+  -- OCP Recovery v1.1 Sec 8.5: class-specific control transfer bRequest.
+  constant OCP_RECOVERY_TRANSFER : std_logic_vector(7 downto 0) := x"00";
+  constant OCP_INDIRECT_FIFO_DATA : std_logic_vector(7 downto 0) := x"2F";
 
-    type t_trap_state is (T_IDLE, T_MIRROR, T_META_WAIT,
-                          T_DATA, T_STATUS, T_PROT_STALL);
-    signal st : t_trap_state;
+  type t_trap_state is (T_IDLE, T_MIRROR, T_META_WAIT,
+                        T_DATA, T_STATUS, T_PROT_STALL);
+  signal st : t_trap_state;
+  signal st_next : t_trap_state;
 
-    signal cap_rxdata    : std_logic_vector(USB_DATAWIDTH-1 downto 0);
-    signal cap_rx_nbytes : std_logic_vector(RXNBYTES_BITS-1 downto 0);
-    signal cap_epnr      : std_logic_vector(3 downto 0);
-    signal cap_epdir     : std_logic;
-    signal cap_done      : std_logic;
-    signal end_seen      : std_logic;
-    signal succ_seen     : std_logic;
-    signal sp_sent       : std_logic;
+  signal cap_rxdata    : std_logic_vector(USB_DATAWIDTH-1 downto 0);
+  signal cap_rx_nbytes : std_logic_vector(RXNBYTES_BITS-1 downto 0);
+  signal cap_epnr      : std_logic_vector(3 downto 0);
+  signal cap_epdir     : std_logic;
+  signal cap_done      : std_logic;
+  signal end_seen      : std_logic;
+  signal succ_seen     : std_logic;
+  signal sp_sent       : std_logic;
 
-    signal trig    : std_logic;
-    signal new_setup_c : std_logic;
-    signal dma_req_forward_c : std_logic;
-    signal is_ocp  : std_logic;
-    signal incoming_is_ocp_c : std_logic;
-    signal ep0_ocp_owner_r : std_logic;
-    signal claim_q : std_logic;
-    signal ocp_ep0_req_c : std_logic;
-    signal ocp_ep0_txn_r : std_logic;
-    signal ocp_ep0_setup_txn_r : std_logic;
-    signal real_setup_data_seen_r : std_logic;
-    signal non_ep0_txn_r : std_logic;
-    signal ocp_resp_sel_c : std_logic;
-    signal replacement_stall_r : std_logic;
-    signal wire_ocp_r : std_logic;
-    signal wire_dma_r : std_logic;
-    signal dma_valid_seen_r : std_logic;
-    signal dma_epnr_r : std_logic_vector(3 downto 0);
-    signal dma_epdir_r : std_logic;
-    signal dma_setup_r : std_logic;
-    signal setup_pending_r : std_logic;
-    signal setup_pending_low_seen_r : std_logic;
-    signal drop_setup_success_r : std_logic;
-    signal drop_dma_valid_seen_r : std_logic;
-    signal usbreg_setup_dma_c : std_logic;
-    signal dma_success_c : std_logic;
-    signal dev0_selected_c : std_logic;
-    signal dev0_local_reset_c : std_logic;
-    signal dma_owner_r : std_logic_vector(1 downto 0);
-    signal setup_dma_owner_r : std_logic_vector(1 downto 0);
-    signal setup_dma_match_c : std_logic;
+  signal trig    : std_logic;
+  signal new_setup_c : std_logic;
+  signal dma_req_forward_c : std_logic;
+  signal is_ocp  : std_logic;
+  signal incoming_is_ocp_c : std_logic;
+  signal ep0_ocp_owner_r : std_logic;
+  signal claim_q : std_logic;
+  signal ocp_ep0_req_c : std_logic;
+  signal ocp_ep0_txn_r : std_logic;
+  signal ocp_ep0_setup_txn_r : std_logic;
+  signal real_setup_data_seen_r : std_logic;
+  signal non_ep0_txn_r : std_logic;
+  signal ocp_resp_sel_c : std_logic;
+  signal replacement_stall_r : std_logic;
+  signal wire_ocp_r : std_logic;
+  signal wire_dma_r : std_logic;
+  signal dma_valid_seen_r : std_logic;
+  signal dma_epnr_r : std_logic_vector(3 downto 0);
+  signal dma_epdir_r : std_logic;
+  signal dma_setup_r : std_logic;
+  signal setup_pending_r : std_logic;
+  signal setup_pending_low_seen_r : std_logic;
+  signal drop_setup_success_r : std_logic;
+  signal drop_dma_valid_seen_r : std_logic;
+  signal usbreg_setup_dma_c : std_logic;
+  signal dma_success_c : std_logic;
+  signal dev0_selected_c : std_logic;
+  signal dev0_local_reset_c : std_logic;
+  signal dma_owner_r : std_logic_vector(1 downto 0);
+  signal setup_dma_owner_r : std_logic_vector(1 downto 0);
+  signal setup_dma_match_c : std_logic;
 
-    signal xfer_dir_in_r       : std_logic;              -- SETUP dir (1=IN)
-    signal nbytes_r            : unsigned(15 downto 0);  -- Full SETUP wLength
-    signal tx_response_bytes_r : unsigned(6 downto 0);
-    signal tx_response_known_r : std_logic;
+  signal xfer_dir_in_r       : std_logic;              -- SETUP dir (1=IN)
+  signal nbytes_r            : unsigned(15 downto 0);  -- Full SETUP wLength
+  signal tx_response_bytes_r : unsigned(6 downto 0);
+  signal tx_response_known_r : std_logic;
 
-    signal in_data_toggle_r : std_logic;
-    signal zlp_phase_r      : std_logic;
-    signal zlp_owed_c       : std_logic;
+  signal in_data_toggle_r : std_logic;
+  signal zlp_phase_r      : std_logic;
+  signal zlp_owed_c       : std_logic;
 
-    -- Success-qualified end-of-stage pulse (hclk pulse; no edge detect needed).
-    signal st_end_c : std_logic;
+  -- Success-qualified end-of-stage pulse (hclk pulse; no edge detect needed).
+  signal st_end_c : std_logic;
 
-    -- Control-OUT packet store. A packet is invisible downstream until the
-    -- link reports a successful EOP with the exact expected byte count.
-    type t_rx_buf is array (0 to RX_PACKET_BEATS-1)
-                       of std_logic_vector(USB_DATAWIDTH-1 downto 0);
-    signal rx_buf_r            : t_rx_buf;
-    signal rx_captured_beats_r : unsigned(3 downto 0);
-    signal rx_word_index_r     : unsigned(4 downto 0);
-    signal rx_total_words_r    : unsigned(4 downto 0);
-    signal rx_total_bytes_r    : unsigned(6 downto 0);
-    signal rx_validated_r      : std_logic;
-    signal rx_drain_done_r     : std_logic;
-    signal rx_expected_beats_c : unsigned(3 downto 0);
-    signal rx_expected_words_c : unsigned(4 downto 0);
-    signal rx_capture_c        : std_logic;
-    signal rx_drain_active_c   : std_logic;
-    signal rx_last_word_c      : std_logic;
-    signal rx_length_error_r   : std_logic;
-    signal setup_length_error_c : std_logic;
-    signal ctrl_out_data_c     : std_logic_vector(31 downto 0);
-    signal ctrl_out_be_c       : std_logic_vector(3 downto 0);
-    signal ctrl_out_vld_c      : std_logic;
-    signal ctrl_out_last_c     : std_logic;
+  -- Control-OUT packet store. A packet is invisible downstream until the
+  -- link reports a successful EOP with the exact expected byte count.
+  type t_rx_buf is array (0 to RX_PACKET_BEATS-1)
+                     of std_logic_vector(USB_DATAWIDTH-1 downto 0);
+  signal rx_buf_r            : t_rx_buf;
+  signal rx_captured_beats_r : unsigned(3 downto 0);
+  signal rx_word_index_r     : unsigned(4 downto 0);
+  signal rx_total_words_r    : unsigned(4 downto 0);
+  signal rx_total_bytes_r    : unsigned(6 downto 0);
+  signal rx_validated_r      : std_logic;
+  signal rx_drain_done_r     : std_logic;
+  signal rx_expected_beats_c : unsigned(3 downto 0);
+  signal rx_expected_words_c : unsigned(4 downto 0);
+  signal rx_capture_c        : std_logic;
+  signal rx_drain_active_c   : std_logic;
+  signal rx_last_word_c      : std_logic;
+  signal rx_length_error_r   : std_logic;
+  signal setup_length_error_c : std_logic;
+  signal ctrl_out_data_c     : std_logic_vector(31 downto 0);
+  signal ctrl_out_be_c       : std_logic_vector(3 downto 0);
+  signal ctrl_out_vld_c      : std_logic;
+  signal ctrl_out_last_c     : std_logic;
 
-    -- Control-IN cut-through queue (SV 32b words -> SIE 64b beats).
-    signal tx_curr_data_r       : std_logic_vector(USB_DATAWIDTH-1 downto 0);
-    signal tx_curr_valid_r      : std_logic;
-    signal tx_next_data_r       : std_logic_vector(USB_DATAWIDTH-1 downto 0);
-    signal tx_next_valid_r      : std_logic;
-    signal tx_half_word_r       : std_logic_vector(31 downto 0);
-    signal tx_half_word_valid_r : std_logic;
-    signal tx_producer_done_r   : std_logic;
-    signal tx_bytes_sent_r      : unsigned(6 downto 0);
-    signal tx_packet_started_r  : std_logic;
-    signal ctrl_in_rdy_c        : std_logic;
-    signal tx_in_data_c         : std_logic;
-    signal tx_launch_ready_c    : std_logic;
-    signal tx_beat_valid_c      : std_logic;
-    signal tx_shift_c           : std_logic;
-    signal tx_slot_free_c       : std_logic;
-    signal tx_remaining_bytes_c : unsigned(6 downto 0);
+  -- Control-IN cut-through queue (SV 32b words -> SIE 64b beats).
+  signal tx_curr_data_r       : std_logic_vector(USB_DATAWIDTH-1 downto 0);
+  signal tx_curr_valid_r      : std_logic;
+  signal tx_next_data_r       : std_logic_vector(USB_DATAWIDTH-1 downto 0);
+  signal tx_next_valid_r      : std_logic;
+  signal tx_half_word_r       : std_logic_vector(31 downto 0);
+  signal tx_half_word_valid_r : std_logic;
+  signal tx_producer_done_r   : std_logic;
+  signal tx_bytes_sent_r      : unsigned(6 downto 0);
+  signal tx_packet_started_r  : std_logic;
+  signal ctrl_in_rdy_c        : std_logic;
+  signal tx_in_data_c         : std_logic;
+  signal tx_launch_ready_c    : std_logic;
+  signal tx_beat_valid_c      : std_logic;
+  signal tx_shift_c           : std_logic;
+  signal tx_slot_free_c       : std_logic;
+  signal tx_remaining_bytes_c : unsigned(6 downto 0);
 
-    signal setup_pkt_vld_c : std_logic;
+  signal setup_pkt_vld_c : std_logic;
+  signal setup_complete_c : std_logic;
+  signal setup_valid_c : std_logic;
+  signal setup_claim_c : std_logic;
 
-    -- A FIFO-space reservation survives PING and CRC retry. It prevents
-    -- firmware FIFO mutators from invalidating an advertised OUT acceptance.
-    signal fifo_reservation_r : std_logic;
-    signal fifo_words_needed_c : unsigned(6 downto 0);
-    signal fifo_capacity_ok_c : std_logic;
-    signal fifo_out_request_c : std_logic;
-    signal fifo_batch_abort_c : std_logic;
-    signal setup_received_c : std_logic;
+  -- A FIFO-space reservation survives PING and CRC retry. It prevents
+  -- firmware FIFO mutators from invalidating an advertised OUT acceptance.
+  signal fifo_reservation_r : std_logic;
+  signal fifo_words_needed_c : unsigned(6 downto 0);
+  signal fifo_capacity_ok_c : std_logic;
+  signal fifo_out_request_c : std_logic;
+  signal fifo_batch_abort_c : std_logic;
+  signal setup_received_c : std_logic;
 
-    -- Non-streaming EP0 response ownership is transaction-scoped. Streaming
-    -- TX data remains live so the SIE can fetch successive beats.
-    signal rsp_snap_valid_r : std_logic;
-    signal rsp_snap_active_r : std_logic;
-    signal rsp_snap_stall_r : std_logic;
-    signal rsp_snap_disabled_r : std_logic;
-    signal rsp_snap_toggle_r : std_logic;
-    signal rsp_snap_nbytes_r : std_logic_vector(TXNBYTES_BITS-1 downto 0);
-    signal rsp_snap_maxpacket_r : std_logic_vector(1 downto 0);
-    signal rsp_snap_iso_r : std_logic;
-    signal rsp_snap_ratefeedback_r : std_logic;
-    signal rsp_live_valid_c : std_logic;
-    signal rsp_live_active_c : std_logic;
-    signal rsp_live_stall_c : std_logic;
-    signal rsp_live_disabled_c : std_logic;
-    signal rsp_live_toggle_c : std_logic;
-    signal rsp_live_nbytes_c : std_logic_vector(TXNBYTES_BITS-1 downto 0);
-    signal rsp_live_maxpacket_c : std_logic_vector(1 downto 0);
-    signal rsp_live_iso_c : std_logic;
-    signal rsp_live_ratefeedback_c : std_logic;
+  -- Non-streaming EP0 response ownership is transaction-scoped. Streaming
+  -- TX data remains live so the SIE can fetch successive beats.
+  signal rsp_snap_valid_r : std_logic;
+  signal rsp_snap_active_r : std_logic;
+  signal rsp_snap_stall_r : std_logic;
+  signal rsp_snap_disabled_r : std_logic;
+  signal rsp_snap_toggle_r : std_logic;
+  signal rsp_snap_nbytes_r : std_logic_vector(TXNBYTES_BITS-1 downto 0);
+  signal rsp_snap_maxpacket_r : std_logic_vector(1 downto 0);
+  signal rsp_snap_iso_r : std_logic;
+  signal rsp_snap_ratefeedback_r : std_logic;
+  signal rsp_live_valid_c : std_logic;
+  signal rsp_live_active_c : std_logic;
+  signal rsp_live_stall_c : std_logic;
+  signal rsp_live_disabled_c : std_logic;
+  signal rsp_live_toggle_c : std_logic;
+  signal rsp_live_nbytes_c : std_logic_vector(TXNBYTES_BITS-1 downto 0);
+  signal rsp_live_maxpacket_c : std_logic_vector(1 downto 0);
+  signal rsp_live_iso_c : std_logic;
+  signal rsp_live_ratefeedback_c : std_logic;
 
-    constant NBYTES8 : std_logic_vector(TXNBYTES_BITS-1 downto 0)
-                       := std_logic_vector(to_unsigned(8, TXNBYTES_BITS));
+  constant NBYTES8 : std_logic_vector(TXNBYTES_BITS-1 downto 0)
+                     := std_logic_vector(to_unsigned(8, TXNBYTES_BITS));
 
-    function mask_word32(data : std_logic_vector(31 downto 0);
-                         be   : std_logic_vector(3 downto 0))
-      return std_logic_vector is
-      variable masked_v : std_logic_vector(31 downto 0);
-    begin
-      masked_v := (others => '0');
-      for idx in 0 to 3 loop
-        if be(idx) = '1' then
-          masked_v(idx*8+7 downto idx*8) := data(idx*8+7 downto idx*8);
-        end if;
-      end loop;
-      return masked_v;
-    end function;
+  function mask_word32(data : std_logic_vector(31 downto 0);
+                       be   : std_logic_vector(3 downto 0))
+    return std_logic_vector is
+    variable masked_v : std_logic_vector(31 downto 0);
+  begin
+    masked_v := (others => '0');
+    for idx in 0 to 3 loop
+      if be(idx) = '1' then
+        masked_v(idx*8+7 downto idx*8) := data(idx*8+7 downto idx*8);
+      end if;
+    end loop;
+    return masked_v;
+  end function;
 
   begin
 
@@ -377,6 +378,22 @@ begin
     -- success so a NAK/error edge does not advance the claim FSM).
     st_end_c <= sync_sieint_endtransfer_i and sync_sieint_success_i
                 and ocp_ep0_txn_r;
+    setup_complete_c <= end_seen or sync_sieint_endtransfer_i;
+    setup_valid_c <= '1' when
+        ((cap_done = '1') or (sync_sieint_rxdatavalid_i = '1')) and
+        ((succ_seen = '1') or (sync_sieint_success_i = '1')) and
+        ((unsigned(cap_rx_nbytes) =
+          to_unsigned(8, cap_rx_nbytes'length)) or
+         (((sync_sieint_success_i = '1') or
+           (sync_sieint_endtransfer_i = '1')) and
+          (unsigned(sync_sieint_rx_nbytes_i) =
+           to_unsigned(8, sync_sieint_rx_nbytes_i'length))))
+      else '0';
+    setup_claim_c <= '1' when
+        ((cap_done = '1') and (is_ocp = '1')) or
+        ((sync_sieint_rxdatavalid_i = '1') and
+         (incoming_is_ocp_c = '1'))
+      else '0';
 
     -- setup_pkt to the SV recovery stack: pulse once per claimed SETUP.
     setup_pkt_vld_c <= '1' when (st = T_MIRROR) and (cap_done = '1')
@@ -601,15 +618,119 @@ begin
     ctrl_length_error <= rx_length_error_r or setup_length_error_c;
 
     -- ------------------------------------------------------------------
-    -- Sequential FSM + capture / pending / claim registers.
+    -- Recovery transfer FSM.
+    --
+    -- Each state lists its own preemption priority so the transition behavior
+    -- is visible from the origin state. Synchronous teardown is applied by the
+    -- state register and therefore overrides every combinational transition.
     -- ------------------------------------------------------------------
-    p_seq : process (hclk, hresetn)
-      variable setup_complete_v : boolean;
-      variable setup_valid_v : boolean;
-      variable setup_claim_v : boolean;
+    fsm_next_proc : process (st, trig, fw_protocol_error_req_i, claim_q,
+                             setup_complete_c, setup_valid_c, setup_claim_c,
+                             replacement_stall_r, ctrl_set_stall,
+                             setup_length_error_c, nbytes_r,
+                             rx_length_error_r, xfer_dir_in_r,
+                             rx_drain_done_r, st_end_c, zlp_phase_r,
+                             zlp_owed_c)
+    begin
+      st_next <= st;
+      case st is
+        when T_IDLE =>
+          if trig = '1' then
+            st_next <= T_MIRROR;
+          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+            st_next <= T_PROT_STALL;
+          end if;
+
+        when T_MIRROR =>
+          if trig = '1' then
+            st_next <= T_MIRROR;
+          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+            st_next <= T_PROT_STALL;
+          elsif setup_complete_c = '1' then
+            if (setup_valid_c = '1') and (setup_claim_c = '1') then
+              st_next <= T_META_WAIT;
+            elsif setup_valid_c = '1' then
+              st_next <= T_IDLE;
+            elsif replacement_stall_r = '1' then
+              st_next <= T_PROT_STALL;
+            else
+              st_next <= T_IDLE;
+            end if;
+          end if;
+
+        when T_META_WAIT =>
+          if trig = '1' then
+            st_next <= T_MIRROR;
+          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+            st_next <= T_PROT_STALL;
+          elsif (ctrl_set_stall = '1') or
+                (setup_length_error_c = '1') then
+            st_next <= T_PROT_STALL;
+          elsif nbytes_r = to_unsigned(0, nbytes_r'length) then
+            st_next <= T_STATUS;
+          else
+            st_next <= T_DATA;
+          end if;
+
+        when T_DATA =>
+          if trig = '1' then
+            st_next <= T_MIRROR;
+          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+            st_next <= T_PROT_STALL;
+          elsif (ctrl_set_stall = '1') or (rx_length_error_r = '1') then
+            st_next <= T_PROT_STALL;
+          elsif (xfer_dir_in_r = '0') and (rx_drain_done_r = '1') then
+            st_next <= T_STATUS;
+          elsif st_end_c = '1' then
+            if xfer_dir_in_r = '0' then
+              st_next <= T_DATA;
+            elsif (zlp_phase_r = '0') and (zlp_owed_c = '1') then
+              st_next <= T_DATA;
+            else
+              st_next <= T_STATUS;
+            end if;
+          end if;
+
+        when T_STATUS =>
+          if trig = '1' then
+            st_next <= T_MIRROR;
+          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+            st_next <= T_PROT_STALL;
+          elsif ctrl_set_stall = '1' then
+            st_next <= T_PROT_STALL;
+          elsif st_end_c = '1' then
+            st_next <= T_IDLE;
+          end if;
+
+        when T_PROT_STALL =>
+          if trig = '1' then
+            st_next <= T_MIRROR;
+          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+            st_next <= T_PROT_STALL;
+          end if;
+
+        when others =>
+          st_next <= T_IDLE;
+      end case;
+    end process fsm_next_proc;
+
+    state_clk_proc : process (hclk, hresetn)
     begin
       if hresetn = '0' then
         st <= T_IDLE;
+      elsif rising_edge(hclk) then
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
+           (ocp_claim_abort_i = '1') then
+          st <= T_IDLE;
+        else
+          st <= st_next;
+        end if;
+      end if;
+    end process state_clk_proc;
+
+    setup_capture_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
         cap_rxdata <= (others => '0');
         cap_rx_nbytes <= (others => '0');
         cap_epnr <= (others => '0');
@@ -617,76 +738,174 @@ begin
         cap_done <= '0';
         end_seen <= '0';
         succ_seen <= '0';
-        sp_sent <= '0';
         xfer_dir_in_r <= '0';
         nbytes_r <= (others => '0');
-        tx_response_bytes_r <= (others => '0');
-        tx_response_known_r <= '0';
-        in_data_toggle_r <= '1';
-        zlp_phase_r <= '0';
-        replacement_stall_r <= '0';
-        fifo_reservation_r <= '0';
-        setup_pending_r <= '0';
-        setup_pending_low_seen_r <= '0';
-        drop_setup_success_r <= '0';
-        drop_dma_valid_seen_r <= '0';
-        setup_dma_owner_r <= (others => '0');
-        ep0_ocp_owner_r <= '0';
       elsif rising_edge(hclk) then
-        if (sync_busreset = '1') or (dev0_local_reset_c = '1')
-           or (ocp_claim_abort_i = '1') then
-          st <= T_IDLE;
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
+           (ocp_claim_abort_i = '1') then
           cap_done <= '0';
           end_seen <= '0';
           succ_seen <= '0';
+        elsif trig = '1' then
+          cap_rx_nbytes <= (others => '0');
+          cap_epnr <= sync_sieint_epinfo_epnr_i;
+          cap_epdir <= sync_sieint_epinfo_epdir_i;
+          cap_done <= '0';
+          end_seen <= '0';
+          succ_seen <= '0';
+        elsif not ((fw_protocol_error_req_i = '1') and (claim_q = '1')) and
+              (st = T_MIRROR) then
+          if sync_sieint_rxdatavalid_i = '1' then
+            cap_rxdata <= sync_sieint_rxdata_i;
+            cap_done <= '1';
+            xfer_dir_in_r <= sync_sieint_rxdata_i(7);
+            nbytes_r <= unsigned(sync_sieint_rxdata_i(63 downto 48));
+          end if;
+          if (sync_sieint_success_i = '1') or
+             (sync_sieint_endtransfer_i = '1') then
+            cap_rx_nbytes <= sync_sieint_rx_nbytes_i;
+          end if;
+          if sync_sieint_endtransfer_i = '1' then
+            end_seen <= '1';
+          end if;
+          if sync_sieint_success_i = '1' then
+            succ_seen <= '1';
+          end if;
+        end if;
+      end if;
+    end process setup_capture_clk_proc;
+
+    setup_publish_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        sp_sent <= '0';
+      elsif rising_edge(hclk) then
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
+           (ocp_claim_abort_i = '1') then
           sp_sent <= '0';
+        else
+          if setup_pkt_vld_c = '1' then
+            sp_sent <= '1';
+          end if;
+          if trig = '1' then
+            sp_sent <= '0';
+          end if;
+        end if;
+      end if;
+    end process setup_publish_clk_proc;
+
+    response_meta_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        tx_response_bytes_r <= (others => '0');
+        tx_response_known_r <= '0';
+      elsif rising_edge(hclk) then
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
+           (ocp_claim_abort_i = '1') then
           tx_response_bytes_r <= (others => '0');
           tx_response_known_r <= '0';
+        else
+          if st = T_META_WAIT then
+            tx_response_bytes_r <= unsigned(ctrl_in_resp_bytes);
+            tx_response_known_r <= ctrl_in_resp_known;
+          end if;
+          if trig = '1' then
+            tx_response_bytes_r <= (others => '0');
+            tx_response_known_r <= '0';
+          end if;
+        end if;
+      end if;
+    end process response_meta_clk_proc;
+
+    data_toggle_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        in_data_toggle_r <= '1';
+        zlp_phase_r <= '0';
+      elsif rising_edge(hclk) then
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
+           (ocp_claim_abort_i = '1') then
           in_data_toggle_r <= '1';
           zlp_phase_r <= '0';
-          replacement_stall_r <= '0';
+        elsif claim_q = '0' then
+          in_data_toggle_r <= '1';
+          zlp_phase_r <= '0';
+        elsif (st = T_DATA) and (st_end_c = '1') then
+          if (zlp_phase_r = '0') and (zlp_owed_c = '1') then
+            zlp_phase_r <= '1';
+            in_data_toggle_r <= not in_data_toggle_r;
+          else
+            zlp_phase_r <= '0';
+          end if;
+        end if;
+      end if;
+    end process data_toggle_clk_proc;
+
+    fifo_reservation_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        fifo_reservation_r <= '0';
+      elsif rising_edge(hclk) then
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
+           (ocp_claim_abort_i = '1') then
           fifo_reservation_r <= '0';
-          ep0_ocp_owner_r <= '0';
-          if (sync_busreset = '1') or (dev0_local_reset_c = '1') then
+        else
+          if (fifo_out_request_c = '1') and (fifo_reservation_r = '0') and
+             (fifo_capacity_ok_c = '1') and (rx_validated_r = '0') and
+             (rx_captured_beats_r =
+              to_unsigned(0, rx_captured_beats_r'length)) then
+            fifo_reservation_r <= '1';
+          end if;
+          if (rx_drain_done_r = '1') or (rx_length_error_r = '1') or
+             (new_setup_c = '1') then
+            fifo_reservation_r <= '0';
+          end if;
+        end if;
+      end if;
+    end process fifo_reservation_clk_proc;
+
+    setup_pending_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        setup_pending_r <= '0';
+        setup_pending_low_seen_r <= '0';
+        setup_dma_owner_r <= (others => '0');
+      elsif rising_edge(hclk) then
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') then
+          setup_pending_r <= '0';
+          setup_pending_low_seen_r <= '0';
+          setup_dma_owner_r <= (others => '0');
+        elsif ocp_claim_abort_i = '1' then
+          null;
+        elsif trig = '1' then
+          setup_pending_r <= '1';
+          setup_pending_low_seen_r <= '0';
+          setup_dma_owner_r <= pie_dev_selected_i;
+        elsif setup_pending_r = '1' then
+          if (setup_dma_match_c = '1') and
+             (epinfo_sync_valid_dma = '0') then
+            setup_pending_low_seen_r <= '1';
+          elsif (setup_dma_match_c = '1') and
+                (setup_pending_low_seen_r = '1') then
             setup_pending_r <= '0';
             setup_pending_low_seen_r <= '0';
-            drop_setup_success_r <= '0';
-            drop_dma_valid_seen_r <= '0';
-            setup_dma_owner_r <= (others => '0');
           end if;
+        end if;
+      end if;
+    end process setup_pending_clk_proc;
+
+    setup_success_mask_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        drop_setup_success_r <= '0';
+        drop_dma_valid_seen_r <= '0';
+      elsif rising_edge(hclk) then
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') then
+          drop_setup_success_r <= '0';
+          drop_dma_valid_seen_r <= '0';
+        elsif ocp_claim_abort_i = '1' then
+          null;
         else
-          setup_complete_v := (end_seen = '1') or
-                              (sync_sieint_endtransfer_i = '1');
-          setup_valid_v := ((cap_done = '1') or
-                            (sync_sieint_rxdatavalid_i = '1')) and
-                           ((succ_seen = '1') or
-                            (sync_sieint_success_i = '1')) and
-                           ((unsigned(cap_rx_nbytes) =
-                             to_unsigned(8, cap_rx_nbytes'length)) or
-                            (((sync_sieint_success_i = '1') or
-                              (sync_sieint_endtransfer_i = '1')) and
-                             (unsigned(sync_sieint_rx_nbytes_i) =
-                              to_unsigned(8, sync_sieint_rx_nbytes_i'length))));
-          setup_claim_v := ((cap_done = '1') and (is_ocp = '1')) or
-                           ((sync_sieint_rxdatavalid_i = '1') and
-                            (incoming_is_ocp_c = '1'));
-
-          if trig = '1' then
-            cap_rx_nbytes <= (others => '0');
-            setup_pending_r <= '1';
-            setup_pending_low_seen_r <= '0';
-            setup_dma_owner_r <= pie_dev_selected_i;
-          elsif setup_pending_r = '1' then
-            if (setup_dma_match_c = '1') and
-               (epinfo_sync_valid_dma = '0') then
-              setup_pending_low_seen_r <= '1';
-            elsif (setup_dma_match_c = '1') and
-                  (setup_pending_low_seen_r = '1') then
-              setup_pending_r <= '0';
-              setup_pending_low_seen_r <= '0';
-            end if;
-          end if;
-
           if (drop_setup_success_r = '1') and
              (setup_dma_match_c = '1') and
              (epinfo_sync_valid_dma = '1') then
@@ -698,161 +917,181 @@ begin
             drop_setup_success_r <= '0';
             drop_dma_valid_seen_r <= '0';
           end if;
-
-          if setup_pkt_vld_c = '1' then
-            sp_sent <= '1';
-          end if;
-          if st = T_META_WAIT then
-            tx_response_bytes_r <= unsigned(ctrl_in_resp_bytes);
-            tx_response_known_r <= ctrl_in_resp_known;
-          end if;
-
-          if claim_q = '0' then
-            in_data_toggle_r <= '1';
-            zlp_phase_r <= '0';
-          elsif (st = T_DATA) and (st_end_c = '1') then
-            if (zlp_phase_r = '0') and (zlp_owed_c = '1') then
-              zlp_phase_r <= '1';
-              in_data_toggle_r <= not in_data_toggle_r;
-            else
-              zlp_phase_r <= '0';
-            end if;
-          end if;
-
-          if (fifo_out_request_c = '1') and (fifo_reservation_r = '0')
-             and (fifo_capacity_ok_c = '1') and (rx_validated_r = '0')
-             and (rx_captured_beats_r = to_unsigned(0, rx_captured_beats_r'length)) then
-            fifo_reservation_r <= '1';
-          end if;
-          if (rx_drain_done_r = '1') or (rx_length_error_r = '1')
-             or (new_setup_c = '1') then
-            fifo_reservation_r <= '0';
-          end if;
-
-          if trig = '1' then
-            if (st = T_PROT_STALL) or (replacement_stall_r = '1') then
-              replacement_stall_r <= '1';
-            else
-              replacement_stall_r <= '0';
-            end if;
-            st <= T_MIRROR;
-            cap_epnr <= sync_sieint_epinfo_epnr_i;
-            cap_epdir <= sync_sieint_epinfo_epdir_i;
-            cap_done <= '0';
-            end_seen <= '0';
-            succ_seen <= '0';
-            sp_sent <= '0';
-            tx_response_bytes_r <= (others => '0');
-            tx_response_known_r <= '0';
-          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
-            ep0_ocp_owner_r <= '1';
-            st <= T_PROT_STALL;
-          else
-            case st is
-              when T_IDLE =>
-                null;
-
-              when T_MIRROR =>
-                if sync_sieint_rxdatavalid_i = '1' then
-                  cap_rxdata <= sync_sieint_rxdata_i;
-                  cap_done <= '1';
-                  xfer_dir_in_r <= sync_sieint_rxdata_i(7);
-                  nbytes_r <= unsigned(sync_sieint_rxdata_i(63 downto 48));
-                  if incoming_is_ocp_c = '1' then
-                    drop_setup_success_r <= '1';
-                    drop_dma_valid_seen_r <=
-                      epinfo_sync_valid_dma and setup_dma_match_c;
-                  end if;
-                end if;
-                -- The SIE final byte count becomes valid at packet completion,
-                -- after the one-cycle RX-data-valid pulse.
-                if (sync_sieint_success_i = '1') or
-                   (sync_sieint_endtransfer_i = '1') then
-                  cap_rx_nbytes <= sync_sieint_rx_nbytes_i;
-                end if;
-                if sync_sieint_endtransfer_i = '1' then
-                  end_seen <= '1';
-                end if;
-                if sync_sieint_success_i = '1' then
-                  succ_seen <= '1';
-                end if;
-                if setup_complete_v then
-                   if setup_valid_v and setup_claim_v then
-                     ep0_ocp_owner_r <= '1';
-                     replacement_stall_r <= '0';
-                     st <= T_META_WAIT;
-                   elsif setup_valid_v then
-                     ep0_ocp_owner_r <= '0';
-                    replacement_stall_r <= '0';
-                    st <= T_IDLE;
-                  elsif replacement_stall_r = '1' then
-                    st <= T_PROT_STALL;
-                  else
-                    st <= T_IDLE;
-                  end if;
-                end if;
-
-              when T_META_WAIT =>
-                if ctrl_set_stall = '1' then
-                st <= T_PROT_STALL;
-              elsif setup_length_error_c = '1' then
-                st <= T_PROT_STALL;
-              elsif nbytes_r = to_unsigned(0, nbytes_r'length) then
-                st <= T_STATUS;
-              else
-                st <= T_DATA;
-              end if;
-
-            when T_DATA =>
-              -- New SETUP mid-transfer: host abandoned (USB 2.0 Sec 8.5.3).
-              if ctrl_set_stall = '1' then
-                st <= T_PROT_STALL;
-              elsif rx_length_error_r = '1' then
-                st <= T_PROT_STALL;
-              elsif (xfer_dir_in_r = '0') and (rx_drain_done_r = '1') then
-                st <= T_STATUS;
-              elsif st_end_c = '1' then
-                if xfer_dir_in_r = '0' then
-                  st <= T_DATA;
-                elsif (zlp_phase_r = '0') and (zlp_owed_c = '1') then
-                  st <= T_DATA;               -- emit terminating ZLP first
-                else
-                  st <= T_STATUS;
-                end if;
-              end if;
-
-            when T_STATUS =>
-              if ctrl_set_stall = '1' then
-                st <= T_PROT_STALL;
-              elsif st_end_c = '1' then
-                st <= T_IDLE;
-              end if;
-
-            when T_PROT_STALL =>
-              null;
-
-            when others =>
-              st <= T_IDLE;
-            end case;
+          if (trig = '0') and
+             not ((fw_protocol_error_req_i = '1') and (claim_q = '1')) and
+             (st = T_MIRROR) and
+             (sync_sieint_rxdatavalid_i = '1') and
+             (incoming_is_ocp_c = '1') then
+            drop_setup_success_r <= '1';
+            drop_dma_valid_seen_r <=
+              epinfo_sync_valid_dma and setup_dma_match_c;
           end if;
         end if;
       end if;
-    end process p_seq;
+    end process setup_success_mask_clk_proc;
 
-    txn_snapshot_clk_proc : process (hclk, hresetn)
+    claim_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        ep0_ocp_owner_r <= '0';
+        replacement_stall_r <= '0';
+      elsif rising_edge(hclk) then
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
+           (ocp_claim_abort_i = '1') then
+          ep0_ocp_owner_r <= '0';
+          replacement_stall_r <= '0';
+        elsif trig = '1' then
+          if (st = T_PROT_STALL) or (replacement_stall_r = '1') then
+            replacement_stall_r <= '1';
+          else
+            replacement_stall_r <= '0';
+          end if;
+        elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+          ep0_ocp_owner_r <= '1';
+        elsif (st = T_MIRROR) and (setup_complete_c = '1') then
+          if (setup_valid_c = '1') and (setup_claim_c = '1') then
+            ep0_ocp_owner_r <= '1';
+            replacement_stall_r <= '0';
+          elsif setup_valid_c = '1' then
+            ep0_ocp_owner_r <= '0';
+            replacement_stall_r <= '0';
+          end if;
+        end if;
+      end if;
+    end process claim_clk_proc;
+
+    -- ------------------------------------------------------------------
+    -- Per-transaction wire routing.
+    -- ------------------------------------------------------------------
+    route_owner_clk_proc : process (hclk, hresetn)
     begin
       if hresetn = '0' then
         ocp_ep0_txn_r <= '0';
-        ocp_ep0_setup_txn_r <= '0';
-        real_setup_data_seen_r <= '0';
         non_ep0_txn_r <= '0';
         wire_ocp_r <= '0';
         wire_dma_r <= '0';
         dma_valid_seen_r <= '0';
+      elsif rising_edge(hclk) then
+        if sync_busreset = '1' then
+          ocp_ep0_txn_r <= '0';
+          non_ep0_txn_r <= '0';
+          wire_ocp_r <= '0';
+          wire_dma_r <= '0';
+          dma_valid_seen_r <= '0';
+        elsif (dev0_local_reset_c = '1') or
+              (ocp_claim_abort_i = '1') then
+          ocp_ep0_txn_r <= '0';
+          wire_ocp_r <= '0';
+        else
+          if (sync_sieint_endtransfer_i = '1') and
+             (ocp_ep0_txn_r = '1') then
+            ocp_ep0_txn_r <= '0';
+            wire_ocp_r <= '0';
+          end if;
+          if (wire_dma_r = '1') and (epinfo_sync_valid_dma = '1') then
+            dma_valid_seen_r <= '1';
+          end if;
+          if (wire_dma_r = '1') and (dma_valid_seen_r = '1') and
+             (epinfo_sync_valid_dma = '0') then
+            non_ep0_txn_r <= '0';
+            wire_dma_r <= '0';
+            dma_valid_seen_r <= '0';
+          end if;
+          if sync_sieint_epinfo_req_i = '1' then
+            if (ocp_ep0_req_c = '1') and
+               (sync_sieint_epinfo_setup_i = '0') and
+               (claim_q = '1') then
+              ocp_ep0_txn_r <= '1';
+              wire_ocp_r <= '1';
+              wire_dma_r <= '0';
+              dma_valid_seen_r <= '0';
+              non_ep0_txn_r <= '0';
+            else
+              ocp_ep0_txn_r <= '0';
+              wire_ocp_r <= '0';
+              wire_dma_r <= '1';
+              dma_valid_seen_r <= '0';
+              if sync_sieint_epinfo_epnr_i /= "0000" then
+                non_ep0_txn_r <= '1';
+              else
+                non_ep0_txn_r <= '0';
+              end if;
+            end if;
+          end if;
+        end if;
+      end if;
+    end process route_owner_clk_proc;
+
+    dma_metadata_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
         dma_epnr_r <= (others => '0');
         dma_epdir_r <= '0';
         dma_setup_r <= '0';
         dma_owner_r <= (others => '0');
+      elsif rising_edge(hclk) then
+        if (sync_busreset = '0') and (dev0_local_reset_c = '0') and
+           (ocp_claim_abort_i = '0') and
+           (sync_sieint_epinfo_req_i = '1') and
+           not ((ocp_ep0_req_c = '1') and
+                (sync_sieint_epinfo_setup_i = '0') and
+                (claim_q = '1')) then
+          dma_epnr_r <= sync_sieint_epinfo_epnr_i;
+          dma_epdir_r <= sync_sieint_epinfo_epdir_i;
+          dma_setup_r <= sync_sieint_epinfo_setup_i;
+          dma_owner_r <= pie_dev_selected_i;
+        end if;
+      end if;
+    end process dma_metadata_clk_proc;
+
+    setup_observation_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        ocp_ep0_setup_txn_r <= '0';
+        real_setup_data_seen_r <= '0';
+      elsif rising_edge(hclk) then
+        if sync_busreset = '1' then
+          ocp_ep0_setup_txn_r <= '0';
+          real_setup_data_seen_r <= '0';
+        elsif (dev0_local_reset_c = '1') or
+              (ocp_claim_abort_i = '1') then
+          null;
+        else
+          if (sync_sieint_endtransfer_i = '1') and
+             (ocp_ep0_txn_r = '1') then
+            ocp_ep0_setup_txn_r <= '0';
+            real_setup_data_seen_r <= '0';
+          end if;
+          if (wire_dma_r = '1') and (dma_valid_seen_r = '1') and
+             (epinfo_sync_valid_dma = '0') then
+            ocp_ep0_setup_txn_r <= '0';
+            real_setup_data_seen_r <= '0';
+          end if;
+          if sync_sieint_epinfo_req_i = '1' then
+            if (ocp_ep0_req_c = '1') and
+               (sync_sieint_epinfo_setup_i = '0') and
+               (claim_q = '1') then
+              ocp_ep0_setup_txn_r <= '0';
+              real_setup_data_seen_r <= '0';
+            elsif sync_sieint_epinfo_setup_i = '1' then
+              ocp_ep0_setup_txn_r <= '1';
+              real_setup_data_seen_r <= sync_sieint_rxdatavalid_i;
+            else
+              ocp_ep0_setup_txn_r <= '0';
+              real_setup_data_seen_r <= '0';
+            end if;
+          end if;
+          if (ocp_ep0_setup_txn_r = '1') and
+             (sync_sieint_rxdatavalid_i = '1') then
+            real_setup_data_seen_r <= '1';
+          end if;
+        end if;
+      end if;
+    end process setup_observation_clk_proc;
+
+    response_snapshot_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
         rsp_snap_valid_r <= '0';
         rsp_snap_active_r <= '0';
         rsp_snap_stall_r <= '0';
@@ -863,27 +1102,8 @@ begin
         rsp_snap_iso_r <= '0';
         rsp_snap_ratefeedback_r <= '0';
       elsif rising_edge(hclk) then
-        if sync_busreset = '1' then
-          ocp_ep0_txn_r <= '0';
-          ocp_ep0_setup_txn_r <= '0';
-          real_setup_data_seen_r <= '0';
-          non_ep0_txn_r <= '0';
-          wire_ocp_r <= '0';
-          wire_dma_r <= '0';
-          dma_valid_seen_r <= '0';
-          rsp_snap_valid_r <= '0';
-          rsp_snap_active_r <= '0';
-          rsp_snap_stall_r <= '0';
-          rsp_snap_disabled_r <= '0';
-          rsp_snap_toggle_r <= '0';
-          rsp_snap_nbytes_r <= (others => '0');
-          rsp_snap_maxpacket_r <= (others => '0');
-          rsp_snap_iso_r <= '0';
-          rsp_snap_ratefeedback_r <= '0';
-        elsif (dev0_local_reset_c = '1') or
-              (ocp_claim_abort_i = '1') then
-          ocp_ep0_txn_r <= '0';
-          wire_ocp_r <= '0';
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
+           (ocp_claim_abort_i = '1') then
           rsp_snap_valid_r <= '0';
           rsp_snap_active_r <= '0';
           rsp_snap_stall_r <= '0';
@@ -896,10 +1116,6 @@ begin
         else
           if (sync_sieint_endtransfer_i = '1') and
              (ocp_ep0_txn_r = '1') then
-            ocp_ep0_txn_r <= '0';
-            ocp_ep0_setup_txn_r <= '0';
-            real_setup_data_seen_r <= '0';
-            wire_ocp_r <= '0';
             rsp_snap_valid_r <= '0';
             rsp_snap_active_r <= '0';
             rsp_snap_stall_r <= '0';
@@ -910,68 +1126,23 @@ begin
             rsp_snap_iso_r <= '0';
             rsp_snap_ratefeedback_r <= '0';
           end if;
-          if (wire_dma_r = '1') and (epinfo_sync_valid_dma = '1') then
-            dma_valid_seen_r <= '1';
-          end if;
-          if (wire_dma_r = '1') and (dma_valid_seen_r = '1') and
-             (epinfo_sync_valid_dma = '0') then
-            non_ep0_txn_r <= '0';
-            wire_dma_r <= '0';
-            dma_valid_seen_r <= '0';
-            ocp_ep0_setup_txn_r <= '0';
-            real_setup_data_seen_r <= '0';
-          end if;
-          if sync_sieint_epinfo_req_i = '1' then
-            if (dev0_selected_c = '1')
-               and (sync_sieint_epinfo_epnr_i = "0000")
-               and (sync_sieint_epinfo_setup_i = '0')
-               and (claim_q = '1') then
-              ocp_ep0_txn_r <= '1';
-              wire_ocp_r <= '1';
-              wire_dma_r <= '0';
-              dma_valid_seen_r <= '0';
-              non_ep0_txn_r <= '0';
-              ocp_ep0_setup_txn_r <= '0';
-              real_setup_data_seen_r <= '0';
-              rsp_snap_valid_r <= rsp_live_valid_c;
-              rsp_snap_active_r <= rsp_live_active_c;
-              rsp_snap_stall_r <= rsp_live_stall_c;
-              rsp_snap_disabled_r <= rsp_live_disabled_c;
-              rsp_snap_toggle_r <= rsp_live_toggle_c;
-              rsp_snap_nbytes_r <= rsp_live_nbytes_c;
-              rsp_snap_maxpacket_r <= rsp_live_maxpacket_c;
-              rsp_snap_iso_r <= rsp_live_iso_c;
-              rsp_snap_ratefeedback_r <= rsp_live_ratefeedback_c;
-            else
-              ocp_ep0_txn_r <= '0';
-              wire_ocp_r <= '0';
-              wire_dma_r <= '1';
-              dma_valid_seen_r <= '0';
-              dma_epnr_r <= sync_sieint_epinfo_epnr_i;
-              dma_epdir_r <= sync_sieint_epinfo_epdir_i;
-              dma_setup_r <= sync_sieint_epinfo_setup_i;
-              dma_owner_r <= pie_dev_selected_i;
-              if sync_sieint_epinfo_epnr_i /= "0000" then
-                non_ep0_txn_r <= '1';
-              else
-                non_ep0_txn_r <= '0';
-              end if;
-              if sync_sieint_epinfo_setup_i = '1' then
-                ocp_ep0_setup_txn_r <= '1';
-                real_setup_data_seen_r <= sync_sieint_rxdatavalid_i;
-              else
-                ocp_ep0_setup_txn_r <= '0';
-                real_setup_data_seen_r <= '0';
-              end if;
-            end if;
-          end if;
-          if (ocp_ep0_setup_txn_r = '1') and
-             (sync_sieint_rxdatavalid_i = '1') then
-            real_setup_data_seen_r <= '1';
+          if (sync_sieint_epinfo_req_i = '1') and
+             (ocp_ep0_req_c = '1') and
+             (sync_sieint_epinfo_setup_i = '0') and
+             (claim_q = '1') then
+            rsp_snap_valid_r <= rsp_live_valid_c;
+            rsp_snap_active_r <= rsp_live_active_c;
+            rsp_snap_stall_r <= rsp_live_stall_c;
+            rsp_snap_disabled_r <= rsp_live_disabled_c;
+            rsp_snap_toggle_r <= rsp_live_toggle_c;
+            rsp_snap_nbytes_r <= rsp_live_nbytes_c;
+            rsp_snap_maxpacket_r <= rsp_live_maxpacket_c;
+            rsp_snap_iso_r <= rsp_live_iso_c;
+            rsp_snap_ratefeedback_r <= rsp_live_ratefeedback_c;
           end if;
         end if;
       end if;
-    end process txn_snapshot_clk_proc;
+    end process response_snapshot_clk_proc;
 
     -- ------------------------------------------------------------------
     -- Complete Control-OUT packet store (clocked).
@@ -1643,7 +1814,5 @@ begin
       end if;
     end process assertions_proc;
     -- pragma translate_on
-
-  end block gen_trap;
 
 end architecture rtl;
