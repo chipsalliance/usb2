@@ -28,7 +28,7 @@ entity usb_pie is
       C_EXTEND_TX_DELAY     : boolean := FALSE;
       G_SIM_CHIRP_TIMERS    : boolean := FALSE
    );
-    port (--System - as the number of physical endpoints is now implemented as an array feed into this block as a signal instead of a GENERIC
+    port (--System - as the number of physical endpoints is now implemented as an array fed into this block as a signal instead of a GENERIC
          sys_nbphysep                     : in  std_logic_vector(C_NBDEV*5-1 downto 0);
           ----- To/From usb synchronizer ------------------------
          pie_epinfo_req               : out std_logic;
