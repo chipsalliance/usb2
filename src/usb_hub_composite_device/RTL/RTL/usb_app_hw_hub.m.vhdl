@@ -266,8 +266,10 @@ begin
 ----------------------------------
 -- HUB status
 ----------------------------------
-hub_status(0)(C_DATAWIDTH-1 downto 1)    <= (others => '0');
-hub_status(0)(0)              <= '1';
+hub_status(0)(C_DATAWIDTH-1 downto 2) <= (others => '0');
+hub_status(0)(1)                      <= '0'; --Hub contains only embedded ports. This does not require any overcurrent detection. Fixed to zero
+hub_status(0)(0)                      <= '0'; --Hub and downstream ports run always on a local power supply. 
+                                              --This bit can be fixed to zero (Local Power Source ok)
 
 GEN_HUB_PORT_STATUS : for i in 0 to C_HUB_NB_PORTS-1 generate
 begin
