@@ -51,11 +51,11 @@ component usb_pie
         ULPI_SUPPORT       : boolean := TRUE;
         USB_DATAWIDTH      : integer := 64;
         C_NBDEV            : integer := 1;
-        C_NBPHYSEP         : integer := 14;
         C_EXTEND_TX_DELAY  : boolean := FALSE;
         G_SIM_CHIRP_TIMERS : boolean := FALSE
     );
     port(
+        sys_nbphysep                     : in  std_logic_vector(C_NBDEV*5-1 downto 0);
         pie_epinfo_req                   : out std_logic;
         pie_epinfo_epnr                  : out std_logic_vector(3 downto 0);
         pie_epinfo_epdir                 : out std_logic;
@@ -666,6 +666,8 @@ component usb_app_hw_hub
 end component usb_app_hw_hub;
 
 -- resets
+signal sys_nbphysep    : std_logic_vector((C_NBDEV+2)*5-1 downto 0);
+
 signal RG_BUSReset     : boolean;
 signal reset_n         : std_logic;
 signal reset_awake_n   : std_logic;
@@ -1071,15 +1073,20 @@ zero7 <= (others => '0');
 
   usb_phy_test_mode <= usbreg_phy_test_mode when usb_hubenable_ss = '0' else ep0_phy_test_mode;
 
+sys_nbphysep( 4 downto  0) <= "00010"; --2 physical endpoints for the hub
+sys_nbphysep( 9 downto  5) <= std_logic_vector(to_unsigned(C_DEV0_NBPHYSEP, 5)); --Physical endpoints for device 0
+sys_nbphysep(14 downto 10) <= std_logic_vector(to_unsigned(C_DEV1_NBPHYSEP, 5)); --Physical endpoints for device 1
+  
+
 usb_pie_1 : usb_pie
   generic map(ULPI_SUPPORT      => C_ULPI_SUPPORT,
               USB_DATAWIDTH     => USBPIE_DATAWIDTH,
               C_NBDEV           => C_NBDEV+2,      -- C_NBDEV hardware devices + 2 software devices
-              C_NBPHYSEP        => C_NBPHYSEP_MAX, -- Maximum value of C_DEV0_NBPHYSEP and C_DEV1_NBPHYSEP
               C_EXTEND_TX_DELAY => C_EXTEND_TX_DELAY,
               G_SIM_CHIRP_TIMERS=> G_SIM_CHIRP_TIMERS
               )
   port map   (
+             sys_nbphysep                 => sys_nbphysep,
              pie_epinfo_req               => sieint_epinfo_req,
              pie_epinfo_epnr              => sieint_epinfo_epnr,
              pie_epinfo_epdir             => sieint_epinfo_epdir,

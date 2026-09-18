@@ -25,11 +25,11 @@ entity usb_pie is
       ULPI_SUPPORT          : boolean := TRUE;
       USB_DATAWIDTH         : integer := 64;
       C_NBDEV               : integer := 1;
-      C_NBPHYSEP            : integer := 14;
       C_EXTEND_TX_DELAY     : boolean := FALSE;
       G_SIM_CHIRP_TIMERS    : boolean := FALSE
    );
-    port (
+    port (--System - as the number of physical endpoints is now implemented as an array feed into this block as a signal instead of a GENERIC
+         sys_nbphysep                     : in  std_logic_vector(C_NBDEV*5-1 downto 0);
           ----- To/From usb synchronizer ------------------------
          pie_epinfo_req               : out std_logic;
          pie_epinfo_epnr              : out std_logic_vector(3 downto 0);
@@ -3434,6 +3434,7 @@ variable DevAddrEnabled   : boolean;
 variable var_address1     : std_logic_vector(6 downto 0);
 variable var_address2     : std_logic_vector(6 downto 0);
 variable var_epinfo_setup : std_logic;
+variable var_nb_physep    : std_logic_vector(4 downto 0);
 begin
 
    if reset_n = '0' then
@@ -3568,6 +3569,7 @@ begin
         -- endpoint nr of the token (rxdata_16(10 downto 7)) is smaller than or equal to the highest ep that is implemented
         
         DevAddrEnabled      := FALSE;
+        var_nb_physep       := (others => '0');
         for i in 0 to C_NBDEV-1 loop
           for j in 0 to 6 loop
             var_address1(j) := usbreg_usbaddress(i*7+j);
@@ -3577,13 +3579,14 @@ begin
               var_address2 = rxdata_16(6 downto 0)) and
               usbreg_deviceenabled(i) = '1'           then
             DevAddrEnabled  := TRUE;
+            var_nb_physep   := sys_nbphysep(5*i+4 downto 5*i);
             pie_dev_selected_int <= i;
 
           end if;
         end loop;
 
         if DevAddrEnabled and
-           (to_integer(unsigned(rxdata_16(10 downto 7))) <= C_NBPHYSEP) then
+           (unsigned(rxdata_16(10 downto 7)) <= unsigned(var_nb_physep(4 downto 1))) then
            epinfo_req_r   <= '1'; -- this register value is transmitted to the dma handler and is also used in the others states of protocol FSM
            -- to indicate if ep/address are valid
            epinfo_epnr_r  <=  rxdata_16(10 downto 7);
