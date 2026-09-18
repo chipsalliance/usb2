@@ -33,7 +33,7 @@ between the hardware-managed Hub and the RAM-based software devices.
 
 Provides the main visual reference for the complete architecture, including
 the shared PIE and DMA, clock-domain crossing, Hub subsystem, DEV0/DEV1
-subsystems, routing logic, AHB interfaces, and external Endpoint RAMs.
+subsystems, routing logic, AXI interfaces, and external Endpoint RAMs.
 
 ### 3. Top-Level Configuration Generics
 
@@ -44,8 +44,8 @@ generation.
 ### 4. Top-Level Interfaces
 
 Documents the external integration boundary, including clocks, resets,
-power-management controls, UTMI and ULPI, AHB interfaces, native RAM
-interfaces, interrupts, observation outputs, and test controls.
+power-management controls, UTMI and ULPI, AXI interfaces, native RAM
+interfaces, interrupts, observation outputs, and test controls..
 
 ### 5. RTL Block Descriptions
 
@@ -146,12 +146,14 @@ maintained in an internal register file.
 
 DEV0 and DEV1 use independent Endpoint RAMs containing their Endpoint Lists,
 endpoint contexts, and TX/RX payload buffers. Each RAM can be accessed both
-by the internal USB data path and by an external AHB master.
+by the internal USB data path and through the corresponding external AXI interface.
 
-The USB protocol logic operates in the `pie_clk` domain. Endpoint processing,
-register interfaces, Hub control, DMA operation, and AHB access operate in
-the `hclk` domain. A dedicated clock-domain bridge transfers control, status,
-event, context, and payload information between the two domains.
+The USB protocol logic operates in the pie_clk domain. The AXI interfaces,
+endpoint processing, register interfaces, Hub control, and DMA operation
+share the usb_axi_aclk system-side clock domain. Within the Compound core,
+usb_axi_aclk is connected to hclk. A dedicated clock-domain bridge transfers
+control, status, event, context, and payload information between the
+system-side and USB protocol domains..
 
 ### Functional Architecture
 
@@ -183,13 +185,15 @@ The IP top-level exposes interfaces for:
 
 - system clock, reset, and power-management coordination;
 - connection to an external USB 2.0 PHY through UTMI or ULPI;
-- independent AHB control of the embedded Hub, DEV0, and DEV1, including
-  access to the internal Hub control and descriptor register file;
-- external AHB access to the DEV0 and DEV1 Endpoint RAMs;
+
 - native connection to the two external Endpoint RAM macros or memory models;
 - independent DEV0 and DEV1 interrupt reporting;
 - static configuration and testability;
 - USB frame timing and internal USB DMA write-access observation.
+- AXI access to the embedded Hub control and descriptor register file and
+  the DEV0 control and status registers through the Combo interface;
+- independent AXI access to the DEV1 control and status registers;
+- independent AXI access to the DEV0 and DEV1 Endpoint RAMs;
 
 DEV0 and DEV1 expose structurally equivalent control, Endpoint RAM, and
 interrupt interfaces. The `dev0_` and `dev1_` prefixes identify the target
@@ -206,8 +210,8 @@ as `pie_clk` by the shared USB Protocol and Interface Engine.
 |---|---|---|
 | System integration | Clock, reset, clock request, wake-up, VBUS, and analog control | Connects the IP to the system clocking, reset, power-management, and analog-control infrastructure. |
 | USB PHY | UTMI and ULPI | Connects the shared USB PIE to an external USB 2.0 PHY. |
-| Host control | Hub, DEV0, and DEV1 AHB register-control interfaces | Allows an external system master to configure and monitor the three USB functions and to initialize the internal Hub control and descriptor register file. |
-| External memory access | DEV0/DEV1 Endpoint RAM AHB interfaces | Allows an external system master to initialize, inspect, and update the software-device Endpoint RAMs. |
+| System control | Combo and DEV1 CSR AXI interfaces | Allows an external system master to access the Hub control and descriptor register file and the DEV0 and DEV1 control and status registers. |
+| Endpoint memory access | DEV0 and DEV1 memory AXI interfaces | Allows an external system master to initialize, inspect, and update the corresponding software-device Endpoint RAM. |
 | Native memory | DEV0/DEV1 Endpoint RAM native interfaces | Connects the IP to the two external Endpoint RAM macros or memory models. |
 | Interrupt and observation | DEV0/DEV1 IRQ and FIQ, frame toggle, and USB DMA write-access observation | Reports software-device events and exposes selected internal timing and memory-write activity. |
 | Configuration and test | Hub configuration, self-powered indication, and DFT controls | Provides static integration configuration and test support. |
@@ -218,22 +222,14 @@ as `pie_clk` by the shared USB Protocol and Interface Engine.
 
 Unless otherwise stated:
 
-- AHB-facing interfaces operate in the `hclk` domain.
-- AHB slave front-ends and AHB-to-memory adapters are reset by
-  `ahbs_resetn`.
-- USB functional logic in the system-side clock domain is reset by
-  `hresetn`.
+- All AXI interfaces operate in the usb_axi_aclk domain.
+- The AXI interfaces and system-side USB logic are reset by
+  `usb_axi_aresetn`.
 - DEV0 and DEV1 interfaces are structurally equivalent and use the `dev0_`
   and `dev1_` prefixes.
 - Native RAM chip-select outputs are active high.
 - Native RAM write-enable outputs are active low.
 - Native RAM write-selection masks are active high.
-- AHB slave interfaces return the two-bit `OKAY` response.
-- Unsupported or unimplemented register and memory addresses do not
-  generate an AHB error response.
-- AHB signals containing `_dma_` in their names remain AHB slave-interface
-  signals. The naming is inherited from the internal `ahb_dma_slave` module
-  and does not identify an external DMA master.
 
 ---
 
@@ -241,7 +237,7 @@ Unless otherwise stated:
 
 | Domain | Clock | Main Functions |
 |---|---|---|
-| System-side domain | `hclk` | AHB front-ends, DEV0/DEV1 register interfaces, shared Endpoint Data Manager, memory adapters, Hub control, and top-level control logic |
+| System-side domain | `usb_axi_aclk` | AXI interfaces, DEV0/DEV1 register interfaces, shared Endpoint Data Manager, memory-access logic, Hub control, and top-level control logic |
 | USB protocol domain | `pie_clk` | Shared USB PIE, packet processing, USB bus-event control, PHY-side protocol logic, and VBUS debounce |
 | UTMI PHY mode | `utmi_clk` | Selected as `pie_clk` when UTMI mode is active |
 | ULPI PHY mode | `ulpi_clk` | Selected as `pie_clk` when ULPI mode is active |
@@ -255,21 +251,17 @@ reset, power-management, and analog-control infrastructure.
 
 ### Clock and Reset Interface
 
-The current IP implementation provides two independent active-low top-level resets:
+The IP exposes one system-side AXI clock and active-low reset:
 
-- `hresetn` resets the USB functional logic in the `hclk` domain;
-- `ahbs_resetn` resets the AHB-facing front-ends, AHB-to-memory adapters,
-  and the Hub Control Register.
+- usb_axi_aclk clocks the AXI interfaces and the system-side USB logic;
+- usb_axi_aresetn resets the AXI interfaces and the system-side USB logic.
 
-Both resets are used as asynchronous reset inputs by the corresponding
-`hclk`-domain logic. No reset-deassertion synchronizer is present at these
-top-level boundaries. The integration environment must therefore ensure
-that reset release satisfies the required recovery and removal timing
-relative to `hclk`.
+The system-side AXI interfaces and USB functional logic operate in the same
+clock and reset domain.
 
-Before being applied to the USB protocol domain, `hresetn` passes through a
-two-stage reset synchronizer clocked by `pie_clk`. The PIE-domain reset
-therefore uses asynchronous assertion and synchronous deassertion.
+Before being applied to the USB protocol domain, usb_axi_aresetn passes
+through a two-stage reset synchronizer clocked by pie_clk. The PIE-domain
+reset therefore uses asynchronous assertion and synchronous deassertion.
 
 The resulting PIE reset is generated as:
 
@@ -302,9 +294,8 @@ asserted.
 
 | Signal | Direction | Width | Active Level | Description |
 |---|---:|---:|---|---|
-| `hclk` | Input | 1 | Rising edge | Main system-side clock. It clocks the AHB slave interfaces, DEV0 and DEV1 register interfaces, shared Endpoint Data Manager, memory-access adapters, Hub-control logic, and top-level control processes. |
-| `hresetn` | Input | 1 | Active low | Asynchronous reset input for the `hclk`-domain USB functional logic. Its deassertion is synchronized before entering the `pie_clk` domain. |
-| `ahbs_resetn` | Input | 1 | Active low | Asynchronous reset input for the AHB slave front-ends, AHB-to-memory adapters, and Hub Control Register. |
+| `usb_axi_aclk` | Input | 1 | Rising edge | System-side clock for the AXI interfaces, DEV0 and DEV1 register interfaces, shared Endpoint Data Manager, memory-access logic, Hub-control logic, and top-level control processes. |
+| `usb_axi_aresetn` | Input | 1 | Active low | Active-low reset for the AXI interfaces and system-side USB logic. Its deassertion is synchronized before entering the `pie_clk` domain. |
 | `utmi_clk` | Input | 1 | Rising edge | Clock supplied by the UTMI PHY. It is selected as `pie_clk` in normal UTMI mode or when UTMI has priority in test mode. |
 | `ulpi_clk` | Input | 1 | Rising edge | Clock supplied by the ULPI PHY. It is selected as `pie_clk` in normal ULPI mode or in test mode when UTMI support is disabled. |
 | `sys_utmi_clkin_lock` | Input | 1 | Active high | Indicates that the UTMI input clock is available and stable. It qualifies the UTMI clock-status and low-power transition logic. |
@@ -312,19 +303,14 @@ asserted.
 The reset distribution is summarized below:
 
 ```text
-hresetn
-  -> asynchronous reset of hclk-domain USB functional logic
+usb_axi_aresetn
+  -> reset of the AXI interfaces and system-side USB logic
   -> two-stage reset synchronization in the pie_clk domain
   -> reset_n for usb_pie_1
 
-ahbs_resetn
-  -> asynchronous reset of AHB slave front-ends
-  -> asynchronous reset of AHB-to-memory adapters
-  -> asynchronous reset of the Hub Control Register
-
 async_disable
   -> DFT-specific override of selected asynchronous reset and wake-up paths
-```
+```text
 
 ---
 
@@ -518,130 +504,89 @@ detected as stopped.
 
 ---
 
-## Host-Control AHB Interfaces
+## AXI System Access Interfaces
 
-The current IP implementation exposes three independent AHB register-control ports:
+The IP exposes four AXI subordinate interfaces for system access:
 
-- one for the embedded Hub;
-- one for DEV0;
-- one for DEV1.
+- `combo_axi_if` provides access to the DEV0 control and status registers,
+  the Hub control and descriptor register file, and the reserved Recovery
+  aperture;
+- `dev0_mem_axi_if` provides access to the DEV0 Endpoint RAM;
+- `dev1_csr_axi_if` provides access to the DEV1 control and status registers;
+- `dev1_mem_axi_if` provides access to the DEV1 Endpoint RAM.
 
-All three ports use separate instances of the common `usb_ahb_slave`
-front-end.
+The internal protocol conversion and routing used to reach these resources
+are implementation details and are not exposed at the IP boundary.
 
-### Common Register-Control AHB Behavior
+### Common AXI Interface Characteristics
 
-The three register-control interfaces have the following behavior:
+All four AXI interfaces:
 
-- 32-bit write and read data;
-- four-bit word address corresponding directly to `HADDR[5:2]`;
-- 16 addressable register words over a 64-byte window;
-- an active transfer is recognized when `HTRANS[1]` is high;
-- no inserted wait states;
-- `HREADYOUT` permanently asserted;
-- `HRESP[1:0]` permanently returns `OKAY`.
+- operate in the `usb_axi_aclk` clock domain;
+- use `usb_axi_aresetn` as the active-low reset;
+- provide separate AXI read and write channels;
+- use 32-bit read and write data;
+- return AXI read and write responses to the requesting system master.
 
-Unsupported or unimplemented register addresses return zero or the
-block-specific default value and do not generate an AHB error response.
+The Combo interface performs address-based selection of the DEV0 control and
+status registers, the Hub control and descriptor register file, and the
+reserved Recovery aperture. The other three AXI interfaces each provide
+access to one dedicated resource.
 
-### Hub Control AHB Slave Interface
+### Combo Control AXI Interface
 
-The Hub Control interface allows an external system master to access the Hub
-Control Register.
+The `combo_axi_if` subordinate interface provides system access to:
 
-| Signal | Direction | Width | Description |
-|---|---:|---:|---|
-| `hub_ahbs_haddr[5:2]` | Input | 4 | Word-aligned Hub register address. |
-| `hub_ahbs_htrans[1:0]` | Input | 2 | AHB transfer type. Bit 1 identifies an active `NONSEQ` or `SEQ` transfer. |
-| `hub_ahbs_hwrite` | Input | 1 | Transfer direction: high for write and low for read. |
-| `hub_ahbs_hwdata[31:0]` | Input | 32 | AHB write-data bus. |
-| `hub_ahbs_hsel` | Input | 1 | Hub Control AHB slave-select input. |
-| `hub_ahbs_hreadyin` | Input | 1 | AHB transfer-ready input used to qualify an active transfer. |
-| `hub_ahbs_hrdata[31:0]` | Output | 32 | AHB read-data bus. |
-| `hub_ahbs_hreadyout` | Output | 1 | AHB slave-ready output. Permanently asserted. |
-| `hub_ahbs_hresp[1:0]` | Output | 2 | AHB transfer response. Permanently returns `OKAY`. |
+- DEV0 control and status registers at local offsets `0x0000` to `0x003F`;
+- the reserved Recovery aperture at local offsets `0x0800` to `0x0FFF`;
+- the Hub control and descriptor register file starting at local offset `0x1000`.
 
-The Hub register definition is described separately in the Programming Model
-section.
+The Recovery aperture is reserved and is not implemented in the current
+revision.
 
-### Software-Device Control AHB Slave Interfaces
+### DEV1 Control and Status AXI Interface
 
-DEV0 and DEV1 provide structurally equivalent AHB interfaces for accessing
-their independent control and status registers.
+The `dev1_csr_axi_if` subordinate interface provides dedicated system access
+to the DEV1 control and status registers.
 
-| DEV0 Signal | DEV1 Signal | Direction | Width | Description |
-|---|---|---:|---:|---|
-| `dev0_ahbs_haddr[5:2]` | `dev1_ahbs_haddr[5:2]` | Input | 4 | Word-aligned register address. |
-| `dev0_ahbs_htrans[1:0]` | `dev1_ahbs_htrans[1:0]` | Input | 2 | AHB transfer type. Bit 1 identifies an active `NONSEQ` or `SEQ` transfer. |
-| `dev0_ahbs_hwrite` | `dev1_ahbs_hwrite` | Input | 1 | Transfer direction: high for write and low for read. |
-| `dev0_ahbs_hwdata[31:0]` | `dev1_ahbs_hwdata[31:0]` | Input | 32 | AHB write-data bus. |
-| `dev0_ahbs_hsel` | `dev1_ahbs_hsel` | Input | 1 | Slave-select input for the corresponding device register interface. |
-| `dev0_ahbs_hreadyin` | `dev1_ahbs_hreadyin` | Input | 1 | AHB transfer-ready input used to qualify an active transfer. |
-| `dev0_ahbs_hrdata[31:0]` | `dev1_ahbs_hrdata[31:0]` | Output | 32 | AHB read-data bus from the corresponding device register interface. |
-| `dev0_ahbs_hreadyout` | `dev1_ahbs_hreadyout` | Output | 1 | AHB slave-ready output. Permanently asserted. |
-| `dev0_ahbs_hresp[1:0]` | `dev1_ahbs_hresp[1:0]` | Output | 2 | AHB response. Permanently returns `OKAY`. |
+DEV0 control and status registers are instead accessed through the
+`combo_axi_if` subordinate interface.
 
-DEV0 and DEV1 maintain independent register state. Their register
-definitions are described separately in the Programming Model section.
+DEV0 and DEV1 maintain independent register state. Their register definitions
+are described separately in the Programming Model section.
 
 ---
 
-## External Memory Interfaces
+## Endpoint Memory Interfaces
 
-The current IP implementation uses two external memories:
+The IP uses two external Endpoint RAMs:
 
 - one DEV0 Endpoint RAM;
 - one DEV1 Endpoint RAM.
 
 Each memory has:
 
-- an AHB slave interface for external system access;
+- a dedicated AXI subordinate interface for system access;
 - a native RAM interface connected to the physical memory;
 - an internal USB-side requester.
 
-The internal USB requester and the external AHB interface share the physical
-memory port.
+The internal USB requester and the corresponding AXI interface share access
+to the physical memory.
 
-### Common RAM AHB Behavior
+### DEV0 and DEV1 Endpoint Memory AXI Interfaces
 
-The two external Endpoint RAM interfaces use separate instances of
-`ahb_dma_slave`.
+The `dev0_mem_axi_if` and `dev1_mem_axi_if` subordinate interfaces provide
+independent system access to the corresponding Endpoint RAM.
 
-The common behavior is:
+These interfaces allow the system to initialize, inspect, and update:
 
-- byte-addressed AHB transfers;
-- byte, half-word, and word access support;
-- `HSIZE[1:0]` interpreted by the current RTL;
-- `HSIZE[2]` not used by the implemented size decoder;
-- `HBURST[2:0]` exposed at the boundary but not used by the current RTL;
-- internal USB access given priority over external AHB access;
-- `HREADYOUT` deasserted when the physical RAM port is unavailable;
-- `HRESP[1:0]` permanently set to `OKAY`.
+- Endpoint Lists and endpoint contexts;
+- TX and RX payload buffers;
+- endpoint buffer addresses and transfer parameters.
 
-For DEV0 and DEV1, the internal requester is the shared Endpoint Data
-Manager.
-
-The `_dma_` substring in the top-level signal names is inherited from the
-legacy internal module name. These ports remain AHB slave interfaces.
-
-### Software-Device Endpoint RAM AHB Slave Interfaces
-
-DEV0 and DEV1 provide independent and structurally equivalent AHB ports for
-external access to their Endpoint RAMs.
-
-| DEV0 Signal | DEV1 Signal | Direction | Width | Description |
-|---|---|---:|---:|---|
-| `dev0_ahbs_dma_haddr[RAM_ADDRWIDTH+4:0]` | `dev1_ahbs_dma_haddr[RAM_ADDRWIDTH+4:0]` | Input | `RAM_ADDRWIDTH + 5` | Byte-addressed AHB address used by the memory adapter. |
-| `dev0_ahbs_dma_htrans[1:0]` | `dev1_ahbs_dma_htrans[1:0]` | Input | 2 | AHB transfer type. Bit 1 identifies an active `NONSEQ` or `SEQ` transfer. |
-| `dev0_ahbs_dma_hwrite` | `dev1_ahbs_dma_hwrite` | Input | 1 | Transfer direction: high for write and low for read. |
-| `dev0_ahbs_dma_hwdata[AHB_DATAWIDTH-1:0]` | `dev1_ahbs_dma_hwdata[AHB_DATAWIDTH-1:0]` | Input | `AHB_DATAWIDTH` | AHB write-data bus. |
-| `dev0_ahbs_dma_hsel` | `dev1_ahbs_dma_hsel` | Input | 1 | AHB slave-select input for the corresponding Endpoint RAM. |
-| `dev0_ahbs_dma_hreadyin` | `dev1_ahbs_dma_hreadyin` | Input | 1 | AHB transfer-ready input used to qualify a new transfer. |
-| `dev0_ahbs_dma_hrdata[AHB_DATAWIDTH-1:0]` | `dev1_ahbs_dma_hrdata[AHB_DATAWIDTH-1:0]` | Output | `AHB_DATAWIDTH` | AHB read-data bus. |
-| `dev0_ahbs_dma_hreadyout` | `dev1_ahbs_dma_hreadyout` | Output | 1 | AHB ready output. It may be deasserted while the internal Endpoint Data Manager owns the RAM. |
-| `dev0_ahbs_dma_hresp[1:0]` | `dev1_ahbs_dma_hresp[1:0]` | Output | 2 | AHB transfer response. Permanently returns `OKAY`. |
-| `dev0_ahbs_dma_hsize[2:0]` | `dev1_ahbs_dma_hsize[2:0]` | Input | 3 | AHB transfer size. Byte, half-word, and word accesses are supported through `HSIZE[1:0]`. |
-| `dev0_ahbs_dma_hburst[2:0]` | `dev1_ahbs_dma_hburst[2:0]` | Input | 3 | AHB burst type. Exposed at the boundary but not used by the current RTL. |
+Internal USB accesses have priority over system accesses. An AXI transaction
+may therefore be delayed while the corresponding Endpoint RAM is being used
+by the internal Endpoint Data Manager.
 
 ---
 
@@ -649,14 +594,15 @@ external access to their Endpoint RAMs.
 
 The two software-device native RAM interfaces share the following conventions:
 
-- synchronous operation relative to `hclk`;
+- synchronous operation relative to `usb_axi_aclk`;
 - active-high chip select;
 - active-low write enable;
 - word-addressed native address;
 - active-high write-selection mask;
-- chip select retained as required by the adapter read-data timing.
+- chip select retained as required by the memory-access timing.
 
-Internal USB memory requests have priority over external AHB requests.
+Internal USB memory requests have priority over system accesses through the
+corresponding AXI interface.
 
 ### Software-Device Endpoint RAM Native Interfaces
 
@@ -793,14 +739,10 @@ implementation.
 
 The following requirements apply at the current IP top-level boundary:
 
-- `hresetn` and `ahbs_resetn` control different portions of the IP and must
-  both be provided by the integration environment.
-- Both resets are used asynchronously in the `hclk` domain.
-- No internal reset-deassertion synchronizer is present for `hresetn` or
-  `ahbs_resetn` at the `hclk`-domain boundary.
-- Reset deassertion must satisfy the applicable recovery and removal timing
-  requirements relative to `hclk`.
-- `hresetn` is internally synchronized before entering the `pie_clk` domain.
+- `usb_axi_aclk` clocks the AXI interfaces and the system-side USB logic.
+- `usb_axi_aresetn` resets the AXI interfaces and the system-side USB logic.
+- `usb_axi_aresetn` is internally synchronized before entering the
+  `pie_clk` domain.
 - `sys_donotwakeup_n` and `sys_dev_wakeup_n` are used directly by the
   top-level power-control logic and are not internally synchronized.
 - Asynchronous system-control inputs require appropriate integration-level
@@ -811,10 +753,8 @@ The following requirements apply at the current IP top-level boundary:
   mode and clock selection.
 - Native RAM chip selects are active high.
 - Native RAM write enables are active low.
-- Internal USB memory requests have priority over external AHB accesses.
-- RAM AHB interfaces may introduce wait states through `HREADYOUT`.
-- RAM AHB `HBURST[2:0]` inputs are not used by the current RTL.
-- AHB slave interfaces always return `OKAY`.
+- Internal USB memory requests have priority over system accesses through
+  the corresponding AXI interface.
 - `async_disable` is test-only and must remain low during normal operation.
 - `tcb_clkgate_se` is unused by the current RTL.
 - Configurations differing from the documented default configuration require
@@ -826,14 +766,15 @@ The following requirements apply at the current IP top-level boundary:
 
 | Signal or Prefix | Category | Interface |
 |---|---|---|
-| `hclk`, `hresetn`, `ahbs_resetn` | System integration | Clock and Reset |
+| `usb_axi_aclk`, `usb_axi_aresetn` | System integration | AXI Clock and Reset |
 | `usb_needclk`, `sys_donotwakeup_n`, `sys_dev_wakeup_n`, `sys_utmi_clkin_lock` | System integration | Clock Request and Wake-Up |
 | `USB_VBus`, `vbuscomp_on`, `chrg_vbus`, `dischrg_vbus`, `avalid`, `sessend` | System integration | VBUS and Analog Control |
 | `utmi_*` | USB PHY | UTMI |
 | `ulpi_*` | USB PHY | ULPI |
-| `hub_ahbs_*` | Host control | Hub Control AHB |
-| `dev0_ahbs_*`, `dev1_ahbs_*` | Host control | Software-Device Control AHB |
-| `dev0_ahbs_dma_*`, `dev1_ahbs_dma_*` | External memory access | Endpoint RAM AHB |
+| `combo_axi_if_*` | System access | Combo Control AXI |
+| `dev1_csr_axi_if_*` | System access | DEV1 Control and Status AXI |
+| `dev0_mem_axi_if_*` | Endpoint memory access | DEV0 Endpoint Memory AXI |
+| `dev1_mem_axi_if_*` | Endpoint memory access | DEV1 Endpoint Memory AXI |
 | `dev0_mem_*`, `dev1_mem_*` | Native memory | Endpoint RAM |
 | `dev0_usb_irq`, `dev0_usb_fiq`, `dev1_usb_irq`, `dev1_usb_fiq` | Interrupt | Software-Device Interrupts |
 | `USB_FrameToggle` | Observation | Frame Timing |
@@ -1284,9 +1225,9 @@ Its contents include:
 - internal request identifiers;
 - response and data-buffer references.
 
-The register file is accessible through the Hub control AHB interface and is
-used internally by the Hub EP0 request handler for SETUP decoding and
-descriptor or stored-response retrieval.
+The register file is accessible through the Combo AXI interface and is used
+internally by the Hub EP0 request handler for SETUP decoding and descriptor
+or stored-response retrieval.
 
 The Hub EP0 and EP1 IN runtime contexts remain maintained separately by
 `usb_ep_config_handler_1`. The received eight-byte SETUP packet is stored
@@ -1359,9 +1300,9 @@ top-level implementation.
 **Source:** `RTL/usb_ahb_slave.m.vhdl`  
 **Clock domain:** `hclk`
 
-`usb_ahb_slave_1` and `usb_ahb_slave_2` convert the external DEV0 and DEV1
-control AHB interfaces into the internal register-file interface used by the
-corresponding `usb_reg_if` instance.
+`usb_ahb_slave_1` and `usb_ahb_slave_2` convert the internal AHB accesses
+generated by the AXI system-access logic into the register-file interface
+used by the corresponding `usb_reg_if` instance.
 
 Each adapter performs:
 
@@ -1375,8 +1316,8 @@ Each adapter performs:
 The register path operates without inserted wait states.
 
 These adapters provide access only to the software-visible USB control
-registers. Endpoint RAM access is provided through separate AHB interfaces
-and separate RAM access adapters.
+registers. Endpoint RAM access is provided through the dedicated DEV0 and
+DEV1 Endpoint Memory AXI interfaces.
 
 ---
 
@@ -1389,17 +1330,18 @@ and separate RAM access adapters.
 `ahb_dma_slave_1` and `ahb_dma_slave_2` connect the DEV0 and DEV1 Endpoint
 RAMs to:
 
-- the internal shared endpoint data manager;
-- the corresponding external Endpoint RAM AHB interface.
+- the internal shared Endpoint Data Manager;
+- the internal system-access path associated with the corresponding Endpoint
+  Memory AXI interface.
 
-The adapters arbitrate between internal USB access and external AHB access.
-Internal USB requests have priority. An external AHB transaction is delayed
+The adapters arbitrate between internal USB access and system access.
+Internal USB requests have priority. A system transaction may be delayed
 when the RAM is being used by the internal endpoint data path.
 
 Each adapter performs:
 
-- internal USB DMA and external AHB arbitration;
-- AHB wait-state generation;
+- arbitration between internal USB and system accesses;
+- system-access wait-state generation;
 - byte-address to native RAM-address conversion;
 - write-data alignment;
 - DWORD and byte-lane selection;
@@ -1430,7 +1372,7 @@ The internal endpoint data manager reads endpoint context and TX data from
 the selected RAM and writes received RX data and endpoint-state updates back
 to that RAM.
 
-The external AHB interfaces allow the system to:
+The DEV0 and DEV1 Endpoint Memory AXI interfaces allow the system to:
 
 - initialize EP0 and the other endpoint entries;
 - configure endpoint type, active state, packet size, and buffer location;
@@ -1448,8 +1390,8 @@ The external AHB interfaces allow the system to:
 **Source:** `RTL/usb_ahb_slave.m.vhdl`  
 **Clock domain:** `hclk`
 
-`hub_usb_ahb_slave_1` converts the external Hub Control AHB interface into
-the internal `hub_reg_*` register-access interface.
+`hub_usb_ahb_slave_1` converts the internal system access into the
+`hub_reg_*` register-access interface.
 
 The adapter provides:
 
@@ -1551,8 +1493,8 @@ status.
   architecture.
 - Function selection, context selection, SETUP routing, Endpoint RAM
   selection, and DMA update routing are implemented in top-level logic.
-- Internal USB accesses have priority over external AHB accesses to the two
-  DEV0 and DEV1 Endpoint RAMs.
+- Internal USB accesses have priority over system accesses through the DEV0
+  and DEV1 Endpoint Memory AXI interfaces.
 - The architecture diagram intentionally represents some top-level signal
   paths as functional connections rather than reproducing every intermediate
   RTL net.
@@ -2525,7 +2467,7 @@ These flows are intended to support:
 - RTL navigation;
 - directed verification development;
 - waveform analysis and debug;
-- integration of the external RAMs and AHB control paths;
+- integration of the external RAMs and AXI system-access paths;
 - future modification or extension of the IP.
 
 ## Common Transaction Model
@@ -2606,7 +2548,7 @@ SETUP, TX, and RX payload storage:
   DEV0 / DEV1 Endpoint RAM
 
 Control-request interpretation and response preparation:
-  External software or control agent through AHB
+  External software or control agent through the AXI system-access interfaces
 ```
 
 The operational descriptions therefore distinguish between:
@@ -3900,7 +3842,7 @@ The hardware transfers the SETUP packet into the selected Endpoint RAM and
 reports the event through the corresponding `usb_reg_if`.
 
 The SETUP request is interpreted and serviced by software or by an external
-control agent through the AHB interfaces.
+control agent through the AXI system-access interfaces.
 
 The following description uses `DEVx` to represent DEV0 or DEV1.
 
@@ -4039,7 +3981,7 @@ has:
 
 ## Software Request Processing
 
-The external control agent uses the DEVx AHB interfaces to:
+The external control agent uses the AXI system-access interfaces to:
 
 1. detect the SETUP event or interrupt;
 2. read the eight-byte SETUP packet from the DEVx Endpoint RAM;
@@ -4058,14 +4000,16 @@ The external control agent uses the DEVx AHB interfaces to:
 The control and memory paths are distinct:
 
 ```text
-DEVx Control AHB
-  -> usb_ahb_slave_x
-  -> usb_reg_if_x
-```
+DEV0 control and status access
+  -> Combo Control AXI Interface
+  -> usb_reg_if_1
 
-```text
-DEVx Endpoint RAM AHB
-  -> ahb_dma_slave_x
+DEV1 control and status access
+  -> DEV1 Control and Status AXI Interface
+  -> usb_reg_if_2
+
+DEVx endpoint memory access
+  -> Corresponding Endpoint Memory AXI Interface
   -> DEVx Endpoint RAM
 ```
 
@@ -4245,8 +4189,8 @@ entirely in the selected DEV0 or DEV1 Endpoint RAM.
 
 The shared PIE and Endpoint Data Manager execute the USB transaction.
 
-The external control agent prepares or consumes the payload using the DEVx
-Endpoint RAM AHB interface.
+The external control agent prepares or consumes the payload using the
+corresponding DEVx Endpoint Memory AXI interface.
 
 Before Bulk traffic begins, the external control agent must configure an
 endpoint context containing the required fields, including:
@@ -4593,9 +4537,9 @@ After the received packet has been stored:
    - skip state;
    - NAK-related state where applicable.
 5. The corresponding IRQ or FIQ can notify the external control agent.
-6. The external control agent reads the received payload through the DEVx
-   Endpoint RAM AHB interface.
-7. Software or the external agent rearms the endpoint when another receive
+6. The external control agent reads the received payload through the
+   corresponding DEVx Endpoint Memory AXI interface.
+8. Software or the external agent rearms the endpoint when another receive
    buffer is available.
 
 For a multi-packet transfer, the buffer position and remaining byte count are
@@ -4716,7 +4660,7 @@ Detailed endpoint context and payload:
   DEV0 Endpoint RAM
 
 External request and payload management:
-  DEV0 Control AHB and Endpoint RAM AHB interfaces
+  Combo Control AXI and DEV0 Endpoint Memory AXI interfaces
 ```
 
 ```text
@@ -4729,7 +4673,7 @@ Detailed endpoint context and payload:
   DEV1 Endpoint RAM
 
 External request and payload management:
-  DEV1 Control AHB and Endpoint RAM AHB interfaces
+  DEV1 Control and Status AXI and DEV1 Endpoint Memory AXI interfaces
 ```
 
 The shared PIE and Endpoint Data Manager remain largely independent of these
