@@ -36,14 +36,6 @@ localparam logic [7:0] OCP_CMD_MAX                  = 8'h2F;
 
 typedef logic [7:0] ocp_cmd_t;
 
-// Caliptra-specific (non-OCP) register command tags. These carry no OCP wValue
-// and are used only on the USB command path's local register routing. They lie
-// outside OCP_CMD_MIN..OCP_CMD_MAX, so the USB host command decoder
-// (usb_ocp_recovery_ctrl_decode.sv) can never emit them: the Caliptra-specific
-// registers are firmware-reachable only through the raw EXT aperture.
-localparam logic [7:0] OCP_CMD_CALIPTRA_CTRL        = 8'hE0;
-localparam logic [7:0] OCP_CMD_CALIPTRA_STATUS      = 8'hE1;
-
 // Recovery aperture placement within the 4 KiB local USB device window. The
 // wrapper uses these values to select recovery ownership and derive raw EXT
 // offsets; all per-register offsets below are relative to this aperture.
@@ -105,9 +97,6 @@ localparam int OCP_LEN_INDIRECT_FIFO_STATUS= 20;
 localparam int OCP_LEN_INDIRECT_FIFO_DATA  = 4;
 localparam int OCP_LEN_VENDOR              = 1;  // stub - reduced from spec max
 
-// Caliptra-specific (non-OCP) register payload lengths (bytes).
-localparam int OCP_LEN_CALIPTRA_CTRL       = 4;
-localparam int OCP_LEN_CALIPTRA_STATUS     = 4;
 localparam int OCP_LEN_UNSUPPORTED_READ_STUB = OCP_LEN_INDIRECT_FIFO_DATA;
 localparam int OCP_MAX_IMPLEMENTED_RESPONSE_BYTES = OCP_LEN_DEVICE_STATUS;
 // Response byte counts returned to the Recovery Agent in the IN DATA stage.

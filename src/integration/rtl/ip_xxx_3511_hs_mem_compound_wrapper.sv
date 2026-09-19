@@ -332,7 +332,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   logic rec_setup_pkt_vld_w;
   logic [63:0] rec_setup_pkt_w;
   logic [31:0] rec_ctrl_out_data_w;
-  logic [3:0] rec_ctrl_out_be_w;
   logic rec_ctrl_out_vld_w;
   logic rec_ctrl_out_last_w;
   logic rec_ctrl_out_rdy_w;
@@ -348,16 +347,11 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   logic rec_ctrl_xfer_abort_w;
   logic rec_ctrl_fifo_batch_abort_w;
   logic rec_ctrl_length_error_w;
-  logic rec_ctrl_claim_w;
   logic rec_ocp_path_disable_w;
   logic rec_ocp_claim_abort_w;
   logic rec_fw_protocol_error_req_w;
   logic [6:0] rec_fifo_free_dwords_w;
   logic rec_fifo_reservation_active_w;
-  logic fifo_rd_valid_w;
-  logic [31:0] fifo_rd_data_w;
-  logic [$clog2(usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS+1)-1:0]
-      fifo_rd_depth_w;
 
   // Keep AXI2AHB at the caller's system address width, then explicitly localize
   // each port before it reaches the USB address map.
@@ -519,16 +513,9 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   ) u_ocp_recovery (
     .clk(usb_axi_aclk),
     .rst_ni(usb_axi_aresetn),
-    .clk_rd(usb_axi_aclk),
-    .rst_rd_n(usb_axi_aresetn),
-    .fifo_rd_valid(fifo_rd_valid_w),
-    .fifo_rd_ready(1'b0),
-    .fifo_rd_data(fifo_rd_data_w),
-    .fifo_rd_depth(fifo_rd_depth_w),
     .rec_setup_pkt_vld(rec_setup_pkt_vld_w),
     .rec_setup_pkt(rec_setup_pkt_w),
     .rec_ctrl_out_data(rec_ctrl_out_data_w),
-    .rec_ctrl_out_be(rec_ctrl_out_be_w),
     .rec_ctrl_out_vld(rec_ctrl_out_vld_w),
     .rec_ctrl_out_last(rec_ctrl_out_last_w),
     .rec_ctrl_out_rdy(rec_ctrl_out_rdy_w),
@@ -544,7 +531,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .rec_ctrl_xfer_abort(rec_ctrl_xfer_abort_w),
     .rec_ctrl_fifo_batch_abort(rec_ctrl_fifo_batch_abort_w),
     .rec_ctrl_length_error(rec_ctrl_length_error_w),
-    .rec_ctrl_claim(rec_ctrl_claim_w),
     .rec_ocp_path_disable(rec_ocp_path_disable_w),
     .rec_ocp_claim_abort(rec_ocp_claim_abort_w),
     .rec_fw_protocol_error_req(rec_fw_protocol_error_req_w),
@@ -688,7 +674,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .rec_setup_pkt_vld(rec_setup_pkt_vld_w),
     .rec_setup_pkt(rec_setup_pkt_w),
     .rec_ctrl_out_data(rec_ctrl_out_data_w),
-    .rec_ctrl_out_be(rec_ctrl_out_be_w),
     .rec_ctrl_out_vld(rec_ctrl_out_vld_w),
     .rec_ctrl_out_last(rec_ctrl_out_last_w),
     .rec_ctrl_out_rdy(rec_ctrl_out_rdy_w),
@@ -704,7 +689,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .rec_ctrl_xfer_abort(rec_ctrl_xfer_abort_w),
     .rec_ctrl_fifo_batch_abort(rec_ctrl_fifo_batch_abort_w),
     .rec_ctrl_length_error(rec_ctrl_length_error_w),
-    .rec_ctrl_claim(rec_ctrl_claim_w),
     .rec_ocp_path_disable(rec_ocp_path_disable_w),
     .rec_ocp_claim_abort(rec_ocp_claim_abort_w),
     .rec_fw_protocol_error_req(rec_fw_protocol_error_req_w),

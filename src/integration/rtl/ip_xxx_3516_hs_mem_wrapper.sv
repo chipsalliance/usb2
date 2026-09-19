@@ -62,8 +62,6 @@ module ip_xxx_3516_hs_mem_wrapper
   // OCP Recovery subsystem (A7 integration)
   // -----------------------------------------------------------------
   parameter        AXI_REC_ADDR_WIDTH   = 32,
-  parameter int    REC_CMS_ADDR_W       = 16,
-  parameter int    REC_NUM_CMS          = 2,
   parameter logic [191:0] REC_DEVICE_ID_DEFAULT = 192'h0
  )  
  (
@@ -348,7 +346,6 @@ module ip_xxx_3516_hs_mem_wrapper
    logic                          rec_setup_pkt_vld_w;
    logic [63:0]                   rec_setup_pkt_w;
    logic [31:0]                   rec_ctrl_out_data_w;
-   logic [3:0]                    rec_ctrl_out_be_w;
    logic                          rec_ctrl_out_vld_w;
    logic                          rec_ctrl_out_last_w;
    logic                          rec_ctrl_out_rdy_w;
@@ -370,7 +367,6 @@ module ip_xxx_3516_hs_mem_wrapper
    logic                          rec_ocp_path_disable_w;
    logic                          rec_ocp_claim_abort_w;
    logic                          rec_fw_protocol_error_req_w;
-   logic                          rec_ctrl_claim_w;
    logic [6:0]                    rec_fifo_free_dwords_w;
    logic                          rec_fifo_reservation_active_w;
 
@@ -814,7 +810,6 @@ module ip_xxx_3516_hs_mem_wrapper
                .rec_setup_pkt_vld   (rec_setup_pkt_vld_w),
                .rec_setup_pkt       (rec_setup_pkt_w),
                .rec_ctrl_out_data   (rec_ctrl_out_data_w),
-               .rec_ctrl_out_be    (rec_ctrl_out_be_w),
                .rec_ctrl_out_vld    (rec_ctrl_out_vld_w),
                .rec_ctrl_out_last   (rec_ctrl_out_last_w),
                .rec_ctrl_out_rdy    (rec_ctrl_out_rdy_w),
@@ -830,7 +825,6 @@ module ip_xxx_3516_hs_mem_wrapper
                .rec_ctrl_xfer_abort (rec_ctrl_xfer_abort_w),
                .rec_ctrl_fifo_batch_abort(rec_ctrl_fifo_batch_abort_w),
                .rec_ctrl_length_error(rec_ctrl_length_error_w),
-               .rec_ctrl_claim      (rec_ctrl_claim_w),
                .rec_ocp_path_disable (rec_ocp_path_disable_w),
                .rec_ocp_claim_abort (rec_ocp_claim_abort_w),
                .rec_fw_protocol_error_req(rec_fw_protocol_error_req_w),
@@ -872,14 +866,6 @@ module ip_xxx_3516_hs_mem_wrapper
     logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] rec_offset;
     assign rec_offset = dev_ahb_local_offset - {1'b0, OCP_RECOVERY_APERTURE_OFFSET_BYTES};
 
-    // -- Exposed async FIFO read-port nets (dev_axi_aclk domain) --
-    logic        fifo_rd_valid;
-    logic        fifo_rd_ready;
-    logic [31:0] fifo_rd_data;
-    logic [$clog2(usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS+1)-1:0] fifo_rd_depth;
-
-    assign fifo_rd_ready = 1'b0;
-
     logic rec_data_phase_q;
     logic [31:0] rec_ahb_hrdata;
     logic rec_ahb_hreadyout;
@@ -917,27 +903,15 @@ module ip_xxx_3516_hs_mem_wrapper
     // pragma translate_on
 
 
-    usb_ocp_recovery_top #(
-        .CMS_ADDR_W        (REC_CMS_ADDR_W),
-        .NUM_CMS           (REC_NUM_CMS)
-    ) u_ocp_recovery (
+    usb_ocp_recovery_top u_ocp_recovery (
         // Recovery logic shares dev_axi_aclk with its AHB management surface.
         .clk  (dev_axi_aclk),
         .rst_ni(dev_axi_aresetn),
-
-        // Legacy fifo_rd_* ports stay plumbed for S4d async FIFO compatibility.
-        .clk_rd        (dev_axi_aclk),
-        .rst_rd_n      (dev_axi_aresetn),
-        .fifo_rd_valid (fifo_rd_valid),
-        .fifo_rd_ready (fifo_rd_ready),
-        .fifo_rd_data  (fifo_rd_data),
-        .fifo_rd_depth (fifo_rd_depth),
 
         // Control-transfer byte-stream surface (driven by VHDL usb_ocp_recovery_post_sync_arb)
         .rec_setup_pkt_vld  (rec_setup_pkt_vld_w),
         .rec_setup_pkt      (rec_setup_pkt_w),
         .rec_ctrl_out_data  (rec_ctrl_out_data_w),
-        .rec_ctrl_out_be   (rec_ctrl_out_be_w),
         .rec_ctrl_out_vld   (rec_ctrl_out_vld_w),
         .rec_ctrl_out_last  (rec_ctrl_out_last_w),
         .rec_ctrl_out_rdy   (rec_ctrl_out_rdy_w),
@@ -953,7 +927,6 @@ module ip_xxx_3516_hs_mem_wrapper
         .rec_ctrl_xfer_abort(rec_ctrl_xfer_abort_w),
         .rec_ctrl_fifo_batch_abort(rec_ctrl_fifo_batch_abort_w),
         .rec_ctrl_length_error(rec_ctrl_length_error_w),
-        .rec_ctrl_claim   (rec_ctrl_claim_w),
         .rec_ocp_path_disable (rec_ocp_path_disable_w),
         .rec_ocp_claim_abort(rec_ocp_claim_abort_w),
         .rec_fw_protocol_error_req(rec_fw_protocol_error_req_w),

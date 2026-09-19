@@ -25,8 +25,8 @@
 //
 //   Control plane:
 //     - fifo_cms_q, image_size_q, write_index_q, accepted_push_count_q,
-//       overflow_q, region_reset_q, image_done_q, and image_push_active_q are
-//       the sole live owners of FIFO control, status, payload progress, and
+//       overflow_q, region_reset_q, and image_done_q are the sole live owners
+//       of FIFO control, status, payload progress, and
 //       image-completion accounting. READ_INDEX is derived from write-domain
 //       depth rather than stored as an independent counter.
 //     - USB and EXT each capture an independent five-word status snapshot so a
@@ -39,21 +39,11 @@
 // -------------------------------------------------------------------------
 
 module usb_ocp_recovery_cms_fifo #(
-  parameter int CMS_ADDR_W = 16,
-  parameter int NUM_CMS    = 2,
   parameter int FIFO_WIDTH = 32,
   parameter int FIFO_DEPTH = usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS
 )(
   input  logic clk,
   input  logic rst_ni,
-
-  // Compatibility-only legacy surface. EXT data no longer pops in clk_rd.
-  input  logic clk_rd,
-  input  logic rst_rd_n,
-  output logic        fifo_rd_valid,
-  input  logic        fifo_rd_ready,
-  output logic [31:0] fifo_rd_data,
-  output logic [$clog2(FIFO_DEPTH+1)-1:0] fifo_rd_depth,
 
   // Direct USB FIFO command path.
   input  logic        fifo_rb_sel,
@@ -81,15 +71,11 @@ module usb_ocp_recovery_cms_fifo #(
   input  logic [31:0] ext_cpuif_wr_data,
   input  logic [3:0]  ext_cpuif_wr_strb,
 
-  // Status to A5 FSM.
-  output logic        image_push_active,
   output logic        image_push_done,
   output logic        fifo_overflow,
   output logic        payload_available,
   output logic        batch_aborted,
   output logic [$clog2(FIFO_DEPTH+1)-1:0] fifo_free_dwords,
-  output logic [31:0] image_size,
-  output logic [31:0] bytes_pushed,
 
   input  logic        fifo_abort_i,
 
@@ -122,7 +108,6 @@ module usb_ocp_recovery_cms_fifo #(
   logic        region_reset_q;
   logic        region_reset_pulse_q;
   logic        image_done_q;
-  logic        image_push_active_q;
   logic        payload_available_q;
   logic        batch_aborted_q;
 
@@ -142,9 +127,6 @@ module usb_ocp_recovery_cms_fifo #(
   logic                       fifo_rready_int;
   logic                       fifo_rvalid_int;
   logic [FIFO_WIDTH-1:0]      fifo_rdata_int;
-  logic [FIFO_DEPTH_W-1:0]    fifo_rdepth_int;
-  logic                       unused_compat;
-
   logic is_fifo_ctrl;
   logic is_fifo_status;
   logic is_fifo_data;
@@ -248,7 +230,6 @@ module usb_ocp_recovery_cms_fifo #(
     is_reg_cmd     = is_fifo_ctrl || is_fifo_status;
     rb_req         = fifo_rb_sel && (fifo_rb_wr || fifo_rb_rd);
     word_idx       = fifo_rb_offset[2:0];
-    unused_compat  = ^{clk_rd, rst_rd_n, fifo_rd_ready};
   end
 
   assign usb_ctrl_word0_wr = is_fifo_ctrl && fifo_rb_wr && (word_idx == 3'd0);
@@ -356,10 +337,6 @@ module usb_ocp_recovery_cms_fifo #(
     .err_o    ()
   );
 
-  // Single-clock synchronous FIFO: the read-side depth equals the write-side
-  // depth exposed on depth_o.
-  assign fifo_rdepth_int = fifo_wdepth;
-
   always_ff @(posedge clk) begin
     if (!rst_ni) begin
       fifo_cms_q          <= '0;
@@ -370,7 +347,6 @@ module usb_ocp_recovery_cms_fifo #(
       region_reset_q      <= 1'b0;
       region_reset_pulse_q <= 1'b0;
       image_done_q        <= 1'b0;
-      image_push_active_q <= 1'b0;
       payload_available_q <= 1'b0;
       batch_aborted_q    <= 1'b0;
       usb_status_snapshot_vld_q <= 1'b0;
@@ -467,7 +443,6 @@ module usb_ocp_recovery_cms_fifo #(
           region_reset_q      <= 1'b1;
           region_reset_pulse_q <= 1'b1;
           image_done_q        <= 1'b0;
-          image_push_active_q <= 1'b0;
           usb_status_snapshot_vld_q <= 1'b0;
           usb_status_snapshot_next_word_q <= '0;
           ext_status_snapshot_vld_q <= 1'b0;
@@ -482,7 +457,6 @@ module usb_ocp_recovery_cms_fifo #(
           region_reset_q      <= 1'b1;
           region_reset_pulse_q <= 1'b1;
           image_done_q        <= 1'b0;
-          image_push_active_q <= 1'b0;
           usb_status_snapshot_vld_q <= 1'b0;
           usb_status_snapshot_next_word_q <= '0;
           ext_status_snapshot_vld_q <= 1'b0;
@@ -503,10 +477,8 @@ module usb_ocp_recovery_cms_fifo #(
       if (push_accept) begin
         write_index_q       <= write_index_next;
         accepted_push_count_q <= accepted_push_count_q + 32'd1;
-        image_push_active_q <= 1'b1;
         if (terminal_image_push) begin
           image_done_q        <= 1'b1;
-          image_push_active_q <= 1'b0;
         end
       end
 
@@ -519,7 +491,6 @@ module usb_ocp_recovery_cms_fifo #(
         accepted_push_count_q  <= '0;
         overflow_q             <= 1'b0;
         image_done_q           <= 1'b0;
-        image_push_active_q    <= 1'b0;
         payload_available_q    <= 1'b0;
         usb_status_snapshot_vld_q <= 1'b0;
         usb_status_snapshot_next_word_q <= '0;
@@ -560,11 +531,6 @@ module usb_ocp_recovery_cms_fifo #(
   end
 
   always_comb begin
-    fifo_rd_valid = fifo_rvalid_int;
-    fifo_rd_data  = fifo_rdata_int;
-    fifo_rd_depth = fifo_rdepth_int;
-
-    image_push_active = image_push_active_q;
     image_push_done   = image_done_q;
     fifo_overflow     = overflow_q;
     payload_available = payload_available_q;
@@ -574,9 +540,6 @@ module usb_ocp_recovery_cms_fifo #(
     end else begin
       fifo_free_dwords = image_remaining_dwords;
     end
-    image_size        = {image_size_q[29:0], 2'b00};
-    bytes_pushed      = {accepted_push_count_q[29:0], 2'b00};
-
     fifo_ctrl_cms        = fifo_cms_q;
     fifo_ctrl_reset      = region_reset_pulse_q;
     fifo_region_reset    = region_reset_q;

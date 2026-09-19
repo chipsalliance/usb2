@@ -56,7 +56,6 @@ module usb_ocp_recovery_ctrl_decode (
   input  logic        setup_pkt_vld,
   input  logic [63:0] setup_pkt,
   input  logic [31:0] ctrl_out_data,
-  input  logic [3:0]  ctrl_out_be,
   input  logic        ctrl_out_vld,
   input  logic        ctrl_out_last,
   output logic        ctrl_out_rdy,

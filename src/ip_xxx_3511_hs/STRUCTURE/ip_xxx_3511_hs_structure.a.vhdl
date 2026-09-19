@@ -283,7 +283,6 @@ component usb_ocp_recovery_post_sync_arb
     dev0_usbreg_dev_connect_i : in std_logic;
     usbreg_setup_i : in std_logic;
     usbreg_setup_dma_o : out std_logic;
-    sync_pie_speed_i : in std_logic_vector(1 downto 0);
 
     sync_sieint_epinfo_req_i    : in  std_logic;
     sync_sieint_epinfo_epnr_i   : in  std_logic_vector(3 downto 0);
@@ -343,7 +342,6 @@ component usb_ocp_recovery_post_sync_arb
     setup_pkt_vld   : out std_logic;
     setup_pkt       : out std_logic_vector(63 downto 0);
     ctrl_out_data   : out std_logic_vector(31 downto 0);
-    ctrl_out_be     : out std_logic_vector(3 downto 0);
     ctrl_out_vld    : out std_logic;
     ctrl_out_last   : out std_logic;
     ctrl_out_rdy    : in  std_logic;
@@ -364,8 +362,7 @@ component usb_ocp_recovery_post_sync_arb
     fw_protocol_error_req_i : in std_logic;
     fifo_payload_available_i : in std_logic;
     fifo_free_dwords_i : in std_logic_vector(6 downto 0);
-    fifo_reservation_active_o : out std_logic;
-    rec_claim_status : out std_logic
+    fifo_reservation_active_o : out std_logic
   );
 end component;
 
@@ -1572,7 +1569,6 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     dev0_usbreg_dev_connect_i => usbreg_dev_connect,
     usbreg_setup_i => usbreg_setup,
     usbreg_setup_dma_o => usbreg_setup_dma,
-    sync_pie_speed_i => sync_pie_speed,
 
     -- Synchronizer hclk-side outputs (arbiter inputs).
     sync_sieint_epinfo_req_i    => sync_sieint_epinfo_req_s,
@@ -1638,7 +1634,6 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     setup_pkt_vld   => rec_setup_pkt_vld,
     setup_pkt       => rec_setup_pkt,
     ctrl_out_data   => rec_ctrl_out_data,
-    ctrl_out_be     => rec_ctrl_out_be,
     ctrl_out_vld    => rec_ctrl_out_vld,
     ctrl_out_last   => rec_ctrl_out_last,
     ctrl_out_rdy    => rec_ctrl_out_rdy,
@@ -1659,8 +1654,7 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     fw_protocol_error_req_i => rec_fw_protocol_error_req,
     fifo_payload_available_i => rec_fifo_payload_available,
     fifo_free_dwords_i => rec_fifo_free_dwords,
-    fifo_reservation_active_o => rec_fifo_reservation_active,
-    rec_claim_status   => rec_ctrl_claim
+    fifo_reservation_active_o => rec_fifo_reservation_active
   );
 
 

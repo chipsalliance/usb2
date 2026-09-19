@@ -314,7 +314,6 @@ end component;
        rec_setup_pkt_vld   : out std_logic;
        rec_setup_pkt       : out std_logic_vector(63 downto 0);
        rec_ctrl_out_data   : out std_logic_vector(31 downto 0);
-       rec_ctrl_out_be   : out std_logic_vector(3 downto 0);
        rec_ctrl_out_vld    : out std_logic;
        rec_ctrl_out_last   : out std_logic;
        rec_ctrl_out_rdy    : in  std_logic;
@@ -330,7 +329,6 @@ end component;
        rec_ctrl_xfer_abort : out std_logic;
        rec_ctrl_fifo_batch_abort : out std_logic;
        rec_ctrl_length_error : out std_logic;
-       rec_ctrl_claim      : out std_logic;
        rec_ocp_path_disable : in  std_logic;
        rec_ocp_claim_abort : in std_logic;
        rec_fw_protocol_error_req : in std_logic;
@@ -689,7 +687,6 @@ signal ip_xxx_3511_hs_fpga : std_logic_vector(255 downto 0);
       rec_setup_pkt_vld   => rec_setup_pkt_vld,
       rec_setup_pkt       => rec_setup_pkt,
       rec_ctrl_out_data   => rec_ctrl_out_data,
-      rec_ctrl_out_be   => rec_ctrl_out_be,
       rec_ctrl_out_vld    => rec_ctrl_out_vld,
       rec_ctrl_out_last   => rec_ctrl_out_last,
       rec_ctrl_out_rdy    => rec_ctrl_out_rdy,
@@ -705,7 +702,6 @@ signal ip_xxx_3511_hs_fpga : std_logic_vector(255 downto 0);
       rec_ctrl_xfer_abort => rec_ctrl_xfer_abort,
       rec_ctrl_fifo_batch_abort => rec_ctrl_fifo_batch_abort,
       rec_ctrl_length_error => rec_ctrl_length_error,
-      rec_ctrl_claim      => rec_ctrl_claim,
       rec_ocp_path_disable => rec_ocp_path_disable,
       rec_ocp_claim_abort => rec_ocp_claim_abort,
       rec_fw_protocol_error_req => rec_fw_protocol_error_req,

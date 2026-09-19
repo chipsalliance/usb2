@@ -235,7 +235,6 @@ entity ip_xxx_3511_hs is
        rec_setup_pkt_vld   : out std_logic;
        rec_setup_pkt       : out std_logic_vector(63 downto 0);
        rec_ctrl_out_data   : out std_logic_vector(31 downto 0);
-       rec_ctrl_out_be   : out std_logic_vector(3 downto 0);
        rec_ctrl_out_vld    : out std_logic;
        rec_ctrl_out_last   : out std_logic;
        rec_ctrl_out_rdy    : in  std_logic;
@@ -251,7 +250,6 @@ entity ip_xxx_3511_hs is
        rec_ctrl_xfer_abort : out std_logic;
        rec_ctrl_fifo_batch_abort : out std_logic;
        rec_ctrl_length_error : out std_logic;
-       rec_ctrl_claim      : out std_logic;
        -- Emergency-fallback path-disable control (see usb_ocp_recovery_post_sync_arb.m.vhdl
        -- ocp_path_disable_i): firmware-writable via CALIPTRA_CTRL.
        -- OCP_PATH_DISABLE, EXT/firmware write-only. Reset default '0'.

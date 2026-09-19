@@ -20,26 +20,12 @@
 module usb_ocp_recovery_top
   import usb_ocp_recovery_pkg::*;
 #(
-  parameter int           CMS_ADDR_W     = 16,
-  parameter int           NUM_CMS        = 2,
   parameter int           FIFO_DEPTH_DWORDS = usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS,
   parameter int           RECOVERY_LOCAL_ADDR_WIDTH =
       usb_ocp_recovery_pkg::OCP_RECOVERY_APERTURE_ADDR_W
 )(
   input  logic                    clk,
   input  logic                    rst_ni,
-
-  //----------------------------------------------------------------------------
-  // Legacy fifo_rd_* compatibility ports. The native dev_axi pop bypass was
-  // removed in favor of cpuif-mediated EXT INDIRECT_FIFO_DATA reads, but the
-  // async FIFO surface is retained to preserve the S4d-compatible hierarchy.
-  //----------------------------------------------------------------------------
-  input  logic                    clk_rd,
-  input  logic                    rst_rd_n,
-  output logic                    fifo_rd_valid,
-  input  logic                    fifo_rd_ready,
-  output logic [31:0]             fifo_rd_data,
-  output logic [$clog2(FIFO_DEPTH_DWORDS+1)-1:0] fifo_rd_depth,
 
   //----------------------------------------------------------------------------
   // Upper-side 32-bit control-transfer surface driven by VHDL
@@ -49,7 +35,6 @@ module usb_ocp_recovery_top
   input  logic [63:0]             rec_setup_pkt,
 
   input  logic [31:0]             rec_ctrl_out_data,
-  input  logic [3:0]              rec_ctrl_out_be,
   input  logic                    rec_ctrl_out_vld,
   input  logic                    rec_ctrl_out_last,
   output logic                    rec_ctrl_out_rdy,
@@ -67,7 +52,6 @@ module usb_ocp_recovery_top
   input  logic                    rec_ctrl_xfer_abort,
   input  logic                    rec_ctrl_fifo_batch_abort,
   input  logic                    rec_ctrl_length_error,
-  input  logic                    rec_ctrl_claim,
 
   // Emergency-fallback path-disable control: mirrors CALIPTRA_CTRL.OCP_PATH_DISABLE
   // (regblock field, EXT/firmware write-only via rb_is_ext/swwe gating -- see
@@ -241,12 +225,12 @@ module usb_ocp_recovery_top
   // intentionally not gated to preserve its 1-cycle ack semantics.
   //////////////////////////////////////////////////////////////////////////////
 
-  logic [1:0] owner_q;
   logic       usb_req_now;
   logic       ext_req_now;
   logic       grant_ext;
   logic       ext_in_flight_q;
   logic       ext_write_q;
+  logic       rb_is_ext;
 
   initial begin
     assert (RECOVERY_LOCAL_ADDR_WIDTH == OCP_RECOVERY_APERTURE_ADDR_W)
@@ -334,12 +318,9 @@ module usb_ocp_recovery_top
 
   always_ff @(posedge clk) begin
     if (!rst_ni) begin
-      owner_q          <= 2'b00;
       ext_in_flight_q  <= 1'b0;
       ext_write_q      <= 1'b0;
     end else begin
-      if (grant_ext)      owner_q <= 2'b10;
-      else                owner_q <= 2'b00;
       if (grant_ext)      ext_write_q <= ext_rb_wr;
 
       // EXT in-flight: set when grant_ext fires, cleared when its ack
@@ -361,16 +342,14 @@ module usb_ocp_recovery_top
 
   // EXT is word-native: return the full 32-bit read word. The shared AHB slave
   // holds the aperture offset across the request handshake. The ack/err
-  // are qualified with ext_in_flight_q so a multi-cycle cms_fifo SRAM read,
-  // which acks several cycles after the one-cycle grant_ext (owner_q==EXT only
-  // lasts that one cycle), is still forwarded back to the SoC AXI master.
+  // are qualified with the active EXT request window so same-cycle reads,
+  // registered writes, and multi-cycle FIFO reads all return to the SoC master.
   assign ext_rb_rdata = rb_rdata[31:0];
-  assign ext_rb_ack   = rb_ack & (grant_ext | (owner_q == 2'b10) | ext_in_flight_q);
-  assign ext_rb_err   = rb_err & (grant_ext | (owner_q == 2'b10) | ext_in_flight_q);
+  assign ext_rb_ack   = rb_ack & rb_is_ext;
+  assign ext_rb_err   = rb_err & rb_is_ext;
 
   // Request-cycle EXT qualifier for firmware-only side effects and FIFO
   // arbitration. Do not derive this from the registered response owner.
-  logic rb_is_ext;
   assign rb_is_ext = grant_ext | ext_in_flight_q;
 
   //////////////////////////////////////////////////////////////////////////////
@@ -402,7 +381,6 @@ module usb_ocp_recovery_top
     .setup_pkt_vld   (rec_setup_pkt_vld),
     .setup_pkt       (rec_setup_pkt),
     .ctrl_out_data   (rec_ctrl_out_data),
-    .ctrl_out_be     (rec_ctrl_out_be),
     .ctrl_out_vld    (rec_ctrl_out_vld),
     .ctrl_out_last   (rec_ctrl_out_last),
     .ctrl_out_rdy    (rec_ctrl_out_rdy),
@@ -939,20 +917,10 @@ module usb_ocp_recovery_top
   //////////////////////////////////////////////////////////////////////////////
 
   usb_ocp_recovery_cms_fifo #(
-    .CMS_ADDR_W (CMS_ADDR_W),
-    .NUM_CMS    (NUM_CMS),
     .FIFO_DEPTH (FIFO_DEPTH_DWORDS)
   ) u_a4_cms_fifo (
     .clk             (clk),
     .rst_ni          (rst_ni),
-
-    // Compatibility ports retained for the async FIFO hierarchy.
-    .clk_rd          (clk_rd),
-    .rst_rd_n        (rst_rd_n),
-    .fifo_rd_valid   (fifo_rd_valid),
-    .fifo_rd_ready   (fifo_rd_ready),
-    .fifo_rd_data    (fifo_rd_data),
-    .fifo_rd_depth   (fifo_rd_depth),
 
      .fifo_rb_sel     (fifo_rb_sel),
      .fifo_rb_cmd     (fifo_rb_cmd),
@@ -1011,6 +979,10 @@ module usb_ocp_recovery_top
         else $error("usb_ocp_recovery_top: usb master asserted wr+rd");
       assert (!(ext_rb_wr && ext_rb_rd))
         else $error("usb_ocp_recovery_top: ext master asserted wr+rd");
+      if (rb_ack || rb_err) begin
+        assert (rb_is_ext)
+          else $error("usb_ocp_recovery_top: EXT response outside active request window");
+      end
       if (ahb_dv && ahb_access_invalid_q) begin
         assert (!(ext_rb_wr || ext_rb_rd))
           else $error("usb_ocp_recovery_top: invalid AHB access reached the register bus");
