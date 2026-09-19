@@ -273,6 +273,99 @@ component usb_synchronizer
     );
 end component usb_synchronizer;
 
+component usb_ocp_recovery_post_sync_arb
+  generic (
+    USB_DATAWIDTH   : integer := 64;
+    RXNBYTES_BITS   : integer := 12;
+    TXNBYTES_BITS   : integer := 15;
+    C_REC_IFACE_NUM : integer range 0 to 255 := 0
+  );
+  port (
+    hclk : in std_logic;
+    hresetn : in std_logic;
+    sync_busreset : in std_logic;
+    pie_dev_selected_i : in std_logic_vector(1 downto 0);
+    dev0_port_reset_i : in std_logic;
+    dev0_usbreg_dev_connect_i : in std_logic;
+    usbreg_setup_i : in std_logic;
+    usbreg_setup_dma_o : out std_logic;
+    sync_sieint_epinfo_req_i : in std_logic;
+    sync_sieint_epinfo_epnr_i : in std_logic_vector(3 downto 0);
+    sync_sieint_epinfo_epdir_i : in std_logic;
+    sync_sieint_epinfo_setup_i : in std_logic;
+    sync_sieint_setup_received_i : in std_logic;
+    sync_sieint_rx_nbytes_i : in std_logic_vector(RXNBYTES_BITS-1 downto 0);
+    sync_sieint_rxdata_i : in std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    sync_sieint_rxdatavalid_i : in std_logic;
+    sync_sieint_endtransfer_i : in std_logic;
+    sync_sieint_success_i : in std_logic;
+    sync_sieint_error_i : in std_logic;
+    sync_sieint_errortype_i : in std_logic_vector(3 downto 0);
+    sync_sieint_sentNAK_i : in std_logic;
+    sync_sieint_txdatafetched_i : in std_logic;
+    epinfo_sync_valid_dma : in std_logic;
+    epinfo_sync_active_dma : in std_logic;
+    epinfo_sync_disabled_dma : in std_logic;
+    epinfo_sync_toggle_dma : in std_logic;
+    epinfo_sync_stall_dma : in std_logic;
+    epinfo_sync_iso_dma : in std_logic;
+    epinfo_sync_ratefeedbackmode_dma : in std_logic;
+    epinfo_sync_nbytes_dma : in std_logic_vector(TXNBYTES_BITS-1 downto 0);
+    epinfo_sync_maxpacket_dma : in std_logic_vector(1 downto 0);
+    epinfo_sync_txdata_dma : in std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    epinfo_sync_txdata_valid_dma : in std_logic;
+    sync_sieint_epinfo_req_o : out std_logic;
+    sync_sieint_epinfo_epnr_o : out std_logic_vector(3 downto 0);
+    sync_sieint_epinfo_epdir_o : out std_logic;
+    sync_sieint_epinfo_setup_o : out std_logic;
+    sync_sieint_rx_nbytes_o : out std_logic_vector(RXNBYTES_BITS-1 downto 0);
+    sync_sieint_rxdata_o : out std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    sync_sieint_rxdatavalid_o : out std_logic;
+    sync_sieint_endtransfer_o : out std_logic;
+    sync_sieint_success_o : out std_logic;
+    sync_sieint_sentNAK_o : out std_logic;
+    sync_sieint_txdatafetched_o : out std_logic;
+    sync_sieint_setup_received_o : out std_logic;
+    sync_sieint_error_o : out std_logic;
+    sync_sieint_errortype_o : out std_logic_vector(3 downto 0);
+    epinfo_sync_valid_o : out std_logic;
+    epinfo_sync_active_o : out std_logic;
+    epinfo_sync_disabled_o : out std_logic;
+    epinfo_sync_toggle_o : out std_logic;
+    epinfo_sync_stall_o : out std_logic;
+    epinfo_sync_iso_o : out std_logic;
+    epinfo_sync_ratefeedbackmode_o : out std_logic;
+    epinfo_sync_nbytes_o : out std_logic_vector(TXNBYTES_BITS-1 downto 0);
+    epinfo_sync_maxpacket_o : out std_logic_vector(1 downto 0);
+    epinfo_sync_txdata_o : out std_logic_vector(USB_DATAWIDTH-1 downto 0);
+    epinfo_sync_txdata_valid_o : out std_logic;
+    setup_pkt_vld : out std_logic;
+    setup_pkt : out std_logic_vector(63 downto 0);
+    ctrl_out_data : out std_logic_vector(31 downto 0);
+    ctrl_out_vld : out std_logic;
+    ctrl_out_last : out std_logic;
+    ctrl_out_rdy : in std_logic;
+    ctrl_in_data : in std_logic_vector(31 downto 0);
+    ctrl_in_be : in std_logic_vector(3 downto 0);
+    ctrl_in_vld : in std_logic;
+    ctrl_in_last : in std_logic;
+    ctrl_in_rdy : out std_logic;
+    ctrl_in_resp_bytes : in std_logic_vector(6 downto 0);
+    ctrl_in_resp_known : in std_logic;
+    ctrl_set_stall : in std_logic;
+    ctrl_xfer_done : out std_logic;
+    ctrl_xfer_abort : out std_logic;
+    fifo_batch_abort : out std_logic;
+    ctrl_length_error : out std_logic;
+    ocp_path_disable_i : in std_logic;
+    ocp_claim_abort_i : in std_logic;
+    fw_protocol_error_req_i : in std_logic;
+    fifo_payload_available_i : in std_logic;
+    fifo_free_dwords_i : in std_logic_vector(6 downto 0);
+    fifo_reservation_active_o : out std_logic
+  );
+end component usb_ocp_recovery_post_sync_arb;
+
 component usb_reg_if
   generic(C_ULPI_SUPPORT           : boolean := TRUE;
           C_UTMI_SUPPORT           : boolean := TRUE;
@@ -759,6 +852,31 @@ signal sync_sieint_success:            std_logic;
 signal sync_sieint_error:            std_logic;
 signal sync_sieint_errortype:            std_logic_vector(3 downto 0);
 signal sync_sieint_sentNAK:            std_logic;
+signal sync_sieint_epinfo_req_s:       std_logic;
+signal sync_sieint_epinfo_epnr_s:      std_logic_vector(3 downto 0);
+signal sync_sieint_epinfo_epdir_s:     std_logic;
+signal sync_sieint_epinfo_setup_s:     std_logic;
+signal sync_sieint_setup_received_s:   std_logic;
+signal sync_sieint_rx_nbytes_s:        std_logic_vector(11 downto 0);
+signal sync_sieint_rxdata_s:           std_logic_vector(USBPIE_DATAWIDTH-1 downto 0);
+signal sync_sieint_rxdatavalid_s:      std_logic;
+signal sync_sieint_endtransfer_s:      std_logic;
+signal sync_sieint_success_s:          std_logic;
+signal sync_sieint_error_s:            std_logic;
+signal sync_sieint_errortype_s:        std_logic_vector(3 downto 0);
+signal sync_sieint_sentNAK_s:          std_logic;
+signal sync_sieint_txdatafetched_s:    std_logic;
+signal epinfo_sync_valid_d:            std_logic;
+signal epinfo_sync_active_d:           std_logic;
+signal epinfo_sync_disabled_d:         std_logic;
+signal epinfo_sync_toggle_d:           std_logic;
+signal epinfo_sync_stall_d:            std_logic;
+signal epinfo_sync_iso_d:              std_logic;
+signal epinfo_sync_ratefeedbackmode_d: std_logic;
+signal epinfo_sync_nbytes_d:           std_logic_vector(14 downto 0);
+signal epinfo_sync_maxpacket_d:        std_logic_vector(1 downto 0);
+signal epinfo_sync_txdata_d:           std_logic_vector(USBPIE_DATAWIDTH-1 downto 0);
+signal epinfo_sync_txdata_valid_d:     std_logic;
 signal sync_busreset            : std_logic;
 signal sync_suspend             : std_logic;
 signal sync_lpm_suspend         : std_logic;
@@ -934,9 +1052,11 @@ signal upd_dma_rdata : std_logic_vector(RAM_DATAWIDTH-1 downto 0);
 signal dev0_usbreg_deviceenabled : std_logic;
 signal usbreg_setup_to_dma_bus  : std_logic_vector(C_NBDEV+1 downto 0);
 signal usbreg_setup_to_dma      : std_logic;
+signal usbreg_setup_to_dma_raw  : std_logic;
 signal usbreg_setup_to_decode   : std_logic_vector(C_NBDEV-1 downto 0);
 signal pie_dev_selected         : integer range 0 to C_NBDEV+1;
 signal sync_pie_dev_selected    : integer range 0 to C_NBDEV+1;
+signal sync_pie_dev_selected_slv: std_logic_vector(1 downto 0);
 
 
 signal dma_ep_list_start        : std_logic_vector(23 downto 0);
@@ -1254,11 +1374,11 @@ usb_synchronizer_1: usb_synchronizer
               sync_usbreg_dev_connect      => sync_usbreg_dev_connect ,
               sync_usbreg_remotewakeup     => sync_usbreg_remotewakeup ,
               sync_usbreg_lpmremotewakeup  => sync_usbreg_lpmremotewakeup ,
-              sync_sieint_epinfo_req       => sync_sieint_epinfo_req,
-              sync_sieint_epinfo_epnr      => sync_sieint_epinfo_epnr,
-              sync_sieint_epinfo_epdir     => sync_sieint_epinfo_epdir,
-              sync_sieint_epinfo_setup     => sync_sieint_epinfo_setup,
-              sync_sieint_setup_received   => sync_sieint_setup_received,
+              sync_sieint_epinfo_req       => sync_sieint_epinfo_req_s,
+              sync_sieint_epinfo_epnr      => sync_sieint_epinfo_epnr_s,
+              sync_sieint_epinfo_epdir     => sync_sieint_epinfo_epdir_s,
+              sync_sieint_epinfo_setup     => sync_sieint_epinfo_setup_s,
+              sync_sieint_setup_received   => sync_sieint_setup_received_s,
               sync_VBusDebounced           => sync_VBusDebounced,
               usbreg_vbuscomp_on           => usbreg_vbuscomp_on,
               usbreg_chrg_vbus             => usbreg_chrg_vbus,
@@ -1274,17 +1394,17 @@ usb_synchronizer_1: usb_synchronizer
               epinfo_sync_ratefeedbackmode => epinfo_sync_ratefeedbackmode,
               epinfo_sync_nbytes           => epinfo_sync_nbytes,
               epinfo_sync_maxpacket        => epinfo_sync_maxpacket,
-              sync_sieint_txdatafetched    => sync_sieint_txdatafetched,
+              sync_sieint_txdatafetched    => sync_sieint_txdatafetched_s,
               epinfo_sync_txdata           => epinfo_sync_txdata,
               epinfo_sync_txdata_valid     => epinfo_sync_txdata_valid,
-              sync_sieint_rx_nbytes        => sync_sieint_rx_nbytes,
-              sync_sieint_rxdata           => sync_sieint_rxdata,
-              sync_sieint_rxdatavalid      => sync_sieint_rxdatavalid,
-              sync_sieint_endtransfer      => sync_sieint_endtransfer,
-              sync_sieint_success          => sync_sieint_success,
-              sync_sieint_error            => sync_sieint_error,
-              sync_sieint_errortype        => sync_sieint_errortype,
-              sync_sieint_sentNAK          => sync_sieint_sentNAK,
+              sync_sieint_rx_nbytes        => sync_sieint_rx_nbytes_s,
+              sync_sieint_rxdata           => sync_sieint_rxdata_s,
+              sync_sieint_rxdatavalid      => sync_sieint_rxdatavalid_s,
+              sync_sieint_endtransfer      => sync_sieint_endtransfer_s,
+              sync_sieint_success          => sync_sieint_success_s,
+              sync_sieint_error            => sync_sieint_error_s,
+              sync_sieint_errortype        => sync_sieint_errortype_s,
+              sync_sieint_sentNAK          => sync_sieint_sentNAK_s,
               sync_set_frameint            => sync_set_frameint,
               sync_busreset                => sync_busreset,
               sync_suspend                 => sync_suspend,
@@ -1538,6 +1658,101 @@ usb_ahb_slave_2 : usb_ahb_slave
     reg_write  => dev1_reg_write
   );
 
+usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
+  generic map (
+    USB_DATAWIDTH   => USBPIE_DATAWIDTH,
+    RXNBYTES_BITS   => 12,
+    TXNBYTES_BITS   => 15,
+    C_REC_IFACE_NUM => 0
+  )
+  port map (
+    hclk => hclk,
+    hresetn => hresetn,
+    sync_busreset => sync_busreset,
+    pie_dev_selected_i => sync_pie_dev_selected_slv,
+    dev0_port_reset_i => upd_dev0_portreset,
+    dev0_usbreg_dev_connect_i => dev0_usbreg_dev_connect,
+    usbreg_setup_i => usbreg_setup_to_dma_raw,
+    usbreg_setup_dma_o => usbreg_setup_to_dma,
+    sync_sieint_epinfo_req_i => sync_sieint_epinfo_req_s,
+    sync_sieint_epinfo_epnr_i => sync_sieint_epinfo_epnr_s,
+    sync_sieint_epinfo_epdir_i => sync_sieint_epinfo_epdir_s,
+    sync_sieint_epinfo_setup_i => sync_sieint_epinfo_setup_s,
+    sync_sieint_setup_received_i => sync_sieint_setup_received_s,
+    sync_sieint_rx_nbytes_i => sync_sieint_rx_nbytes_s,
+    sync_sieint_rxdata_i => sync_sieint_rxdata_s,
+    sync_sieint_rxdatavalid_i => sync_sieint_rxdatavalid_s,
+    sync_sieint_endtransfer_i => sync_sieint_endtransfer_s,
+    sync_sieint_success_i => sync_sieint_success_s,
+    sync_sieint_error_i => sync_sieint_error_s,
+    sync_sieint_errortype_i => sync_sieint_errortype_s,
+    sync_sieint_sentNAK_i => sync_sieint_sentNAK_s,
+    sync_sieint_txdatafetched_i => sync_sieint_txdatafetched_s,
+    epinfo_sync_valid_dma => epinfo_sync_valid_d,
+    epinfo_sync_active_dma => epinfo_sync_active_d,
+    epinfo_sync_disabled_dma => epinfo_sync_disabled_d,
+    epinfo_sync_toggle_dma => epinfo_sync_toggle_d,
+    epinfo_sync_stall_dma => epinfo_sync_stall_d,
+    epinfo_sync_iso_dma => epinfo_sync_iso_d,
+    epinfo_sync_ratefeedbackmode_dma => epinfo_sync_ratefeedbackmode_d,
+    epinfo_sync_nbytes_dma => epinfo_sync_nbytes_d,
+    epinfo_sync_maxpacket_dma => epinfo_sync_maxpacket_d,
+    epinfo_sync_txdata_dma => epinfo_sync_txdata_d,
+    epinfo_sync_txdata_valid_dma => epinfo_sync_txdata_valid_d,
+    sync_sieint_epinfo_req_o => sync_sieint_epinfo_req,
+    sync_sieint_epinfo_epnr_o => sync_sieint_epinfo_epnr,
+    sync_sieint_epinfo_epdir_o => sync_sieint_epinfo_epdir,
+    sync_sieint_epinfo_setup_o => sync_sieint_epinfo_setup,
+    sync_sieint_rx_nbytes_o => sync_sieint_rx_nbytes,
+    sync_sieint_rxdata_o => sync_sieint_rxdata,
+    sync_sieint_rxdatavalid_o => sync_sieint_rxdatavalid,
+    sync_sieint_endtransfer_o => sync_sieint_endtransfer,
+    sync_sieint_success_o => sync_sieint_success,
+    sync_sieint_sentNAK_o => sync_sieint_sentNAK,
+    sync_sieint_txdatafetched_o => sync_sieint_txdatafetched,
+    sync_sieint_setup_received_o => sync_sieint_setup_received,
+    sync_sieint_error_o => sync_sieint_error,
+    sync_sieint_errortype_o => sync_sieint_errortype,
+    epinfo_sync_valid_o => epinfo_sync_valid,
+    epinfo_sync_active_o => epinfo_sync_active,
+    epinfo_sync_disabled_o => epinfo_sync_disabled,
+    epinfo_sync_toggle_o => epinfo_sync_toggle,
+    epinfo_sync_stall_o => epinfo_sync_stall,
+    epinfo_sync_iso_o => epinfo_sync_iso,
+    epinfo_sync_ratefeedbackmode_o => epinfo_sync_ratefeedbackmode,
+    epinfo_sync_nbytes_o => epinfo_sync_nbytes,
+    epinfo_sync_maxpacket_o => epinfo_sync_maxpacket,
+    epinfo_sync_txdata_o => epinfo_sync_txdata,
+    epinfo_sync_txdata_valid_o => epinfo_sync_txdata_valid,
+    setup_pkt_vld => rec_setup_pkt_vld,
+    setup_pkt => rec_setup_pkt,
+    ctrl_out_data => rec_ctrl_out_data,
+    ctrl_out_vld => rec_ctrl_out_vld,
+    ctrl_out_last => rec_ctrl_out_last,
+    ctrl_out_rdy => rec_ctrl_out_rdy,
+    ctrl_in_data => rec_ctrl_in_data,
+    ctrl_in_be => rec_ctrl_in_be,
+    ctrl_in_vld => rec_ctrl_in_vld,
+    ctrl_in_last => rec_ctrl_in_last,
+    ctrl_in_rdy => rec_ctrl_in_rdy,
+    ctrl_in_resp_bytes => rec_ctrl_in_resp_bytes,
+    ctrl_in_resp_known => rec_ctrl_in_resp_known,
+    ctrl_set_stall => rec_ctrl_set_stall,
+    ctrl_xfer_done => rec_ctrl_xfer_done,
+    ctrl_xfer_abort => rec_ctrl_xfer_abort,
+    fifo_batch_abort => rec_ctrl_fifo_batch_abort,
+    ctrl_length_error => rec_ctrl_length_error,
+    ocp_path_disable_i => rec_ocp_path_disable,
+    ocp_claim_abort_i => rec_ocp_claim_abort,
+    fw_protocol_error_req_i => rec_fw_protocol_error_req,
+    fifo_payload_available_i => rec_fifo_payload_available,
+    fifo_free_dwords_i => rec_fifo_free_dwords,
+    fifo_reservation_active_o => rec_fifo_reservation_active
+  );
+
+sync_pie_dev_selected_slv <=
+  std_logic_vector(to_unsigned(sync_pie_dev_selected, 2));
+
 usb_dma_1 : usb_dma
   generic map (USB_DATAWIDTH        => USBPIE_DATAWIDTH,
                RAM_DATAWIDTH        => RAM_DATAWIDTH,
@@ -1558,18 +1773,18 @@ usb_dma_1 : usb_dma
       sync_sieint_epinfo_epnr       => sync_sieint_epinfo_epnr,
       sync_sieint_epinfo_epdir      => sync_sieint_epinfo_epdir,
       sync_sieint_epinfo_setup      => sync_sieint_epinfo_setup,
-      epinfo_sync_valid             => epinfo_sync_valid,
-      epinfo_sync_active            => epinfo_sync_active,
-      epinfo_sync_disabled          => epinfo_sync_disabled,
-      epinfo_sync_toggle            => epinfo_sync_toggle,
-      epinfo_sync_stall             => epinfo_sync_stall,
-      epinfo_sync_iso               => epinfo_sync_iso,
-      epinfo_sync_ratefeedbackmode  => epinfo_sync_ratefeedbackmode,
-      epinfo_sync_nbytes            => epinfo_sync_nbytes,
-      epinfo_sync_maxpacket         => epinfo_sync_maxpacket,
+       epinfo_sync_valid             => epinfo_sync_valid_d,
+       epinfo_sync_active            => epinfo_sync_active_d,
+       epinfo_sync_disabled          => epinfo_sync_disabled_d,
+       epinfo_sync_toggle            => epinfo_sync_toggle_d,
+       epinfo_sync_stall             => epinfo_sync_stall_d,
+       epinfo_sync_iso               => epinfo_sync_iso_d,
+       epinfo_sync_ratefeedbackmode  => epinfo_sync_ratefeedbackmode_d,
+       epinfo_sync_nbytes            => epinfo_sync_nbytes_d,
+       epinfo_sync_maxpacket         => epinfo_sync_maxpacket_d,
       sync_sieint_txdatafetched     => sync_sieint_txdatafetched,
-      epinfo_sync_txdata            => epinfo_sync_txdata,
-      epinfo_sync_txdata_valid      => epinfo_sync_txdata_valid,
+       epinfo_sync_txdata            => epinfo_sync_txdata_d,
+       epinfo_sync_txdata_valid      => epinfo_sync_txdata_valid_d,
       sync_sieint_rx_nbytes         => sync_sieint_rx_nbytes,
       sync_sieint_rxdata            => sync_sieint_rxdata,
       sync_sieint_rxdatavalid       => sync_sieint_rxdatavalid,
@@ -1621,7 +1836,7 @@ usb_dma_1 : usb_dma
   usbreg_setup_to_dma_bus(C_NBDEV)            <= dev0_usbreg_setup;
   usbreg_setup_to_dma_bus(C_NBDEV+1)          <= dev1_usbreg_setup;
 
-  usbreg_setup_to_dma <= usbreg_setup_to_dma_bus(sync_pie_dev_selected);
+  usbreg_setup_to_dma_raw <= usbreg_setup_to_dma_bus(sync_pie_dev_selected);
 
   PROC_SKIP_SELECTED : process(dma_skipdev_selected,
                                dev0_usbreg_ep_skip,

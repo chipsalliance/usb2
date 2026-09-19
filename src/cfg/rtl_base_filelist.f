@@ -7,7 +7,6 @@ ${USB_ROOT}/ip_xxx_3511/INTERFACE/ip_xxx_3511.e.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/ip_xxx_3511_cmp_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_cfg_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_configuration_app_cmsis_dap_jtag_pkg.p.vhdl
-${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_ep_config_hub_cmsis_dap_jtag_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_ep_config_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/INTERFACE/usb_fs_hub_pkg.p.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_ahb_master.m.vhdl
@@ -20,6 +19,7 @@ ${USB_ROOT}/ip_xxx_3511/RTL/usb_host_reg_if.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_host_sof_timer.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_host_synchronizer.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_pie.m.vhdl
+${USB_ROOT}/ip_xxx_3511/RTL/usb_ocp_recovery_post_sync_arb.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_reg_if.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_rgen.m.vhdl
 ${USB_ROOT}/ip_xxx_3511/RTL/usb_sie.m.vhdl
