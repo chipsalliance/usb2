@@ -21,7 +21,7 @@
 
 addrmap usb_ocp_recovery_reg {
     name = "USB OCP Recovery";
-    desc = "USB transport OCP Secure Firmware Recovery v1.1 register aperture. OCP command fields follow OCP Recovery v1.1 Sec 9.2 command summaries, with USB-specific live-status behaviors aligned to usb_ocp_recovery_regs.sv and usb_ocp_recovery_cms_fifo.sv.";
+    desc = "USB transport OCP Secure Firmware Recovery v1.1 register aperture. OCP command fields follow OCP Recovery v1.1 Sec 9.2 command summaries, with USB-specific live-status behaviors aligned to usb_ocp_recovery_reg.sv and usb_ocp_recovery_cms_fifo.sv.";
     default regwidth = 32;
     default hw = na;
     signal {activelow; async;} rst_ni;
@@ -661,7 +661,7 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Hardware status";
-        desc = "HW_STATUS bytes 0-3. OCP Recovery v1.1 Sec 9.2 HW_STATUS; byte layout follows the corrected usb_ocp_recovery_regs.sv implementation.";
+        desc = "HW_STATUS bytes 0-3. OCP Recovery v1.1 Sec 9.2 HW_STATUS; byte layout follows the corrected usb_ocp_recovery_reg.sv implementation.";
         field {
             name = "Device temperature critical";
             desc = "Byte 0 bit 0 reports temperature-critical status. Firmware owns the stored byte through cpuif and the USB Recovery Agent reads the same storage. OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
@@ -692,7 +692,7 @@ addrmap usb_ocp_recovery_reg {
         } RESERVED_7_3[7:3];
         field {
             name = "Vendor HW status";
-            desc = "Byte 1 holds the vendor HW status bitmap. Firmware owns the stored byte through cpuif and the USB Recovery Agent reads the same storage. This byte location matches the corrected usb_ocp_recovery_regs.sv layout and OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
+            desc = "Byte 1 holds the vendor HW status bitmap. Firmware owns the stored byte through cpuif and the USB Recovery Agent reads the same storage. This byte location matches the corrected usb_ocp_recovery_reg.sv layout and OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
             sw = rw;
             hw = r;
             reset = 8'h00;
@@ -706,7 +706,7 @@ addrmap usb_ocp_recovery_reg {
         } CTEMP[23:16];
         field {
             name = "Vendor HW status length";
-            desc = "Byte 3 reports the vendor HW status payload length. Firmware owns the stored byte through cpuif and the USB Recovery Agent reads the same storage. This byte location matches the corrected usb_ocp_recovery_regs.sv layout and OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
+            desc = "Byte 3 reports the vendor HW status payload length. Firmware owns the stored byte through cpuif and the USB Recovery Agent reads the same storage. This byte location matches the corrected usb_ocp_recovery_reg.sv layout and OCP Recovery v1.1 Sec 9.2 HW_STATUS.";
             sw = rw;
             hw = r;
             reset = 8'h00;
