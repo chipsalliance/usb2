@@ -361,7 +361,7 @@ module usb_ocp_recovery_top
   // through the arbiter to the legacy SIE unmodified, so standard USB
   // enumeration (GET_DESCRIPTOR / SET_ADDRESS / SET_CONFIGURATION /
   // GET_STATUS / ...) continues to be handled by the MCU EPCS.  See
-  // usb_ocp_recovery_post_sync_arb.{e,m}.vhdl for the class-match definition
+  // usb_ocp_recovery_post_sync_arb.m.vhdl for the class-match definition
   // (OCP Recovery v1.1 Sec 8.5.1; USB 2.0 Sec 9.3 Tbl 9-2 SETUP byte layout).
   //
   // Because the arbiter delivers only claimed SETUPs, this module treats every

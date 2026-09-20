@@ -10,7 +10,7 @@ ${USB_ROOT}/usb_hub_composite_device/RTL/RTL/usb_reg_if.m.vhdl
 ${USB_ROOT}/usb_hub_composite_device/RTL/RTL/usb_dma.m.vhdl
 ${USB_ROOT}/usb_hub_composite_device/RTL/RTL/usb_pie.m.vhdl
 ${USB_ROOT}/usb_hub_composite_device/RTL/RTL/usb_synchronizer.m.vhdl
-${USB_ROOT}/ip_xxx_3511/RTL/usb_ocp_recovery_post_sync_arb.m.vhdl
+${USB_ROOT}/usb_hub_composite_device/RTL/RTL/usb_ocp_recovery_post_sync_arb.m.vhdl
 ${USB_ROOT}/usb_hub_composite_device/RTL/RTL/usb_mux.m.vhdl
 ${USB_ROOT}/usb_hub_composite_device/RTL/RTL/usb_ep0_handler.m.vhdl
 ${USB_ROOT}/usb_hub_composite_device/RTL/RTL/usb_ep0_hub_descr.m.vhdl
