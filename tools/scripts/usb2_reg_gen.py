@@ -36,7 +36,6 @@ from peakrdl_uvm import UVMExporter
 from peakrdl_html import HTMLExporter
 from peakrdl_regblock.udps import ALL_UDPS
 from peakrdl_regblock.cpuif.passthrough import PassthroughCpuif
-from math import log, ceil, floor
 import sys
 import os
 import re
@@ -82,7 +81,12 @@ class SVPkgAppendingListener(RDLListener):
         self.file.close()
         self.file = open(pkg_file_path, 'w')
         self.file.write(self.orig_file)
-        self.file.write("\n    localparam " + node.inst_name.upper() + "_ADDR_WIDTH = " + "32'd" + str(int(floor(log(node.total_size, 2)) + 1)) + ";")
+        largest_valid_offset = node.total_size - 1
+        address_width = max(1, largest_valid_offset.bit_length())
+        self.file.write(
+            "\n    localparam " + node.inst_name.upper() +
+            "_ADDR_WIDTH = 32'd" + str(address_width) + ";"
+        )
 
     def exit_Addrmap(self, node):
         self.file.write("\n\nendpackage")
@@ -124,7 +128,9 @@ for udp in ALL_UDPS:
 
 try:
     if not repo_root:
-      print("CALIPTRA_ROOT environment variable is not defined.")
+        print("CALIPTRA_ROOT environment variable is not defined.",
+              file=sys.stderr)
+        sys.exit(1)
     # Compile your RDL files
     #compile the kv defines so that rdl files including kv controls have the definition
     rdlc.compile_file(os.path.join(repo_root, "src/keyvault/rtl/kv_def.rdl")) 

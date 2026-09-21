@@ -768,6 +768,6 @@ package usb_ocp_recovery_reg_pkg;
         usb_ocp_recovery_reg__CALIPTRA_CTRL__out_t CALIPTRA_CTRL;
     } usb_ocp_recovery_reg__out_t;
 
-    localparam USB_OCP_RECOVERY_REG_ADDR_WIDTH = 32'd12;
+    localparam USB_OCP_RECOVERY_REG_ADDR_WIDTH = 32'd11;
 
 endpackage
