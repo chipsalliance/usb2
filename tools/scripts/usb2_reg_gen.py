@@ -62,7 +62,6 @@ if args.output_dir is not None:
     os.makedirs(rtl_output_dir, exist_ok=True)
 else:
     rtl_output_dir = os.path.abspath(os.path.dirname(rdl_file))
-repo_root = os.environ.get('CALIPTRA_ROOT')
 
 # Listener to retrieve the address width at the CPU IF and write as a param to the pkg
 class SVPkgAppendingListener(RDLListener):
@@ -127,13 +126,6 @@ for udp in ALL_UDPS:
     rdlc.register_udp(udp)
 
 try:
-    if not repo_root:
-        print("CALIPTRA_ROOT environment variable is not defined.",
-              file=sys.stderr)
-        sys.exit(1)
-    # Compile your RDL files
-    #compile the kv defines so that rdl files including kv controls have the definition
-    rdlc.compile_file(os.path.join(repo_root, "src/keyvault/rtl/kv_def.rdl")) 
     rdlc.compile_file(rdl_file)
 
     # Build parameters dictionary from command line arguments
@@ -179,15 +171,15 @@ try:
     )
 
 #    # Export a UVM register model
-#    exporter = UVMExporter(user_template_dir=os.path.join(repo_root, "tools/templates/rdl/uvm"))
+#    exporter = UVMExporter()
 #    exporter.export(root, os.path.join(rtl_output_dir, os.path.splitext(os.path.basename(rdl_file))[0]) + "_uvm.sv")
 #    # The below lines are used to generate a baseline/starting point for the include files "<reg_name>_covergroups.svh" and "<reg_name>_sample.svh"
 #    # The generated files will need to be hand-edited to provide the desired functionality.
 #    # Run this script directly on the target RDL file, with the second argument "--cov" to generate the files.
 #    if build_cov == 1:
-#        exporter = UVMExporter(user_template_dir=os.path.join(repo_root, "tools/templates/rdl/cov"))
+#        exporter = UVMExporter()
 #        exporter.export(root, os.path.join(rtl_output_dir, os.path.splitext(os.path.basename(rdl_file))[0]) + "_covergroups.svh")
-#        exporter = UVMExporter(user_template_dir=os.path.join(repo_root, "tools/templates/rdl/smp"))
+#        exporter = UVMExporter()
 #        exporter.export(root, os.path.join(rtl_output_dir, os.path.splitext(os.path.basename(rdl_file))[0]) + "_sample.svh")
 
     # Traverse the register model!
