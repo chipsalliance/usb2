@@ -30,6 +30,9 @@ configuration ip_xxx_3511_hs_mem_compound_structure_cfg of ip_xxx_3511_hs_mem_co
     for usb_synchronizer_1: usb_synchronizer
       use entity work.usb_synchronizer(rtl);
     end for;
+    for usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
+      use entity work.usb_ocp_recovery_post_sync_arb(rtl);
+    end for;
     for usb_reg_if_1 : usb_reg_if
       use entity work.usb_reg_if(rtl);
     end for;
@@ -71,4 +74,3 @@ configuration ip_xxx_3511_hs_mem_compound_structure_cfg of ip_xxx_3511_hs_mem_co
     end for;
   end for;
 end ip_xxx_3511_hs_mem_compound_structure_cfg;
-
