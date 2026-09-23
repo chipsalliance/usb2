@@ -1372,7 +1372,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- Safety properties (simulation-only).
     -- ------------------------------------------------------------------
     -- pragma translate_off
-    assertions_proc : process (hclk)
+    assertions_proc : process (hclk, hresetn)
       variable prev_st_v : t_trap_state;
       variable prev_non_ep0_end_v : boolean;
       variable prev_snap_valid_v : std_logic;
@@ -1398,96 +1398,32 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
       variable prev_drop_mask_v : std_logic;
       variable prev_setup_dma_owner_v : std_logic_vector(1 downto 0);
     begin
-      if rising_edge(hclk) then
-        if hresetn = '0' then
-          prev_st_v                    := T_IDLE;
-          prev_non_ep0_end_v           := false;
-          prev_snap_valid_v            := '0';
-          prev_snap_active_v           := '0';
-          prev_snap_stall_v            := '0';
-          prev_snap_disabled_v         := '0';
-          prev_snap_toggle_v           := '0';
-          prev_snap_nbytes_v           := (others => '0');
-          prev_snap_maxpacket_v        := (others => '0');
-          prev_snap_iso_v              := '0';
-          prev_snap_ratefeedback_v     := '0';
-          prev_snap_hold_v             := false;
-          expect_drop_clear_v          := false;
-          expect_drop_hold_v           := false;
-          expect_pending_hold_v        := false;
-          expect_snapshot_clear_v      := false;
-          expect_replacement_stall_v   := false;
-          expect_fw_stall_v            := false;
-          prev_stall_release_v         := false;
-          expect_local_cleanup_v       := false;
-          expect_bus_reset_cleanup_v   := false;
-          expect_claim_hold_v          := false;
-          prev_drop_mask_v             := '0';
-          prev_setup_dma_owner_v       := (others => '0');
-        else
-          prev_non_ep0_end_v := (sync_sieint_endtransfer_i = '1')
-                                and (non_ep0_txn_r = '1')
-                                and (new_setup_c = '0')
-                                and (ctrl_set_stall = '0')
-                                and (rx_length_error_r = '0');
-          prev_st_v := st;
-          prev_snap_valid_v := rsp_snap_valid_r;
-          prev_snap_active_v := rsp_snap_active_r;
-          prev_snap_stall_v := rsp_snap_stall_r;
-          prev_snap_disabled_v := rsp_snap_disabled_r;
-          prev_snap_toggle_v := rsp_snap_toggle_r;
-          prev_snap_nbytes_v := rsp_snap_nbytes_r;
-          prev_snap_maxpacket_v := rsp_snap_maxpacket_r;
-          prev_snap_iso_v := rsp_snap_iso_r;
-          prev_snap_ratefeedback_v := rsp_snap_ratefeedback_r;
-          prev_snap_hold_v := (rsp_snap_valid_r = '1') and
-                              (ocp_ep0_txn_r = '1') and
-                               (sync_sieint_epinfo_req_i = '0') and
-                               (sync_sieint_endtransfer_i = '0');
-          expect_drop_clear_v := (drop_setup_success_r = '1') and
-                                  (drop_dma_valid_seen_r = '1') and
-                                 (epinfo_sync_valid_dma = '0') and
-                                 (sync_busreset = '0') and
-                                   (dev0_local_reset_c = '0') and
-                                  (ocp_claim_abort_i = '0');
-          expect_drop_hold_v := (drop_setup_success_r = '1') and
-                                not ((drop_dma_valid_seen_r = '1') and
-                                     (epinfo_sync_valid_dma = '0')) and
-                                (sync_busreset = '0') and
-                                (dev0_local_reset_c = '0');
-          expect_pending_hold_v := (setup_pending_r = '1') and
-                                   not ((setup_pending_low_seen_r = '1') and
-                                        (epinfo_sync_valid_dma = '1')) and
-                                   (new_setup_c = '0') and
-                                    (sync_busreset = '0') and
-                                     (dev0_local_reset_c = '0');
-          expect_snapshot_clear_v := (sync_busreset = '1') or
-                                     (dev0_local_reset_c = '1') or
-                                     (ocp_claim_abort_i = '1');
-          expect_replacement_stall_v :=
-              (new_setup_c = '1') and (replacement_stall_r = '1') and
-              (sync_busreset = '0') and (dev0_local_reset_c = '0') and
-              (ocp_claim_abort_i = '0');
-          expect_fw_stall_v := (fw_protocol_error_req_i = '1') and
-                               (ep0_ocp_owner_r = '1') and
-                               (new_setup_c = '0') and
-                               (sync_busreset = '0') and
-                               (dev0_local_reset_c = '0') and
-                               (ocp_claim_abort_i = '0');
-          prev_stall_release_v := (new_setup_c = '1') or
-                                  (sync_busreset = '1') or
-                                   (dev0_local_reset_c = '1') or
-                                  (ocp_claim_abort_i = '1');
-          expect_local_cleanup_v := (sync_busreset = '1') or
-                                    (dev0_local_reset_c = '1') or
-                                     (ocp_claim_abort_i = '1');
-          expect_bus_reset_cleanup_v := (sync_busreset = '1');
-          expect_claim_hold_v := (claim_q = '1') and
-            (sync_sieint_epinfo_req_i = '1') and
-            (dev0_selected_c = '0') and (sync_busreset = '0') and
-            (dev0_local_reset_c = '0') and (ocp_claim_abort_i = '0');
-          prev_drop_mask_v := drop_setup_success_r;
-            prev_setup_dma_owner_v := setup_dma_owner_r;
+      if hresetn = '0' then
+        prev_st_v                    := T_IDLE;
+        prev_non_ep0_end_v           := false;
+        prev_snap_valid_v            := '0';
+        prev_snap_active_v           := '0';
+        prev_snap_stall_v            := '0';
+        prev_snap_disabled_v         := '0';
+        prev_snap_toggle_v           := '0';
+        prev_snap_nbytes_v           := (others => '0');
+        prev_snap_maxpacket_v        := (others => '0');
+        prev_snap_iso_v              := '0';
+        prev_snap_ratefeedback_v     := '0';
+        prev_snap_hold_v             := false;
+        expect_drop_clear_v          := false;
+        expect_drop_hold_v           := false;
+        expect_pending_hold_v        := false;
+        expect_snapshot_clear_v      := false;
+        expect_replacement_stall_v   := false;
+        expect_fw_stall_v            := false;
+        prev_stall_release_v         := false;
+        expect_local_cleanup_v       := false;
+        expect_bus_reset_cleanup_v   := false;
+        expect_claim_hold_v          := false;
+        prev_drop_mask_v             := '0';
+        prev_setup_dma_owner_v       := (others => '0');
+      elsif rising_edge(hclk) then
           if expect_drop_clear_v then
             assert drop_setup_success_r = '0'
               report "post_sync_arb: claimed SETUP mask survived first valid fall after valid_seen"
@@ -1765,7 +1701,70 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                       and (rx_total_bytes_r > to_unsigned(64, rx_total_bytes_r'length)))
             report "post_sync_arb: OUT byte count exceeds single MaxPacket (64B)"
             severity failure;
-        end if;
+
+          prev_non_ep0_end_v := (sync_sieint_endtransfer_i = '1')
+                                and (non_ep0_txn_r = '1')
+                                and (new_setup_c = '0')
+                                and (ctrl_set_stall = '0')
+                                and (rx_length_error_r = '0');
+          prev_st_v := st;
+          prev_snap_valid_v := rsp_snap_valid_r;
+          prev_snap_active_v := rsp_snap_active_r;
+          prev_snap_stall_v := rsp_snap_stall_r;
+          prev_snap_disabled_v := rsp_snap_disabled_r;
+          prev_snap_toggle_v := rsp_snap_toggle_r;
+          prev_snap_nbytes_v := rsp_snap_nbytes_r;
+          prev_snap_maxpacket_v := rsp_snap_maxpacket_r;
+          prev_snap_iso_v := rsp_snap_iso_r;
+          prev_snap_ratefeedback_v := rsp_snap_ratefeedback_r;
+          prev_snap_hold_v := (rsp_snap_valid_r = '1') and
+                              (ocp_ep0_txn_r = '1') and
+                              (sync_sieint_epinfo_req_i = '0') and
+                              (sync_sieint_endtransfer_i = '0');
+          expect_drop_clear_v := (drop_setup_success_r = '1') and
+                                 (drop_dma_valid_seen_r = '1') and
+                                 (epinfo_sync_valid_dma = '0') and
+                                 (sync_busreset = '0') and
+                                 (dev0_local_reset_c = '0') and
+                                 (ocp_claim_abort_i = '0');
+          expect_drop_hold_v := (drop_setup_success_r = '1') and
+                                not ((drop_dma_valid_seen_r = '1') and
+                                     (epinfo_sync_valid_dma = '0')) and
+                                (sync_busreset = '0') and
+                                (dev0_local_reset_c = '0');
+          expect_pending_hold_v := (setup_pending_r = '1') and
+                                   not ((setup_pending_low_seen_r = '1') and
+                                        (epinfo_sync_valid_dma = '1')) and
+                                   (new_setup_c = '0') and
+                                   (sync_busreset = '0') and
+                                   (dev0_local_reset_c = '0');
+          expect_snapshot_clear_v := (sync_busreset = '1') or
+                                     (dev0_local_reset_c = '1') or
+                                     (ocp_claim_abort_i = '1');
+          expect_replacement_stall_v :=
+              (new_setup_c = '1') and (replacement_stall_r = '1') and
+              (sync_busreset = '0') and (dev0_local_reset_c = '0') and
+              (ocp_claim_abort_i = '0');
+          expect_fw_stall_v := (fw_protocol_error_req_i = '1') and
+                               (ep0_ocp_owner_r = '1') and
+                               (new_setup_c = '0') and
+                               (sync_busreset = '0') and
+                               (dev0_local_reset_c = '0') and
+                               (ocp_claim_abort_i = '0');
+          prev_stall_release_v := (new_setup_c = '1') or
+                                  (sync_busreset = '1') or
+                                  (dev0_local_reset_c = '1') or
+                                  (ocp_claim_abort_i = '1');
+          expect_local_cleanup_v := (sync_busreset = '1') or
+                                    (dev0_local_reset_c = '1') or
+                                    (ocp_claim_abort_i = '1');
+          expect_bus_reset_cleanup_v := (sync_busreset = '1');
+          expect_claim_hold_v := (claim_q = '1') and
+            (sync_sieint_epinfo_req_i = '1') and
+            (dev0_selected_c = '0') and (sync_busreset = '0') and
+            (dev0_local_reset_c = '0') and (ocp_claim_abort_i = '0');
+          prev_drop_mask_v := drop_setup_success_r;
+          prev_setup_dma_owner_v := setup_dma_owner_r;
       end if;
     end process assertions_proc;
     -- pragma translate_on
