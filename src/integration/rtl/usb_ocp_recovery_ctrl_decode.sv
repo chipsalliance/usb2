@@ -50,7 +50,7 @@
 
 module usb_ocp_recovery_ctrl_decode (
   input  logic        clk,
-  input  logic        rst_ni,              // sync active-low
+  input  logic        rst_ni,              // async active-low
 
   // from the arbiter control EP surface (32-bit word + byte-enable)
   input  logic        setup_pkt_vld,
@@ -123,10 +123,10 @@ module usb_ocp_recovery_ctrl_decode (
     direction_legal_s = 1'b1;
     length_legal_s   = 1'b0;
     response_meta_s  = ocp_response_meta(cmd_code_s);
-    if (response_meta_s.known && (wlength_s < {9'h000, response_meta_s.bytes})) begin
+    if (response_meta_s.known && (wlength_s < 16'(response_meta_s.bytes))) begin
       read_length_s = wlength_s;
     end else begin
-      read_length_s = {9'h000, response_meta_s.bytes};
+      read_length_s = 16'(response_meta_s.bytes);
     end
 
     // OCP Recovery v1.1 Sec 9.2 command envelopes are rejected at SETUP
@@ -273,7 +273,7 @@ module usb_ocp_recovery_ctrl_decode (
   //---------------------------------------------------------------------------
   // Sequential
   //---------------------------------------------------------------------------
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       state_q  <= S_IDLE;
       cmd_q    <= '0;

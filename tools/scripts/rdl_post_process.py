@@ -24,6 +24,7 @@ def scrub_line_by_line(fname):
     rhandle = open(fname, "r+")
     mod_cnt = 0
     mod_lines = ""
+    needs_assert_include = False
 
     # Line by line manipulation
     # Look for unpacked arrays (could be struct arrays or signal arrays)
@@ -67,6 +68,7 @@ def scrub_line_by_line(fname):
                 reset_expr = "!" + reset_match.group(1)
             else:
                 reset_expr = "rst"
+            needs_assert_include = True
             mod_lines+="\n"
             mod_lines+="`CALIPTRA_ASSERT_KNOWN(ERR_HWIF_IN, hwif_in, clk, " + reset_expr + ")\n"
             mod_lines+="\n"
@@ -77,6 +79,13 @@ def scrub_line_by_line(fname):
 
     # Close file for reading, reopen to write modified contents
     rhandle.close()
+    if needs_assert_include and '`include "caliptra_sva.svh"' not in mod_lines:
+        lines = mod_lines.splitlines(keepends=True)
+        insert_at = 0
+        while insert_at < len(lines) and lines[insert_at].lstrip().startswith("//"):
+            insert_at += 1
+        lines.insert(insert_at, '\n`include "caliptra_sva.svh"\n')
+        mod_lines = "".join(lines)
     whandle = open(fname, "w")
     whandle.write(mod_lines)
     whandle.close()

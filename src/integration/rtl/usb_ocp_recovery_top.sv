@@ -194,6 +194,31 @@ module usb_ocp_recovery_top
   logic                       ocp_claim_abort_clear;
   logic                       protocol_error_general_clear;
 
+  // --- adapter <-> regblock cpuif passthrough ---
+  logic        cpuif_req;
+  logic        cpuif_req_is_wr;
+  logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] cpuif_addr;
+  logic [31:0] cpuif_wr_data;
+  logic [31:0] cpuif_wr_biten;
+  logic        cpuif_rd_ack;
+  logic        cpuif_rd_err;
+  logic [31:0] cpuif_rd_data;
+  logic        cpuif_wr_ack;
+  logic        cpuif_wr_err;
+
+  // --- regblock hwif structs ---
+  usb_ocp_recovery_reg_pkg::usb_ocp_recovery_reg__in_t  rb_hwif_in;
+  usb_ocp_recovery_reg_pkg::usb_ocp_recovery_reg__out_t rb_hwif_out;
+
+  // USB Recovery Agent hardware endpoint. This path consumes the ctrl_decode
+  // command stream without touching the firmware CPUif. FIFO commands are
+  // identified here but selected only by the response mux below.
+  logic        usb_hw_access;
+  logic        usb_hw_supported_cmd;
+  logic        usb_hw_host_ro_cmd;
+  logic [15:0] usb_hw_cmd_len;
+  logic [15:0] usb_hw_byte_offset;
+
   // --- A4 status (image push not used in EP0-only mode but A4 still drives) ---
   logic                       image_push_done;
   logic                       fifo_overflow;
@@ -232,10 +257,14 @@ module usb_ocp_recovery_top
   logic       ext_write_q;
   logic       rb_is_ext;
 
+`ifndef SYNTHESIS
+  // synopsys translate_off
   initial begin
     assert (RECOVERY_LOCAL_ADDR_WIDTH == OCP_RECOVERY_APERTURE_ADDR_W)
       else $fatal(1, "Recovery AHB address width must match the register aperture");
   end
+  // synopsys translate_on
+`endif
 
   ahb_slv_sif #(
     .AHB_DATA_WIDTH   (32),
@@ -284,7 +313,7 @@ module usb_ocp_recovery_top
   // data-phase err/hld terms observe the qualified transfer. AHB address decode
   // and combo selection have already filtered non-recovery accesses; the local
   // check enforces the word-only policy of the shared AHB slave.
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       ahb_access_invalid_q <= 1'b0;
     end else if (rec_ahb_hreadyin && rec_ahb_hsel && rec_ahb_htrans[1]) begin
@@ -316,7 +345,7 @@ module usb_ocp_recovery_top
     end
   end
 
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       ext_in_flight_q  <= 1'b0;
       ext_write_q      <= 1'b0;
@@ -428,31 +457,6 @@ module usb_ocp_recovery_top
   // source of truth for field layout, reset values, and the SoC byte-flat
   // address window.
   //////////////////////////////////////////////////////////////////////////////
-
-  // --- adapter <-> regblock cpuif passthrough ---
-  logic        cpuif_req;
-  logic        cpuif_req_is_wr;
-  logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] cpuif_addr;
-  logic [31:0] cpuif_wr_data;
-  logic [31:0] cpuif_wr_biten;
-  logic        cpuif_rd_ack;
-  logic        cpuif_rd_err;
-  logic [31:0] cpuif_rd_data;
-  logic        cpuif_wr_ack;
-  logic        cpuif_wr_err;
-
-  // --- regblock hwif structs ---
-  usb_ocp_recovery_reg_pkg::usb_ocp_recovery_reg__in_t  rb_hwif_in;
-  usb_ocp_recovery_reg_pkg::usb_ocp_recovery_reg__out_t rb_hwif_out;
-
-  // USB Recovery Agent hardware endpoint. This path consumes the ctrl_decode
-  // command stream without touching the firmware CPUif. FIFO commands are
-  // identified here but selected only by the response mux below.
-  logic        usb_hw_access;
-  logic        usb_hw_supported_cmd;
-  logic        usb_hw_host_ro_cmd;
-  logic [15:0] usb_hw_cmd_len;
-  logic [15:0] usb_hw_byte_offset;
 
   always_comb begin
     usb_hw_access       = usb_rb_wr | usb_rb_rd;
@@ -656,7 +660,7 @@ module usb_ocp_recovery_top
   // OCP Recovery v1.1 Sec 9.1 defines first-error reporting. A completed USB
   // DEVICE_STATUS read has clear priority; otherwise USB-detected errors win
   // over the firmware-originated general-error request.
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       protocol_error_q <= OCP_PROTOCOL_ERROR_NONE;
     end else begin
@@ -890,7 +894,7 @@ module usb_ocp_recovery_top
   // are mediated through the regblock cpuif and the cms_fifo hwif-event bridge
   // below, so they never share this direct port and therefore cannot inject
   // backpressure into the Recovery Agent data stream.
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       usb_fifo_packet_active_q <= 1'b0;
     end else begin
