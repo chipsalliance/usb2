@@ -347,7 +347,7 @@ module usb_ocp_recovery_cms_fifo #(
     .err_o    ()
   );
 
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       fifo_cms_q          <= '0;
       image_size_q        <= '0;

@@ -313,7 +313,7 @@ module usb_ocp_recovery_top
   // data-phase err/hld terms observe the qualified transfer. AHB address decode
   // and combo selection have already filtered non-recovery accesses; the local
   // check enforces the word-only policy of the shared AHB slave.
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       ahb_access_invalid_q <= 1'b0;
     end else if (rec_ahb_hreadyin && rec_ahb_hsel && rec_ahb_htrans[1]) begin
@@ -345,7 +345,7 @@ module usb_ocp_recovery_top
     end
   end
 
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       ext_in_flight_q  <= 1'b0;
       ext_write_q      <= 1'b0;
@@ -660,7 +660,7 @@ module usb_ocp_recovery_top
   // OCP Recovery v1.1 Sec 9.1 defines first-error reporting. A completed USB
   // DEVICE_STATUS read has clear priority; otherwise USB-detected errors win
   // over the firmware-originated general-error request.
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       protocol_error_q <= OCP_PROTOCOL_ERROR_NONE;
     end else begin
@@ -894,7 +894,7 @@ module usb_ocp_recovery_top
   // are mediated through the regblock cpuif and the cms_fifo hwif-event bridge
   // below, so they never share this direct port and therefore cannot inject
   // backpressure into the Recovery Agent data stream.
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       usb_fifo_packet_active_q <= 1'b0;
     end else begin

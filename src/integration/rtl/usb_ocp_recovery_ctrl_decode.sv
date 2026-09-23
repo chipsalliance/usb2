@@ -50,7 +50,7 @@
 
 module usb_ocp_recovery_ctrl_decode (
   input  logic        clk,
-  input  logic        rst_ni,              // sync active-low
+  input  logic        rst_ni,              // async active-low
 
   // from the arbiter control EP surface (32-bit word + byte-enable)
   input  logic        setup_pkt_vld,
@@ -273,7 +273,7 @@ module usb_ocp_recovery_ctrl_decode (
   //---------------------------------------------------------------------------
   // Sequential
   //---------------------------------------------------------------------------
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       state_q  <= S_IDLE;
       cmd_q    <= '0;

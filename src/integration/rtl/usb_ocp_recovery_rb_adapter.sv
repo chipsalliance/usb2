@@ -65,7 +65,7 @@ module usb_ocp_recovery_rb_adapter
   assign cpuif_wr_biten  = {{8{rb_wstrb[3]}}, {8{rb_wstrb[2]}},
                             {8{rb_wstrb[1]}}, {8{rb_wstrb[0]}}};
 
-  always_ff @(posedge clk) begin
+  always_ff @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       rb_ack_q        <= 1'b0;
       rb_err_q        <= 1'b0;
