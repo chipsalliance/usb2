@@ -123,10 +123,10 @@ module usb_ocp_recovery_ctrl_decode (
     direction_legal_s = 1'b1;
     length_legal_s   = 1'b0;
     response_meta_s  = ocp_response_meta(cmd_code_s);
-    if (response_meta_s.known && (wlength_s < {9'h000, response_meta_s.bytes})) begin
+    if (response_meta_s.known && (wlength_s < 16'(response_meta_s.bytes))) begin
       read_length_s = wlength_s;
     end else begin
-      read_length_s = {9'h000, response_meta_s.bytes};
+      read_length_s = 16'(response_meta_s.bytes);
     end
 
     // OCP Recovery v1.1 Sec 9.2 command envelopes are rejected at SETUP

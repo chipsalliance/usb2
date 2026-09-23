@@ -184,6 +184,9 @@ module usb_ocp_recovery_cms_fifo #(
   logic        fifo_becomes_empty;
   logic        terminal_image_push;
   logic [FIFO_DEPTH_W-1:0] image_remaining_dwords;
+  logic [FIFO_DEPTH_W-1:0] fifo_physical_free_dwords;
+  logic [31:0] accepted_push_count_next;
+  logic [31:0] image_remaining_count;
 
   function automatic logic [31:0] fifo_index_next(input logic [31:0] index);
     logic [31:0] next_index;
@@ -210,6 +213,8 @@ module usb_ocp_recovery_cms_fifo #(
     end
   endfunction
 
+`ifndef SYNTHESIS
+  // synopsys translate_off
   initial begin
     assert (FIFO_DEPTH > 0)
       else $fatal(1, "FIFO_DEPTH must be > 0");
@@ -222,6 +227,8 @@ module usb_ocp_recovery_cms_fifo #(
     assert (usb_ocp_recovery_pkg::OCP_FIFO_MAX_TRANSFER_DWORDS == FIFO_DEPTH)
       else $fatal(1, "OCP max transfer size must match the physical FIFO depth");
   end
+  // synopsys translate_on
+`endif
 
   always_comb begin
     is_fifo_ctrl   = fifo_rb_sel && (fifo_rb_cmd == OCP_CMD_INDIRECT_FIFO_CTRL);
@@ -279,15 +286,18 @@ module usb_ocp_recovery_cms_fifo #(
   assign fifo_becomes_full = push_accept
                            && (fifo_wdepth == FIFO_DEPTH_W'(FIFO_DEPTH - 1));
   assign fifo_becomes_empty = pop_accept
-                            && (fifo_wdepth == FIFO_DEPTH_W'(1));
+                             && (fifo_wdepth == FIFO_DEPTH_W'(1));
+  assign accepted_push_count_next = accepted_push_count_q + 32'd1;
   assign terminal_image_push = push_accept && (image_size_q != '0)
-                             && ((accepted_push_count_q + 32'd1) >= image_size_q);
+                             && (accepted_push_count_next >= image_size_q);
+  assign image_remaining_count = image_size_q - accepted_push_count_q;
   assign image_remaining_dwords =
       (image_size_q == '0) ? FIFO_DEPTH_W'(FIFO_DEPTH) :
       (accepted_push_count_q >= image_size_q) ? '0 :
-      ((image_size_q - accepted_push_count_q) > 32'(FIFO_DEPTH))
+      (image_remaining_count > 32'(FIFO_DEPTH))
         ? FIFO_DEPTH_W'(FIFO_DEPTH)
-        : FIFO_DEPTH_W'(image_size_q - accepted_push_count_q);
+        : FIFO_DEPTH_W'(image_remaining_count);
+  assign fifo_physical_free_dwords = FIFO_DEPTH_W'(FIFO_DEPTH) - fifo_wdepth;
 
   always_comb begin
     fifo_wvalid = push_req && !image_complete && !fifo_clear;
@@ -395,41 +405,30 @@ module usb_ocp_recovery_cms_fifo #(
         ext_status_snapshot_q[2] <= fifo_status_live_word_2;
         ext_status_snapshot_q[3] <= fifo_status_live_word_3;
         ext_status_snapshot_q[4] <= fifo_status_live_word_4;
-      end else if (ext_status_1_rd || ext_status_2_rd || ext_status_3_rd || ext_status_4_rd) begin
-        unique case (1'b1)
-          ext_status_1_rd: begin
-            if (ext_status_snapshot_vld_q && (ext_status_snapshot_next_word_q == 3'd1)) begin
-              ext_status_snapshot_next_word_q <= 3'd2;
-            end else begin
-              ext_status_snapshot_vld_q <= 1'b0;
-              ext_status_snapshot_next_word_q <= '0;
-            end
-          end
-          ext_status_2_rd: begin
-            if (ext_status_snapshot_vld_q && (ext_status_snapshot_next_word_q == 3'd2)) begin
-              ext_status_snapshot_next_word_q <= 3'd3;
-            end else begin
-              ext_status_snapshot_vld_q <= 1'b0;
-              ext_status_snapshot_next_word_q <= '0;
-            end
-          end
-          ext_status_3_rd: begin
-            if (ext_status_snapshot_vld_q && (ext_status_snapshot_next_word_q == 3'd3)) begin
-              ext_status_snapshot_next_word_q <= 3'd4;
-            end else begin
-              ext_status_snapshot_vld_q <= 1'b0;
-              ext_status_snapshot_next_word_q <= '0;
-            end
-          end
-          ext_status_4_rd: begin
-            ext_status_snapshot_vld_q <= 1'b0;
-            ext_status_snapshot_next_word_q <= '0;
-          end
-          default: begin
-            ext_status_snapshot_vld_q <= 1'b0;
-            ext_status_snapshot_next_word_q <= '0;
-          end
-        endcase
+      end else if (ext_status_1_rd) begin
+        if (ext_status_snapshot_vld_q && (ext_status_snapshot_next_word_q == 3'd1)) begin
+          ext_status_snapshot_next_word_q <= 3'd2;
+        end else begin
+          ext_status_snapshot_vld_q <= 1'b0;
+          ext_status_snapshot_next_word_q <= '0;
+        end
+      end else if (ext_status_2_rd) begin
+        if (ext_status_snapshot_vld_q && (ext_status_snapshot_next_word_q == 3'd2)) begin
+          ext_status_snapshot_next_word_q <= 3'd3;
+        end else begin
+          ext_status_snapshot_vld_q <= 1'b0;
+          ext_status_snapshot_next_word_q <= '0;
+        end
+      end else if (ext_status_3_rd) begin
+        if (ext_status_snapshot_vld_q && (ext_status_snapshot_next_word_q == 3'd3)) begin
+          ext_status_snapshot_next_word_q <= 3'd4;
+        end else begin
+          ext_status_snapshot_vld_q <= 1'b0;
+          ext_status_snapshot_next_word_q <= '0;
+        end
+      end else if (ext_status_4_rd) begin
+        ext_status_snapshot_vld_q <= 1'b0;
+        ext_status_snapshot_next_word_q <= '0;
       end
 
       if (usb_ctrl_word0_wr) begin
@@ -535,8 +534,8 @@ module usb_ocp_recovery_cms_fifo #(
     fifo_overflow     = overflow_q;
     payload_available = payload_available_q;
     batch_aborted     = batch_aborted_q;
-    if ((FIFO_DEPTH_W'(FIFO_DEPTH) - fifo_wdepth) < image_remaining_dwords) begin
-      fifo_free_dwords = FIFO_DEPTH_W'(FIFO_DEPTH) - fifo_wdepth;
+    if (fifo_physical_free_dwords < image_remaining_dwords) begin
+      fifo_free_dwords = fifo_physical_free_dwords;
     end else begin
       fifo_free_dwords = image_remaining_dwords;
     end

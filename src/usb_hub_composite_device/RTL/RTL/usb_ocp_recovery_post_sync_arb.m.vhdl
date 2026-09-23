@@ -1373,375 +1373,399 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- ------------------------------------------------------------------
     -- pragma translate_off
     assertions_proc : process (hclk)
-      variable prev_st_v : t_trap_state := T_IDLE;
-      variable prev_non_ep0_end_v : boolean := false;
-      variable prev_snap_valid_v : std_logic := '0';
-      variable prev_snap_active_v : std_logic := '0';
-      variable prev_snap_stall_v : std_logic := '0';
-      variable prev_snap_disabled_v : std_logic := '0';
-      variable prev_snap_toggle_v : std_logic := '0';
-      variable prev_snap_nbytes_v : std_logic_vector(TXNBYTES_BITS-1 downto 0)
-                                    := (others => '0');
-      variable prev_snap_maxpacket_v : std_logic_vector(1 downto 0)
-                                       := (others => '0');
-      variable prev_snap_iso_v : std_logic := '0';
-      variable prev_snap_ratefeedback_v : std_logic := '0';
-      variable prev_snap_hold_v : boolean := false;
-      variable expect_drop_clear_v : boolean := false;
-      variable expect_drop_hold_v : boolean := false;
-      variable expect_pending_hold_v : boolean := false;
-      variable expect_snapshot_clear_v : boolean := false;
-      variable expect_replacement_stall_v : boolean := false;
-      variable expect_fw_stall_v : boolean := false;
-      variable prev_stall_release_v : boolean := false;
-      variable expect_local_cleanup_v : boolean := false;
-      variable expect_bus_reset_cleanup_v : boolean := false;
-      variable expect_claim_hold_v : boolean := false;
-      variable prev_drop_mask_v : std_logic := '0';
-      variable prev_setup_dma_owner_v : std_logic_vector(1 downto 0) :=
-                                        (others => '0');
+      variable prev_st_v : t_trap_state;
+      variable prev_non_ep0_end_v : boolean;
+      variable prev_snap_valid_v : std_logic;
+      variable prev_snap_active_v : std_logic;
+      variable prev_snap_stall_v : std_logic;
+      variable prev_snap_disabled_v : std_logic;
+      variable prev_snap_toggle_v : std_logic;
+      variable prev_snap_nbytes_v : std_logic_vector(TXNBYTES_BITS-1 downto 0);
+      variable prev_snap_maxpacket_v : std_logic_vector(1 downto 0);
+      variable prev_snap_iso_v : std_logic;
+      variable prev_snap_ratefeedback_v : std_logic;
+      variable prev_snap_hold_v : boolean;
+      variable expect_drop_clear_v : boolean;
+      variable expect_drop_hold_v : boolean;
+      variable expect_pending_hold_v : boolean;
+      variable expect_snapshot_clear_v : boolean;
+      variable expect_replacement_stall_v : boolean;
+      variable expect_fw_stall_v : boolean;
+      variable prev_stall_release_v : boolean;
+      variable expect_local_cleanup_v : boolean;
+      variable expect_bus_reset_cleanup_v : boolean;
+      variable expect_claim_hold_v : boolean;
+      variable prev_drop_mask_v : std_logic;
+      variable prev_setup_dma_owner_v : std_logic_vector(1 downto 0);
     begin
-      if rising_edge(hclk) and (hresetn = '1') then
-        if expect_drop_clear_v then
-          assert drop_setup_success_r = '0'
-            report "post_sync_arb: claimed SETUP mask survived first valid fall after valid_seen"
-            severity failure;
-        end if;
-        if expect_drop_hold_v and (sync_busreset = '0') and
-           (dev0_local_reset_c = '0') then
-          assert drop_setup_success_r = '1'
-            report "post_sync_arb: claimed SETUP mask retired before valid_seen fall"
-            severity failure;
-        end if;
-        if expect_pending_hold_v and (sync_busreset = '0') and
-           (dev0_local_reset_c = '0') then
-          assert setup_pending_r = '1'
-            report "post_sync_arb: SETUP pending retired before matched low-high"
-            severity failure;
-        end if;
-        if expect_snapshot_clear_v then
-          assert (rsp_snap_valid_r = '0') and
-                 (rsp_snap_active_r = '0') and
-                 (rsp_snap_stall_r = '0') and
-                 (rsp_snap_disabled_r = '0') and
-                 (rsp_snap_toggle_r = '0') and
-                 (rsp_snap_nbytes_r = (rsp_snap_nbytes_r'range => '0')) and
-                 (rsp_snap_maxpacket_r =
-                  (rsp_snap_maxpacket_r'range => '0')) and
-                 (rsp_snap_iso_r = '0') and
-                 (rsp_snap_ratefeedback_r = '0')
-            report "post_sync_arb: response snapshot bundle was not cleared atomically"
-            severity failure;
-        end if;
-        if expect_replacement_stall_v then
-          assert replacement_stall_r = '1'
-            report "post_sync_arb: corrupt replacement lost persistent protocol STALL"
-            severity failure;
-        end if;
-        if expect_fw_stall_v then
-          assert st = T_PROT_STALL
-            report "post_sync_arb: accepted firmware error did not enter protocol STALL"
-            severity failure;
-        end if;
-        if (prev_st_v = T_PROT_STALL) and (st /= T_PROT_STALL) then
-          assert prev_stall_release_v
-            report "post_sync_arb: persistent protocol STALL released illegally"
-            severity failure;
-        end if;
-        if expect_local_cleanup_v then
-          assert (st = T_IDLE) and (ep0_ocp_owner_r = '0') and
-                 (fifo_reservation_r = '0') and
-                 (ocp_ep0_txn_r = '0') and (wire_ocp_r = '0')
-            report "post_sync_arb: local abort cleanup was incomplete"
-            severity failure;
-        end if;
-        if expect_bus_reset_cleanup_v then
-          assert (setup_pending_r = '0') and
-                 (drop_setup_success_r = '0') and
-                 (wire_dma_r = '0')
-            report "post_sync_arb: bus reset did not clear DMA tracking"
-            severity failure;
-        end if;
-        if expect_claim_hold_v then
-          assert claim_q = '1'
-            report "post_sync_arb: unrelated device traffic cleared Device 0 claim"
-            severity failure;
-        end if;
-        if (prev_drop_mask_v = '1') and (drop_setup_success_r = '0') then
-          assert prev_setup_dma_owner_v =
-                 std_logic_vector(to_unsigned(C_DEV0_SEL, 2))
-            report "post_sync_arb: SETUP mask retired for a non-Device 0 DMA owner"
-            severity failure;
-        end if;
-        if (drop_setup_success_r = '1') and
-           (wire_dma_r = '1') and
-           (setup_dma_match_c = '0') then
-          assert dma_success_c = sync_sieint_success_i
-            report "post_sync_arb: Device 0 SETUP mask suppressed unrelated DMA success"
-            severity failure;
-        end if;
-        if (drop_setup_success_r = '1') and
-           (setup_dma_match_c = '1') and
-           (sync_sieint_success_i = '1') then
-          assert dma_success_c = '0'
-            report "post_sync_arb: claimed Device 0 SETUP success was not suppressed"
-            severity failure;
-        end if;
-        assert not ((wire_dma_r = '1') and (wire_ocp_r = '1'))
-          report "post_sync_arb: DMA and OCP wire owners overlap"
-          severity failure;
-        if new_setup_c = '1' then
-          assert unsigned(pie_dev_selected_i) =
-                 to_unsigned(C_DEV0_SEL, pie_dev_selected_i'length)
-            report "post_sync_arb: accepted recovery SETUP was not owned by Device 0"
-            severity failure;
-          assert sync_sieint_epinfo_setup_i = '1'
-                 and sync_sieint_epinfo_epnr_i = "0000"
-            report "post_sync_arb: invalid mirrored SETUP classification"
-            severity failure;
-          assert (epinfo_sync_valid_dma = '0') and
-                 ((wire_dma_r = '0') or (dma_valid_seen_r = '1'))
-            report "post_sync_arb: mirrored SETUP overlapped an active DMA operation"
-            severity failure;
-          assert dma_req_forward_c = '1'
-            report "post_sync_arb: real SETUP request was not forwarded to DMA"
-            severity failure;
-        end if;
-        if (unsigned(pie_dev_selected_i) = to_unsigned(C_HUB_SEL, 2)) or
-           (unsigned(pie_dev_selected_i) = to_unsigned(C_DEV1_SEL, 2)) then
-          if sync_sieint_epinfo_req_i = '1' then
-            assert (dma_req_forward_c = '1') and (ocp_resp_sel_c = '0') and
-                   (setup_pkt_vld_c = '0')
-              report "post_sync_arb: unrelated device traffic entered recovery"
+      if rising_edge(hclk) then
+        if hresetn = '0' then
+          prev_st_v                    := T_IDLE;
+          prev_non_ep0_end_v           := false;
+          prev_snap_valid_v            := '0';
+          prev_snap_active_v           := '0';
+          prev_snap_stall_v            := '0';
+          prev_snap_disabled_v         := '0';
+          prev_snap_toggle_v           := '0';
+          prev_snap_nbytes_v           := (others => '0');
+          prev_snap_maxpacket_v        := (others => '0');
+          prev_snap_iso_v              := '0';
+          prev_snap_ratefeedback_v     := '0';
+          prev_snap_hold_v             := false;
+          expect_drop_clear_v          := false;
+          expect_drop_hold_v           := false;
+          expect_pending_hold_v        := false;
+          expect_snapshot_clear_v      := false;
+          expect_replacement_stall_v   := false;
+          expect_fw_stall_v            := false;
+          prev_stall_release_v         := false;
+          expect_local_cleanup_v       := false;
+          expect_bus_reset_cleanup_v   := false;
+          expect_claim_hold_v          := false;
+          prev_drop_mask_v             := '0';
+          prev_setup_dma_owner_v       := (others => '0');
+        else
+          prev_non_ep0_end_v := (sync_sieint_endtransfer_i = '1')
+                                and (non_ep0_txn_r = '1')
+                                and (new_setup_c = '0')
+                                and (ctrl_set_stall = '0')
+                                and (rx_length_error_r = '0');
+          prev_st_v := st;
+          prev_snap_valid_v := rsp_snap_valid_r;
+          prev_snap_active_v := rsp_snap_active_r;
+          prev_snap_stall_v := rsp_snap_stall_r;
+          prev_snap_disabled_v := rsp_snap_disabled_r;
+          prev_snap_toggle_v := rsp_snap_toggle_r;
+          prev_snap_nbytes_v := rsp_snap_nbytes_r;
+          prev_snap_maxpacket_v := rsp_snap_maxpacket_r;
+          prev_snap_iso_v := rsp_snap_iso_r;
+          prev_snap_ratefeedback_v := rsp_snap_ratefeedback_r;
+          prev_snap_hold_v := (rsp_snap_valid_r = '1') and
+                              (ocp_ep0_txn_r = '1') and
+                               (sync_sieint_epinfo_req_i = '0') and
+                               (sync_sieint_endtransfer_i = '0');
+          expect_drop_clear_v := (drop_setup_success_r = '1') and
+                                  (drop_dma_valid_seen_r = '1') and
+                                 (epinfo_sync_valid_dma = '0') and
+                                 (sync_busreset = '0') and
+                                   (dev0_local_reset_c = '0') and
+                                  (ocp_claim_abort_i = '0');
+          expect_drop_hold_v := (drop_setup_success_r = '1') and
+                                not ((drop_dma_valid_seen_r = '1') and
+                                     (epinfo_sync_valid_dma = '0')) and
+                                (sync_busreset = '0') and
+                                (dev0_local_reset_c = '0');
+          expect_pending_hold_v := (setup_pending_r = '1') and
+                                   not ((setup_pending_low_seen_r = '1') and
+                                        (epinfo_sync_valid_dma = '1')) and
+                                   (new_setup_c = '0') and
+                                    (sync_busreset = '0') and
+                                     (dev0_local_reset_c = '0');
+          expect_snapshot_clear_v := (sync_busreset = '1') or
+                                     (dev0_local_reset_c = '1') or
+                                     (ocp_claim_abort_i = '1');
+          expect_replacement_stall_v :=
+              (new_setup_c = '1') and (replacement_stall_r = '1') and
+              (sync_busreset = '0') and (dev0_local_reset_c = '0') and
+              (ocp_claim_abort_i = '0');
+          expect_fw_stall_v := (fw_protocol_error_req_i = '1') and
+                               (ep0_ocp_owner_r = '1') and
+                               (new_setup_c = '0') and
+                               (sync_busreset = '0') and
+                               (dev0_local_reset_c = '0') and
+                               (ocp_claim_abort_i = '0');
+          prev_stall_release_v := (new_setup_c = '1') or
+                                  (sync_busreset = '1') or
+                                   (dev0_local_reset_c = '1') or
+                                  (ocp_claim_abort_i = '1');
+          expect_local_cleanup_v := (sync_busreset = '1') or
+                                    (dev0_local_reset_c = '1') or
+                                     (ocp_claim_abort_i = '1');
+          expect_bus_reset_cleanup_v := (sync_busreset = '1');
+          expect_claim_hold_v := (claim_q = '1') and
+            (sync_sieint_epinfo_req_i = '1') and
+            (dev0_selected_c = '0') and (sync_busreset = '0') and
+            (dev0_local_reset_c = '0') and (ocp_claim_abort_i = '0');
+          prev_drop_mask_v := drop_setup_success_r;
+            prev_setup_dma_owner_v := setup_dma_owner_r;
+          if expect_drop_clear_v then
+            assert drop_setup_success_r = '0'
+              report "post_sync_arb: claimed SETUP mask survived first valid fall after valid_seen"
               severity failure;
           end if;
-        end if;
-        if (new_setup_c = '1') or (setup_pending_r = '1') then
-          assert usbreg_setup_dma_c = '0'
-            report "post_sync_arb: SETUP busy exception was not held"
+          if expect_drop_hold_v and (sync_busreset = '0') and
+             (dev0_local_reset_c = '0') then
+            assert drop_setup_success_r = '1'
+              report "post_sync_arb: claimed SETUP mask retired before valid_seen fall"
+              severity failure;
+          end if;
+          if expect_pending_hold_v and (sync_busreset = '0') and
+             (dev0_local_reset_c = '0') then
+            assert setup_pending_r = '1'
+              report "post_sync_arb: SETUP pending retired before matched low-high"
+              severity failure;
+          end if;
+          if expect_snapshot_clear_v then
+            assert (rsp_snap_valid_r = '0') and
+                   (rsp_snap_active_r = '0') and
+                   (rsp_snap_stall_r = '0') and
+                   (rsp_snap_disabled_r = '0') and
+                   (rsp_snap_toggle_r = '0') and
+                   (rsp_snap_nbytes_r = (rsp_snap_nbytes_r'range => '0')) and
+                   (rsp_snap_maxpacket_r =
+                    (rsp_snap_maxpacket_r'range => '0')) and
+                   (rsp_snap_iso_r = '0') and
+                   (rsp_snap_ratefeedback_r = '0')
+              report "post_sync_arb: response snapshot bundle was not cleared atomically"
+              severity failure;
+          end if;
+          if expect_replacement_stall_v then
+            assert replacement_stall_r = '1'
+              report "post_sync_arb: corrupt replacement lost persistent protocol STALL"
+              severity failure;
+          end if;
+          if expect_fw_stall_v then
+            assert st = T_PROT_STALL
+              report "post_sync_arb: accepted firmware error did not enter protocol STALL"
+              severity failure;
+          end if;
+          if (prev_st_v = T_PROT_STALL) and (st /= T_PROT_STALL) then
+            assert prev_stall_release_v
+              report "post_sync_arb: persistent protocol STALL released illegally"
+              severity failure;
+          end if;
+          if expect_local_cleanup_v then
+            assert (st = T_IDLE) and (ep0_ocp_owner_r = '0') and
+                   (fifo_reservation_r = '0') and
+                   (ocp_ep0_txn_r = '0') and (wire_ocp_r = '0')
+              report "post_sync_arb: local abort cleanup was incomplete"
+              severity failure;
+          end if;
+          if expect_bus_reset_cleanup_v then
+            assert (setup_pending_r = '0') and
+                   (drop_setup_success_r = '0') and
+                   (wire_dma_r = '0')
+              report "post_sync_arb: bus reset did not clear DMA tracking"
+              severity failure;
+          end if;
+          if expect_claim_hold_v then
+            assert claim_q = '1'
+              report "post_sync_arb: unrelated device traffic cleared Device 0 claim"
+              severity failure;
+          end if;
+          if (prev_drop_mask_v = '1') and (drop_setup_success_r = '0') then
+            assert prev_setup_dma_owner_v =
+                   std_logic_vector(to_unsigned(C_DEV0_SEL, 2))
+              report "post_sync_arb: SETUP mask retired for a non-Device 0 DMA owner"
+              severity failure;
+          end if;
+          if (drop_setup_success_r = '1') and
+             (wire_dma_r = '1') and
+             (setup_dma_match_c = '0') then
+            assert dma_success_c = sync_sieint_success_i
+              report "post_sync_arb: Device 0 SETUP mask suppressed unrelated DMA success"
+              severity failure;
+          end if;
+          if (drop_setup_success_r = '1') and
+             (setup_dma_match_c = '1') and
+             (sync_sieint_success_i = '1') then
+            assert dma_success_c = '0'
+              report "post_sync_arb: claimed Device 0 SETUP success was not suppressed"
+              severity failure;
+          end if;
+          assert not ((wire_dma_r = '1') and (wire_ocp_r = '1'))
+            report "post_sync_arb: DMA and OCP wire owners overlap"
             severity failure;
-        end if;
-        if sync_sieint_epinfo_setup_i = '1' then
-          assert ocp_resp_sel_c = '0'
-            report "post_sync_arb: SETUP selected a stalled OCP response"
-            severity failure;
-        end if;
-        if fw_protocol_error_req_i = '1' then
-          assert st /= T_MIRROR
-            report "post_sync_arb: firmware protocol error preempted a SETUP"
-            severity failure;
-        end if;
-        if (drop_setup_success_r = '1') and
-           (setup_dma_match_c = '1') then
-          assert dma_success_c = '0'
-            report "post_sync_arb: claimed SETUP success reached DMA"
-            severity failure;
-        end if;
-        if (incoming_is_ocp_c = '1') and
-           (sync_sieint_rxdatavalid_i = '1') then
-          assert dma_success_c = '0'
-            report "post_sync_arb: mask was not active at claimed SETUP sample"
-            severity failure;
-        end if;
+          if new_setup_c = '1' then
+            assert unsigned(pie_dev_selected_i) =
+                   to_unsigned(C_DEV0_SEL, pie_dev_selected_i'length)
+              report "post_sync_arb: accepted recovery SETUP was not owned by Device 0"
+              severity failure;
+            assert sync_sieint_epinfo_setup_i = '1'
+                   and sync_sieint_epinfo_epnr_i = "0000"
+              report "post_sync_arb: invalid mirrored SETUP classification"
+              severity failure;
+            assert (epinfo_sync_valid_dma = '0') and
+                   ((wire_dma_r = '0') or (dma_valid_seen_r = '1'))
+              report "post_sync_arb: mirrored SETUP overlapped an active DMA operation"
+              severity failure;
+            assert dma_req_forward_c = '1'
+              report "post_sync_arb: real SETUP request was not forwarded to DMA"
+              severity failure;
+          end if;
+          if (unsigned(pie_dev_selected_i) = to_unsigned(C_HUB_SEL, 2)) or
+             (unsigned(pie_dev_selected_i) = to_unsigned(C_DEV1_SEL, 2)) then
+            if sync_sieint_epinfo_req_i = '1' then
+              assert (dma_req_forward_c = '1') and (ocp_resp_sel_c = '0') and
+                     (setup_pkt_vld_c = '0')
+                report "post_sync_arb: unrelated device traffic entered recovery"
+                severity failure;
+            end if;
+          end if;
+          if (new_setup_c = '1') or (setup_pending_r = '1') then
+            assert usbreg_setup_dma_c = '0'
+              report "post_sync_arb: SETUP busy exception was not held"
+              severity failure;
+          end if;
+          if sync_sieint_epinfo_setup_i = '1' then
+            assert ocp_resp_sel_c = '0'
+              report "post_sync_arb: SETUP selected a stalled OCP response"
+              severity failure;
+          end if;
+          if fw_protocol_error_req_i = '1' then
+            assert st /= T_MIRROR
+              report "post_sync_arb: firmware protocol error preempted a SETUP"
+              severity failure;
+          end if;
+          if (drop_setup_success_r = '1') and
+             (setup_dma_match_c = '1') then
+            assert dma_success_c = '0'
+              report "post_sync_arb: claimed SETUP success reached DMA"
+              severity failure;
+          end if;
+          if (incoming_is_ocp_c = '1') and
+             (sync_sieint_rxdatavalid_i = '1') then
+            assert dma_success_c = '0'
+              report "post_sync_arb: mask was not active at claimed SETUP sample"
+              severity failure;
+          end if;
 
-        -- A claim is never owned before the full 8-byte SETUP has been captured.
-        assert not (((st = T_META_WAIT) or (st = T_DATA) or (st = T_STATUS)
-                     or (st = T_PROT_STALL))
-                    and (cap_done = '0'))
-          report "post_sync_arb: claim asserted before SETUP capture complete"
-          severity error;
+          -- A claim is never owned before the full 8-byte SETUP has been captured.
+          assert not (((st = T_META_WAIT) or (st = T_DATA) or (st = T_STATUS)
+                       or (st = T_PROT_STALL))
+                      and (cap_done = '0'))
+            report "post_sync_arb: claim asserted before SETUP capture complete"
+            severity error;
 
-        assert rx_captured_beats_r <=
-               to_unsigned(RX_PACKET_BEATS, rx_captured_beats_r'length)
-          report "post_sync_arb: RX packet staging overflow"
-          severity failure;
-        assert not ((rx_capture_c = '1') and
-                    (rx_captured_beats_r =
-                     to_unsigned(RX_PACKET_BEATS, rx_captured_beats_r'length)))
-          report "post_sync_arb: RX packet staging write past final beat"
-          severity failure;
-        assert not ((ctrl_out_vld_c = '1') and (rx_validated_r = '0'))
-          report "post_sync_arb: downstream write before successful validation"
-          severity failure;
-        if rx_validated_r = '1' then
-          assert ctrl_out_vld_c = '1'
-            report "post_sync_arb: internal bubble while draining packet"
+          assert rx_captured_beats_r <=
+                 to_unsigned(RX_PACKET_BEATS, rx_captured_beats_r'length)
+            report "post_sync_arb: RX packet staging overflow"
             severity failure;
-          assert (ctrl_out_last_c = '1') =
-                 (rx_word_index_r = (rx_total_words_r - 1))
-            report "post_sync_arb: incorrect staged packet drain word count"
+          assert not ((rx_capture_c = '1') and
+                      (rx_captured_beats_r =
+                       to_unsigned(RX_PACKET_BEATS, rx_captured_beats_r'length)))
+            report "post_sync_arb: RX packet staging write past final beat"
             severity failure;
-        end if;
-        if (rx_length_error_r = '1') or (setup_length_error_c = '1') then
-          assert ctrl_out_vld_c = '0'
-            report "post_sync_arb: length mismatch produced downstream write"
+          assert not ((ctrl_out_vld_c = '1') and (rx_validated_r = '0'))
+            report "post_sync_arb: downstream write before successful validation"
             severity failure;
-        end if;
-        if (xfer_dir_in_r = '1') and (tx_response_known_r = '1')
-           and (tx_response_bytes_r =
-                to_unsigned(TX_MAXBYTES, tx_response_bytes_r'length))
-           and (nbytes_r = resize(tx_response_bytes_r, nbytes_r'length)) then
-          assert zlp_owed_c = '0'
-            report "post_sync_arb: exact-length 64-byte IN incorrectly owes ZLP"
-            severity failure;
-        end if;
-        if (nbytes_r(15) = '1') and (xfer_dir_in_r = '0') then
-          assert ctrl_out_vld_c = '0'
-            report "post_sync_arb: oversized OUT request reached downstream"
-            severity failure;
-        end if;
-        if (st = T_PROT_STALL) and (ocp_resp_sel_c = '1')
-           and (sync_sieint_epinfo_setup_i = '0') then
-          if ocp_ep0_req_c = '1' then
-            assert (rsp_live_valid_c = '1') and
-                   (rsp_live_active_c = '0') and
-                   (rsp_live_stall_c = '1')
-              report "post_sync_arb: persistent protocol STALL live response invalid"
+          if rx_validated_r = '1' then
+            assert ctrl_out_vld_c = '1'
+              report "post_sync_arb: internal bubble while draining packet"
+              severity failure;
+            assert (ctrl_out_last_c = '1') =
+                   (rx_word_index_r = (rx_total_words_r - 1))
+              report "post_sync_arb: incorrect staged packet drain word count"
+              severity failure;
+          end if;
+          if (rx_length_error_r = '1') or (setup_length_error_c = '1') then
+            assert ctrl_out_vld_c = '0'
+              report "post_sync_arb: length mismatch produced downstream write"
+              severity failure;
+          end if;
+          if (xfer_dir_in_r = '1') and (tx_response_known_r = '1')
+             and (tx_response_bytes_r =
+                  to_unsigned(TX_MAXBYTES, tx_response_bytes_r'length))
+             and (nbytes_r = resize(tx_response_bytes_r, nbytes_r'length)) then
+            assert zlp_owed_c = '0'
+              report "post_sync_arb: exact-length 64-byte IN incorrectly owes ZLP"
+              severity failure;
+          end if;
+          if (nbytes_r(15) = '1') and (xfer_dir_in_r = '0') then
+            assert ctrl_out_vld_c = '0'
+              report "post_sync_arb: oversized OUT request reached downstream"
+              severity failure;
+          end if;
+          if (st = T_PROT_STALL) and (ocp_resp_sel_c = '1')
+             and (sync_sieint_epinfo_setup_i = '0') then
+            if ocp_ep0_req_c = '1' then
+              assert (rsp_live_valid_c = '1') and
+                     (rsp_live_active_c = '0') and
+                     (rsp_live_stall_c = '1')
+                report "post_sync_arb: persistent protocol STALL live response invalid"
+                severity failure;
+            else
+              assert (rsp_snap_valid_r = '1') and
+                     (rsp_snap_active_r = '0') and
+                     (rsp_snap_stall_r = '1')
+                report "post_sync_arb: persistent protocol STALL snapshot invalid"
+                severity failure;
+            end if;
+          end if;
+          if prev_non_ep0_end_v then
+            assert st = prev_st_v
+              report "post_sync_arb: non-EP0 completion advanced EP0 FSM"
+              severity failure;
+          end if;
+          if non_ep0_txn_r = '1' then
+            assert (wire_dma_r = '1') and (ocp_resp_sel_c = '0')
+              report "post_sync_arb: non-EP0 transaction left legacy DMA"
+              severity failure;
+          end if;
+          if ocp_ep0_txn_r = '1' then
+            assert wire_dma_r = '0'
+              report "post_sync_arb: OCP EP0 stage reached DMA"
+              severity failure;
+          end if;
+          if prev_snap_hold_v then
+            assert (rsp_snap_valid_r = prev_snap_valid_v)
+                   and (rsp_snap_active_r = prev_snap_active_v)
+                   and (rsp_snap_stall_r = prev_snap_stall_v)
+                   and (rsp_snap_nbytes_r = prev_snap_nbytes_v)
+                   and (rsp_snap_disabled_r = prev_snap_disabled_v)
+                   and (rsp_snap_toggle_r = prev_snap_toggle_v)
+                   and (rsp_snap_maxpacket_r = prev_snap_maxpacket_v)
+                   and (rsp_snap_iso_r = prev_snap_iso_v)
+                   and (rsp_snap_ratefeedback_r = prev_snap_ratefeedback_v)
+              report "post_sync_arb: response snapshot changed during transaction"
+              severity failure;
+          end if;
+          if (fifo_out_request_c = '1') and (fifo_reservation_r = '0')
+             and (fifo_capacity_ok_c = '1') then
+            assert unsigned(fifo_free_dwords_i) >= fifo_words_needed_c
+              report "post_sync_arb: FIFO reservation exceeds free capacity"
+              severity failure;
+          end if;
+          if (fifo_payload_available_i = '1') and
+             (fifo_out_request_c = '1') and (fifo_reservation_r = '0') then
+            assert (fifo_admission_ok_c = '0') and
+                   (rsp_live_active_c = '0')
+              report "post_sync_arb: published FIFO batch admitted a new OUT request"
+              severity failure;
+          end if;
+          if (claim_q = '1') and (xfer_dir_in_r = '0') and
+             (cap_rxdata(23 downto 16) = OCP_INDIRECT_FIFO_DATA) and
+             ((st = T_META_WAIT) or (st = T_DATA) or (st = T_STATUS)) and
+             (rx_drain_done_r = '0') and
+             ((sync_busreset = '1') or (dev0_local_reset_c = '1') or
+              (ocp_claim_abort_i = '1') or (new_setup_c = '1')) then
+            assert fifo_batch_abort_c = '1'
+              report "post_sync_arb: incomplete FIFO command missed batch abort"
+              severity failure;
+          end if;
+          if (sync_busreset = '1') or
+             ((dev0_selected_c = '1') and (dev0_local_reset_c = '1')) then
+            assert setup_received_c = '0'
+              report "post_sync_arb: SETUP notification escaped reset/disconnect gate"
               severity failure;
           else
-            assert (rsp_snap_valid_r = '1') and
-                   (rsp_snap_active_r = '0') and
-                   (rsp_snap_stall_r = '1')
-              report "post_sync_arb: persistent protocol STALL snapshot invalid"
+            assert setup_received_c = sync_sieint_setup_received_i
+              report "post_sync_arb: valid connected SETUP notification was not forwarded"
               severity failure;
           end if;
-        end if;
-        if prev_non_ep0_end_v then
-          assert st = prev_st_v
-            report "post_sync_arb: non-EP0 completion advanced EP0 FSM"
-            severity failure;
-        end if;
-        if non_ep0_txn_r = '1' then
-          assert (wire_dma_r = '1') and (ocp_resp_sel_c = '0')
-            report "post_sync_arb: non-EP0 transaction left legacy DMA"
-            severity failure;
-        end if;
-        if ocp_ep0_txn_r = '1' then
-          assert wire_dma_r = '0'
-            report "post_sync_arb: OCP EP0 stage reached DMA"
-            severity failure;
-        end if;
-        if prev_snap_hold_v then
-          assert (rsp_snap_valid_r = prev_snap_valid_v)
-                 and (rsp_snap_active_r = prev_snap_active_v)
-                 and (rsp_snap_stall_r = prev_snap_stall_v)
-                 and (rsp_snap_nbytes_r = prev_snap_nbytes_v)
-                 and (rsp_snap_disabled_r = prev_snap_disabled_v)
-                 and (rsp_snap_toggle_r = prev_snap_toggle_v)
-                 and (rsp_snap_maxpacket_r = prev_snap_maxpacket_v)
-                 and (rsp_snap_iso_r = prev_snap_iso_v)
-                 and (rsp_snap_ratefeedback_r = prev_snap_ratefeedback_v)
-            report "post_sync_arb: response snapshot changed during transaction"
-            severity failure;
-        end if;
-        if (fifo_out_request_c = '1') and (fifo_reservation_r = '0')
-           and (fifo_capacity_ok_c = '1') then
-          assert unsigned(fifo_free_dwords_i) >= fifo_words_needed_c
-            report "post_sync_arb: FIFO reservation exceeds free capacity"
-            severity failure;
-        end if;
-        if (fifo_payload_available_i = '1') and
-           (fifo_out_request_c = '1') and (fifo_reservation_r = '0') then
-          assert (fifo_admission_ok_c = '0') and
-                 (rsp_live_active_c = '0')
-            report "post_sync_arb: published FIFO batch admitted a new OUT request"
-            severity failure;
-        end if;
-        if (claim_q = '1') and (xfer_dir_in_r = '0') and
-           (cap_rxdata(23 downto 16) = OCP_INDIRECT_FIFO_DATA) and
-           ((st = T_META_WAIT) or (st = T_DATA) or (st = T_STATUS)) and
-           (rx_drain_done_r = '0') and
-           ((sync_busreset = '1') or (dev0_local_reset_c = '1') or
-            (ocp_claim_abort_i = '1') or (new_setup_c = '1')) then
-          assert fifo_batch_abort_c = '1'
-            report "post_sync_arb: incomplete FIFO command missed batch abort"
-            severity failure;
-        end if;
-        if (sync_busreset = '1') or
-           ((dev0_selected_c = '1') and (dev0_local_reset_c = '1')) then
-          assert setup_received_c = '0'
-            report "post_sync_arb: SETUP notification escaped reset/disconnect gate"
-            severity failure;
-        else
-          assert setup_received_c = sync_sieint_setup_received_i
-            report "post_sync_arb: valid connected SETUP notification was not forwarded"
-            severity failure;
-        end if;
 
-        -- Single-MaxPacket scope (advertised wMaxRd/WrTransferSize = 64, OCP
-        -- Recovery v1.1 Sec 8.5): the captured IN response length and the OUT
-        -- byte total never exceed one EP0 HS MaxPacket (64 bytes).
-        assert tx_response_bytes_r <=
-               to_unsigned(TX_MAXBYTES, tx_response_bytes_r'length)
-          report "post_sync_arb: IN response exceeds single MaxPacket (64B)"
-          severity failure;
-        assert not ((rx_validated_r = '1')
-                    and (rx_total_bytes_r > to_unsigned(64, rx_total_bytes_r'length)))
-          report "post_sync_arb: OUT byte count exceeds single MaxPacket (64B)"
-          severity failure;
-        prev_non_ep0_end_v := (sync_sieint_endtransfer_i = '1')
-                              and (non_ep0_txn_r = '1')
-                              and (new_setup_c = '0')
-                              and (ctrl_set_stall = '0')
-                              and (rx_length_error_r = '0');
-        prev_st_v := st;
-        prev_snap_valid_v := rsp_snap_valid_r;
-        prev_snap_active_v := rsp_snap_active_r;
-        prev_snap_stall_v := rsp_snap_stall_r;
-        prev_snap_disabled_v := rsp_snap_disabled_r;
-        prev_snap_toggle_v := rsp_snap_toggle_r;
-        prev_snap_nbytes_v := rsp_snap_nbytes_r;
-        prev_snap_maxpacket_v := rsp_snap_maxpacket_r;
-        prev_snap_iso_v := rsp_snap_iso_r;
-        prev_snap_ratefeedback_v := rsp_snap_ratefeedback_r;
-        prev_snap_hold_v := (rsp_snap_valid_r = '1') and
-                            (ocp_ep0_txn_r = '1') and
-                             (sync_sieint_epinfo_req_i = '0') and
-                             (sync_sieint_endtransfer_i = '0');
-        expect_drop_clear_v := (drop_setup_success_r = '1') and
-                                (drop_dma_valid_seen_r = '1') and
-                               (epinfo_sync_valid_dma = '0') and
-                               (sync_busreset = '0') and
-                                 (dev0_local_reset_c = '0') and
-                                (ocp_claim_abort_i = '0');
-        expect_drop_hold_v := (drop_setup_success_r = '1') and
-                              not ((drop_dma_valid_seen_r = '1') and
-                                   (epinfo_sync_valid_dma = '0')) and
-                              (sync_busreset = '0') and
-                              (dev0_local_reset_c = '0');
-        expect_pending_hold_v := (setup_pending_r = '1') and
-                                 not ((setup_pending_low_seen_r = '1') and
-                                      (epinfo_sync_valid_dma = '1')) and
-                                 (new_setup_c = '0') and
-                                  (sync_busreset = '0') and
-                                   (dev0_local_reset_c = '0');
-        expect_snapshot_clear_v := (sync_busreset = '1') or
-                                   (dev0_local_reset_c = '1') or
-                                   (ocp_claim_abort_i = '1');
-        expect_replacement_stall_v :=
-            (new_setup_c = '1') and (replacement_stall_r = '1') and
-            (sync_busreset = '0') and (dev0_local_reset_c = '0') and
-            (ocp_claim_abort_i = '0');
-        expect_fw_stall_v := (fw_protocol_error_req_i = '1') and
-                             (ep0_ocp_owner_r = '1') and
-                             (new_setup_c = '0') and
-                             (sync_busreset = '0') and
-                             (dev0_local_reset_c = '0') and
-                             (ocp_claim_abort_i = '0');
-        prev_stall_release_v := (new_setup_c = '1') or
-                                (sync_busreset = '1') or
-                                 (dev0_local_reset_c = '1') or
-                                (ocp_claim_abort_i = '1');
-        expect_local_cleanup_v := (sync_busreset = '1') or
-                                  (dev0_local_reset_c = '1') or
-                                   (ocp_claim_abort_i = '1');
-        expect_bus_reset_cleanup_v := (sync_busreset = '1');
-        expect_claim_hold_v := (claim_q = '1') and
-          (sync_sieint_epinfo_req_i = '1') and
-          (dev0_selected_c = '0') and (sync_busreset = '0') and
-          (dev0_local_reset_c = '0') and (ocp_claim_abort_i = '0');
-        prev_drop_mask_v := drop_setup_success_r;
-        prev_setup_dma_owner_v := setup_dma_owner_r;
+          -- Single-MaxPacket scope (advertised wMaxRd/WrTransferSize = 64, OCP
+          -- Recovery v1.1 Sec 8.5): the captured IN response length and the OUT
+          -- byte total never exceed one EP0 HS MaxPacket (64 bytes).
+          assert tx_response_bytes_r <=
+                 to_unsigned(TX_MAXBYTES, tx_response_bytes_r'length)
+            report "post_sync_arb: IN response exceeds single MaxPacket (64B)"
+            severity failure;
+          assert not ((rx_validated_r = '1')
+                      and (rx_total_bytes_r > to_unsigned(64, rx_total_bytes_r'length)))
+            report "post_sync_arb: OUT byte count exceeds single MaxPacket (64B)"
+            severity failure;
+        end if;
       end if;
     end process assertions_proc;
     -- pragma translate_on

@@ -194,6 +194,31 @@ module usb_ocp_recovery_top
   logic                       ocp_claim_abort_clear;
   logic                       protocol_error_general_clear;
 
+  // --- adapter <-> regblock cpuif passthrough ---
+  logic        cpuif_req;
+  logic        cpuif_req_is_wr;
+  logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] cpuif_addr;
+  logic [31:0] cpuif_wr_data;
+  logic [31:0] cpuif_wr_biten;
+  logic        cpuif_rd_ack;
+  logic        cpuif_rd_err;
+  logic [31:0] cpuif_rd_data;
+  logic        cpuif_wr_ack;
+  logic        cpuif_wr_err;
+
+  // --- regblock hwif structs ---
+  usb_ocp_recovery_reg_pkg::usb_ocp_recovery_reg__in_t  rb_hwif_in;
+  usb_ocp_recovery_reg_pkg::usb_ocp_recovery_reg__out_t rb_hwif_out;
+
+  // USB Recovery Agent hardware endpoint. This path consumes the ctrl_decode
+  // command stream without touching the firmware CPUif. FIFO commands are
+  // identified here but selected only by the response mux below.
+  logic        usb_hw_access;
+  logic        usb_hw_supported_cmd;
+  logic        usb_hw_host_ro_cmd;
+  logic [15:0] usb_hw_cmd_len;
+  logic [15:0] usb_hw_byte_offset;
+
   // --- A4 status (image push not used in EP0-only mode but A4 still drives) ---
   logic                       image_push_done;
   logic                       fifo_overflow;
@@ -232,10 +257,14 @@ module usb_ocp_recovery_top
   logic       ext_write_q;
   logic       rb_is_ext;
 
+`ifndef SYNTHESIS
+  // synopsys translate_off
   initial begin
     assert (RECOVERY_LOCAL_ADDR_WIDTH == OCP_RECOVERY_APERTURE_ADDR_W)
       else $fatal(1, "Recovery AHB address width must match the register aperture");
   end
+  // synopsys translate_on
+`endif
 
   ahb_slv_sif #(
     .AHB_DATA_WIDTH   (32),
@@ -428,31 +457,6 @@ module usb_ocp_recovery_top
   // source of truth for field layout, reset values, and the SoC byte-flat
   // address window.
   //////////////////////////////////////////////////////////////////////////////
-
-  // --- adapter <-> regblock cpuif passthrough ---
-  logic        cpuif_req;
-  logic        cpuif_req_is_wr;
-  logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] cpuif_addr;
-  logic [31:0] cpuif_wr_data;
-  logic [31:0] cpuif_wr_biten;
-  logic        cpuif_rd_ack;
-  logic        cpuif_rd_err;
-  logic [31:0] cpuif_rd_data;
-  logic        cpuif_wr_ack;
-  logic        cpuif_wr_err;
-
-  // --- regblock hwif structs ---
-  usb_ocp_recovery_reg_pkg::usb_ocp_recovery_reg__in_t  rb_hwif_in;
-  usb_ocp_recovery_reg_pkg::usb_ocp_recovery_reg__out_t rb_hwif_out;
-
-  // USB Recovery Agent hardware endpoint. This path consumes the ctrl_decode
-  // command stream without touching the firmware CPUif. FIFO commands are
-  // identified here but selected only by the response mux below.
-  logic        usb_hw_access;
-  logic        usb_hw_supported_cmd;
-  logic        usb_hw_host_ro_cmd;
-  logic [15:0] usb_hw_cmd_len;
-  logic [15:0] usb_hw_byte_offset;
 
   always_comb begin
     usb_hw_access       = usb_rb_wr | usb_rb_rd;
