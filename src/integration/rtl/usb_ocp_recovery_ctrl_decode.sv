@@ -119,98 +119,78 @@ module usb_ocp_recovery_ctrl_decode (
     cmd_code_valid_s = (cmd_code_s >= OCP_CMD_MIN) && (cmd_code_s <= OCP_CMD_MAX);
     ocp_req_valid_s  = (brq_s == 8'h00) && (wvalue_s[15:8] == 8'h00)
                        && cmd_code_valid_s;
-    cmd_supported_s  = 1'b1;
-    direction_legal_s = 1'b1;
-    length_legal_s   = 1'b0;
     response_meta_s  = ocp_response_meta(cmd_code_s);
-    if (response_meta_s.known && (wlength_s < 16'(response_meta_s.bytes))) begin
-      read_length_s = wlength_s;
-    end else begin
-      read_length_s = 16'(response_meta_s.bytes);
-    end
+    read_length_s    = 16'(response_meta_s.bytes);
+  end
 
-    // OCP Recovery v1.1 Sec 9.2 command envelopes are rejected at SETUP
-    // time. This keeps malformed transfers from reaching register or FIFO
-    // side effects while the USB SETUP transaction itself remains ACKed.
+  // OCP Recovery v1.1 Sec 9.2 command support and access direction. Commands
+  // omitted from this implementation remain unsupported in both directions.
+  always_comb begin
+    cmd_supported_s   = 1'b0;
+    direction_legal_s = 1'b0;
     unique case (cmd_code_s)
-      OCP_CMD_PROT_CAP:
-        begin
-          direction_legal_s = is_in_s;
-          length_legal_s = (wlength_s >= 16'(OCP_SPEC_LEN_PROT_CAP))
-                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
-        end
-      OCP_CMD_DEVICE_ID:
-        begin
-          direction_legal_s = is_in_s;
-          length_legal_s = (wlength_s >= 16'(OCP_SPEC_MIN_LEN_DEVICE_ID))
-                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
-        end
-      OCP_CMD_DEVICE_STATUS:
-        begin
-          direction_legal_s = is_in_s;
-          length_legal_s = (wlength_s >= 16'(OCP_SPEC_MIN_LEN_DEVICE_STATUS))
-                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
-        end
+      OCP_CMD_PROT_CAP,
+      OCP_CMD_DEVICE_ID,
+      OCP_CMD_DEVICE_STATUS,
+      OCP_CMD_RECOVERY_STATUS,
+      OCP_CMD_HW_STATUS,
+      OCP_CMD_INDIRECT_FIFO_STATUS: begin
+        cmd_supported_s   = 1'b1;
+        direction_legal_s = is_in_s;
+      end
       OCP_CMD_DEVICE_RESET:
         begin
-          cmd_supported_s = device_reset_cmd_enabled;
+          cmd_supported_s   = device_reset_cmd_enabled;
           direction_legal_s = 1'b1;
-          if (is_in_s) begin
-            length_legal_s =
-                (wlength_s >= 16'(OCP_SPEC_LEN_DEVICE_RESET)) &&
-                (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
-          end else begin
-            length_legal_s =
-                (wlength_s == 16'(OCP_SPEC_LEN_DEVICE_RESET));
-          end
         end
-      OCP_CMD_RECOVERY_CTRL:
-        begin direction_legal_s = !is_in_s; length_legal_s = (wlength_s == 16'(OCP_SPEC_LEN_RECOVERY_CTRL)); end
-      OCP_CMD_RECOVERY_STATUS:
-        begin
-          direction_legal_s = is_in_s;
-          length_legal_s = (wlength_s >= 16'(OCP_SPEC_LEN_RECOVERY_STATUS))
-                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
-        end
-      OCP_CMD_HW_STATUS:
-        begin
-          direction_legal_s = is_in_s;
-          length_legal_s = (wlength_s >= 16'(OCP_SPEC_MIN_LEN_HW_STATUS))
-                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
-        end
+      OCP_CMD_RECOVERY_CTRL,
       OCP_CMD_INDIRECT_FIFO_CTRL:
         begin
+          cmd_supported_s   = 1'b1;
           direction_legal_s = 1'b1;
-          if (is_in_s) begin
-            length_legal_s =
-                (wlength_s >= 16'(OCP_SPEC_LEN_INDIRECT_FIFO_CTRL)) &&
-                (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
-          end else begin
-            length_legal_s =
-                (wlength_s == 16'(OCP_SPEC_LEN_INDIRECT_FIFO_CTRL));
-          end
-        end
-      OCP_CMD_INDIRECT_FIFO_STATUS:
-        begin
-          direction_legal_s = is_in_s;
-          length_legal_s = (wlength_s >= 16'(OCP_SPEC_LEN_INDIRECT_FIFO_STATUS))
-                           && (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
         end
       OCP_CMD_INDIRECT_FIFO_DATA:
         begin
+          cmd_supported_s   = 1'b1;
           direction_legal_s = !is_in_s;
-          length_legal_s = (wlength_s >= 16'(OCP_SPEC_MIN_LEN_INDIRECT_FIFO_DATA))
-                           && (wlength_s <= 16'd64);
         end
       OCP_CMD_VENDOR:
-        begin direction_legal_s = 1'b1; length_legal_s = (wlength_s == 16'(OCP_LEN_VENDOR)); end
-      default:
         begin
-          cmd_supported_s = 1'b0;
-          direction_legal_s = 1'b0;
-          length_legal_s = 1'b0;
+          cmd_supported_s   = 1'b1;
+          direction_legal_s = 1'b1;
         end
+      default: begin end
     endcase
+  end
+
+  // OCP Recovery v1.1 Sec 8.5.1 requires every USB IN request to set wLength
+  // to wMaxRdTransferSize so the device controls the returned length. OUT
+  // requests retain command-specific payload constraints from Sec 9.2.
+  always_comb begin
+    length_legal_s = 1'b0;
+    if (is_in_s) begin
+      length_legal_s =
+          (wlength_s == 16'(OCP_USB_MIN_TRANSFER_SIZE));
+    end else begin
+      unique case (cmd_code_s)
+        OCP_CMD_DEVICE_RESET:
+          length_legal_s =
+              (wlength_s == 16'(OCP_SPEC_LEN_DEVICE_RESET));
+        OCP_CMD_RECOVERY_CTRL:
+          length_legal_s =
+              (wlength_s == 16'(OCP_SPEC_LEN_RECOVERY_CTRL));
+        OCP_CMD_INDIRECT_FIFO_CTRL:
+          length_legal_s =
+              (wlength_s == 16'(OCP_SPEC_LEN_INDIRECT_FIFO_CTRL));
+        OCP_CMD_INDIRECT_FIFO_DATA:
+          length_legal_s =
+              (wlength_s >= 16'(OCP_SPEC_MIN_LEN_INDIRECT_FIFO_DATA)) &&
+              (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
+        OCP_CMD_VENDOR:
+          length_legal_s = (wlength_s == 16'(OCP_LEN_VENDOR));
+        default: begin end
+      endcase
+    end
   end
 
   //---------------------------------------------------------------------------
@@ -229,8 +209,8 @@ module usb_ocp_recovery_ctrl_decode (
 
   //---------------------------------------------------------------------------
   // Latched SETUP fields. offset_q is a WORD index. length_q is the effective
-  // transfer byte count: raw wLength for OUT, implementation response bytes
-  // clipped to wLength for IN.
+  // transfer byte count: raw wLength for OUT and implementation response bytes
+  // for an accepted IN request.
   //---------------------------------------------------------------------------
   logic [7:0]  cmd_q,     cmd_d;
   logic        is_in_q,   is_in_d;
@@ -582,11 +562,12 @@ module usb_ocp_recovery_ctrl_decode (
         assert (is_class_s)
           else $error("ctrl_decode: setup_pkt_vld asserted on non-class SETUP");
       end
-      if (setup_pkt_vld && is_in_s) begin
+      if (setup_pkt_vld && is_in_s && cmd_supported_s &&
+          direction_legal_s && length_legal_s) begin
         assert (!response_meta_s.known || (response_meta_s.bytes <= 7'(OCP_MAX_IMPLEMENTED_RESPONSE_BYTES)))
           else $error("ctrl_decode: response metadata exceeds the single-packet implementation bound");
         assert (!response_meta_s.known || (read_length_s <= wlength_s))
-          else $error("ctrl_decode: clipped response length exceeded wLength");
+          else $error("ctrl_decode: accepted response length exceeded wLength");
         assert (response_meta_s.known || (read_length_s == '0))
           else $error("ctrl_decode: unknown response metadata must not fall back to wLength");
       end
