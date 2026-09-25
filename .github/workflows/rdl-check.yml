@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: RDL check
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rdl-check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rdl:
+    name: Validate and regenerate RDL
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: pip
+          cache-dependency-path: tools/scripts/requirements-rdl.txt
+
+      - name: Install pinned RDL tools
+        run: python3 -m pip install -r tools/scripts/requirements-rdl.txt
+
+      - name: Validate RDL sources
+        run: |
+          set -euo pipefail
+          for rdl in \
+            usb_combo \
+            usb_hub \
+            usb_ocp_recovery_reg \
+            usbhsd \
+            usbhsh
+          do
+            python3 tools/scripts/usb2_reg_gen.py \
+              "systemrdl/${rdl}.rdl" --validate-only
+          done
+          python3 tools/scripts/usb2_reg_gen.py \
+            systemrdl/usb_device_memory.rdl \
+            --validate-only --compile-only
+
+      - name: Check generated Recovery register collateral
+        run: |
+          set -euo pipefail
+
+          generated_dir="${RUNNER_TEMP}/usb_ocp_recovery_generated"
+          expected_list="${RUNNER_TEMP}/usb_ocp_recovery_expected.txt"
+          actual_list="${RUNNER_TEMP}/usb_ocp_recovery_actual.txt"
+          checked_in_dir="src/integration/rtl/generated"
+
+          mkdir -p "${generated_dir}"
+          python3 tools/scripts/usb2_reg_gen.py \
+            systemrdl/usb_ocp_recovery_reg.rdl \
+            "${generated_dir}"
+
+          printf '%s\n' \
+            usb_ocp_recovery_reg.sv \
+            usb_ocp_recovery_reg_addr_defs.svh \
+            usb_ocp_recovery_reg_pkg.sv \
+            > "${expected_list}"
+          find "${generated_dir}" -maxdepth 1 -type f -printf '%f\n' \
+            | sort > "${actual_list}"
+
+          if ! diff -u "${expected_list}" "${actual_list}"; then
+            echo "::error::Recovery generator produced an unexpected file set"
+            exit 1
+          fi
+
+          mismatch=0
+          while IFS= read -r filename; do
+            checked_in="${checked_in_dir}/${filename}"
+            generated="${generated_dir}/${filename}"
+            if ! cmp -s "${checked_in}" "${generated}"; then
+              echo "::error file=${checked_in}::Generated RDL output is stale"
+              echo "First 200 diff lines for ${filename}:"
+              diff -u "${checked_in}" "${generated}" | head -200 || true
+              mismatch=1
+            fi
+          done < "${expected_list}"
+
+          exit "${mismatch}"

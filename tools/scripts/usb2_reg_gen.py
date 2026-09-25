@@ -14,9 +14,8 @@
 # limitations under the License.
 #
 # This script generates systemverilog registers from rdl files
-# Currently, this script uses peakrdl-regblock version 0.6.0
-#
-#   pip install peakrdl-regblock==0.6.0
+# Pinned tool versions are listed in requirements-rdl.txt.
+# The current CI baseline uses peakrdl-regblock version 0.21.0.
 # 
 # TODO: To update this script to the latest version (0.11.0)
 # 1.  Import ALL_UDPS
@@ -50,10 +49,17 @@ parser.add_argument('output_dir', nargs='?', default=None,
 parser.add_argument('--cov', action='store_true', help='Generate coverage files')
 parser.add_argument('--param', '-p', action='append', default=[], 
                     help='Set RDL parameter (format: NAME=VALUE). Can be used multiple times.')
+parser.add_argument('--validate-only', action='store_true',
+                    help='Compile and elaborate the RDL without generating outputs')
+parser.add_argument('--compile-only', action='store_true',
+                    help='With --validate-only, compile without addrmap elaboration')
 args = parser.parse_args()
 
 # Process arguments
-rdl_file = args.rdl_file
+if args.compile_only and not args.validate_only:
+    parser.error('--compile-only requires --validate-only')
+
+rdl_file = os.path.abspath(args.rdl_file)
 build_cov = args.cov
 
 #output directory for dumping files
@@ -126,7 +132,14 @@ for udp in ALL_UDPS:
     rdlc.register_udp(udp)
 
 try:
-    rdlc.compile_file(rdl_file)
+    # Resolve RDL include paths relative to the input file, independent of the
+    # caller's current working directory.
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(os.path.dirname(rdl_file))
+        rdlc.compile_file(rdl_file)
+    finally:
+        os.chdir(original_cwd)
 
     # Build parameters dictionary from command line arguments
     parameters = {}
@@ -149,6 +162,13 @@ try:
         # Handle integer values
         elif value.isdigit() or (value.startswith('-') and value[1:].isdigit()):
             parameters[name] = int(value)
+
+    if args.validate_only:
+        if not args.compile_only:
+            rdlc.elaborate(parameters=parameters if parameters else None)
+        validation = "compiled" if args.compile_only else "compiled and elaborated"
+        print(f"Validated {rdl_file}: {validation}")
+        sys.exit(0)
 
     # Elaborate the design with parameters
     root = rdlc.elaborate(parameters=parameters if parameters else None)
