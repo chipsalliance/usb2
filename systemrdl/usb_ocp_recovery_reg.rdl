@@ -163,7 +163,7 @@ addrmap usb_ocp_recovery_reg {
         } AGENT_CAPS_VENDOR_COMMAND[26:26];
         field {
             name = "Flashless Boot";
-            desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Advertised 1: this design supports flashless boot (host writes DEVICE_RESET.FORCED_RECOVERY=0xE to enter flashless boot on the next platform reset). Firmware-configurable (sw=rw), reset default 1; the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1). Sets AGENT_CAPS = 0x1E9B.";
+            desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Advertised 1: this design supports flashless boot (host writes DEVICE_RESET.FORCED_RECOVERY=0xE to enter flashless boot on the next platform reset). Firmware-configurable (sw=rw), reset default 1; the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1).";
             sw = rw;
             hw = r;
             reset = 1'b1;
