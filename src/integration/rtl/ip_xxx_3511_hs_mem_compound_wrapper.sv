@@ -50,6 +50,8 @@
 // 0.4      2026-09-11  Clayton  Overhaul AXI connections to interfaces and
 //                               hide hub behind a combo AXI interface with
 //                               DEV0
+// 0.5      2026-09-23  MSFT     Instantiate OCP Recovery datapath on device0.
+//                               Includes CONTROL arbiter, cmd decode, register set.
 // -------------------------------------------------------------------------
 
 `include "caliptra_prim_assert.sv"
@@ -88,8 +90,7 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   parameter int unsigned C_TOGGLE_REG_READABLE     = 1,
   parameter logic [31:0] C_EPFIFO_PAGE             = 32'h0008_0000,
   parameter logic [31:0] C_DATAFIFO_PAGE           = 32'h0008_0000,
-  parameter int unsigned G_SIM_CHIRP_TIMERS        = 0,
-  parameter logic [191:0] C_DEVICE_ID_DEFAULT      = '0
+  parameter int unsigned G_SIM_CHIRP_TIMERS        = 0
 ) (
   input  logic usb_axi_aclk,
   input  logic usb_axi_aresetn,
@@ -546,7 +547,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .rec_ahb_hrdata(recovery_hrdata),
     .rec_ahb_hreadyout(recovery_hreadyout),
     .rec_ahb_hresp(recovery_hresp),
-    .device_id_in(C_DEVICE_ID_DEFAULT),
     .payload_available(payload_available),
     .recovery_image_activated(ocp_firmware_activated)
   );

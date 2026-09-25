@@ -61,8 +61,7 @@ module ip_xxx_3516_hs_mem_wrapper
   // -----------------------------------------------------------------
   // OCP Recovery subsystem (A7 integration)
   // -----------------------------------------------------------------
-  parameter        AXI_REC_ADDR_WIDTH   = 32,
-  parameter logic [191:0] REC_DEVICE_ID_DEFAULT = 192'h0
+  parameter        AXI_REC_ADDR_WIDTH   = 32
  )  
  (
     // ----------------------------------------------------------------
@@ -944,9 +943,6 @@ module ip_xxx_3516_hs_mem_wrapper
         .rec_ahb_hreadyout(rec_ahb_hreadyout),
         .rec_ahb_hresp   (rec_ahb_hresp),
 
-
-        // Static capability tie-offs (from parameters)
-        .device_id_in (REC_DEVICE_ID_DEFAULT),
 
         // Recovery data-plane state
         .payload_available(payload_available),

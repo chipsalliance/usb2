@@ -70,6 +70,7 @@ module usb_ocp_recovery_ctrl_decode (
   input  logic        ctrl_xfer_done,
   input  logic        ctrl_xfer_abort,
   input  logic        device_reset_cmd_enabled,
+  input  logic        vendor_cmd_enabled,
   output logic        proto_err_rd_pulse,
   output logic        protocol_error_vld,
   output logic [7:0]  protocol_error_code,
@@ -156,7 +157,7 @@ module usb_ocp_recovery_ctrl_decode (
         end
       OCP_CMD_VENDOR:
         begin
-          cmd_supported_s   = 1'b1;
+          cmd_supported_s   = vendor_cmd_enabled;
           direction_legal_s = 1'b1;
         end
       default: begin end

@@ -8,64 +8,6 @@ package usb_ocp_recovery_reg_pkg;
 
     typedef struct packed{
         logic [7:0] next;
-    } usb_ocp_recovery_reg__DEVICE_ID_0__DESC_TYPE__in_t;
-
-    typedef struct packed{
-        logic [7:0] next;
-    } usb_ocp_recovery_reg__DEVICE_ID_0__VENDOR_SPECIFIC_STR_LENGTH__in_t;
-
-    typedef struct packed{
-        logic [15:0] next;
-    } usb_ocp_recovery_reg__DEVICE_ID_0__DATA_3_2__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_ID_0__DESC_TYPE__in_t DESC_TYPE;
-        usb_ocp_recovery_reg__DEVICE_ID_0__VENDOR_SPECIFIC_STR_LENGTH__in_t VENDOR_SPECIFIC_STR_LENGTH;
-        usb_ocp_recovery_reg__DEVICE_ID_0__DATA_3_2__in_t DATA_3_2;
-    } usb_ocp_recovery_reg__DEVICE_ID_0__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_ID_1__DATA_7_4__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_ID_1__DATA_7_4__in_t DATA_7_4;
-    } usb_ocp_recovery_reg__DEVICE_ID_1__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_ID_2__DATA_11_8__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_ID_2__DATA_11_8__in_t DATA_11_8;
-    } usb_ocp_recovery_reg__DEVICE_ID_2__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_ID_3__DATA_15_12__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_ID_3__DATA_15_12__in_t DATA_15_12;
-    } usb_ocp_recovery_reg__DEVICE_ID_3__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_ID_4__DATA_19_16__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_ID_4__DATA_19_16__in_t DATA_19_16;
-    } usb_ocp_recovery_reg__DEVICE_ID_4__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_ID_5__DATA_23_20__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_ID_5__DATA_23_20__in_t DATA_23_20;
-    } usb_ocp_recovery_reg__DEVICE_ID_5__in_t;
-
-    typedef struct packed{
-        logic [7:0] next;
     } usb_ocp_recovery_reg__DEVICE_STATUS_0__PROT_ERROR__in_t;
 
     typedef struct packed{
@@ -394,12 +336,6 @@ package usb_ocp_recovery_reg_pkg;
 
     typedef struct packed{
         logic rst_ni;
-        usb_ocp_recovery_reg__DEVICE_ID_0__in_t DEVICE_ID_0;
-        usb_ocp_recovery_reg__DEVICE_ID_1__in_t DEVICE_ID_1;
-        usb_ocp_recovery_reg__DEVICE_ID_2__in_t DEVICE_ID_2;
-        usb_ocp_recovery_reg__DEVICE_ID_3__in_t DEVICE_ID_3;
-        usb_ocp_recovery_reg__DEVICE_ID_4__in_t DEVICE_ID_4;
-        usb_ocp_recovery_reg__DEVICE_ID_5__in_t DEVICE_ID_5;
         usb_ocp_recovery_reg__DEVICE_STATUS_0__in_t DEVICE_STATUS_0;
         usb_ocp_recovery_reg__DEVICE_STATUS_1__in_t DEVICE_STATUS_1;
         usb_ocp_recovery_reg__DEVICE_STATUS_2__in_t DEVICE_STATUS_2;
@@ -547,6 +483,64 @@ package usb_ocp_recovery_reg_pkg;
         usb_ocp_recovery_reg__PROT_CAP_3__HEARTBEAT_PERIOD__out_t HEARTBEAT_PERIOD;
         usb_ocp_recovery_reg__PROT_CAP_3__RESERVED_31_24__out_t RESERVED_31_24;
     } usb_ocp_recovery_reg__PROT_CAP_3__out_t;
+
+    typedef struct packed{
+        logic [7:0] value;
+    } usb_ocp_recovery_reg__DEVICE_ID_0__DESC_TYPE__out_t;
+
+    typedef struct packed{
+        logic [7:0] value;
+    } usb_ocp_recovery_reg__DEVICE_ID_0__VENDOR_SPECIFIC_STR_LENGTH__out_t;
+
+    typedef struct packed{
+        logic [15:0] value;
+    } usb_ocp_recovery_reg__DEVICE_ID_0__DATA_3_2__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__DEVICE_ID_0__DESC_TYPE__out_t DESC_TYPE;
+        usb_ocp_recovery_reg__DEVICE_ID_0__VENDOR_SPECIFIC_STR_LENGTH__out_t VENDOR_SPECIFIC_STR_LENGTH;
+        usb_ocp_recovery_reg__DEVICE_ID_0__DATA_3_2__out_t DATA_3_2;
+    } usb_ocp_recovery_reg__DEVICE_ID_0__out_t;
+
+    typedef struct packed{
+        logic [31:0] value;
+    } usb_ocp_recovery_reg__DEVICE_ID_1__DATA_7_4__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__DEVICE_ID_1__DATA_7_4__out_t DATA_7_4;
+    } usb_ocp_recovery_reg__DEVICE_ID_1__out_t;
+
+    typedef struct packed{
+        logic [31:0] value;
+    } usb_ocp_recovery_reg__DEVICE_ID_2__DATA_11_8__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__DEVICE_ID_2__DATA_11_8__out_t DATA_11_8;
+    } usb_ocp_recovery_reg__DEVICE_ID_2__out_t;
+
+    typedef struct packed{
+        logic [31:0] value;
+    } usb_ocp_recovery_reg__DEVICE_ID_3__DATA_15_12__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__DEVICE_ID_3__DATA_15_12__out_t DATA_15_12;
+    } usb_ocp_recovery_reg__DEVICE_ID_3__out_t;
+
+    typedef struct packed{
+        logic [31:0] value;
+    } usb_ocp_recovery_reg__DEVICE_ID_4__DATA_19_16__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__DEVICE_ID_4__DATA_19_16__out_t DATA_19_16;
+    } usb_ocp_recovery_reg__DEVICE_ID_4__out_t;
+
+    typedef struct packed{
+        logic [31:0] value;
+    } usb_ocp_recovery_reg__DEVICE_ID_5__DATA_23_20__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__DEVICE_ID_5__DATA_23_20__out_t DATA_23_20;
+    } usb_ocp_recovery_reg__DEVICE_ID_5__out_t;
 
     typedef struct packed{
         logic [7:0] value;
@@ -751,6 +745,12 @@ package usb_ocp_recovery_reg_pkg;
         usb_ocp_recovery_reg__PROT_CAP_1__out_t PROT_CAP_1;
         usb_ocp_recovery_reg__PROT_CAP_2__out_t PROT_CAP_2;
         usb_ocp_recovery_reg__PROT_CAP_3__out_t PROT_CAP_3;
+        usb_ocp_recovery_reg__DEVICE_ID_0__out_t DEVICE_ID_0;
+        usb_ocp_recovery_reg__DEVICE_ID_1__out_t DEVICE_ID_1;
+        usb_ocp_recovery_reg__DEVICE_ID_2__out_t DEVICE_ID_2;
+        usb_ocp_recovery_reg__DEVICE_ID_3__out_t DEVICE_ID_3;
+        usb_ocp_recovery_reg__DEVICE_ID_4__out_t DEVICE_ID_4;
+        usb_ocp_recovery_reg__DEVICE_ID_5__out_t DEVICE_ID_5;
         usb_ocp_recovery_reg__DEVICE_STATUS_0__out_t DEVICE_STATUS_0;
         usb_ocp_recovery_reg__DEVICE_RESET__out_t DEVICE_RESET;
         usb_ocp_recovery_reg__RECOVERY_CTRL__out_t RECOVERY_CTRL;

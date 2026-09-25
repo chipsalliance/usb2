@@ -81,11 +81,6 @@ module usb_ocp_recovery_top
   output logic [1:0]              rec_ahb_hresp,
 
   //----------------------------------------------------------------------------
-  // Static capability inputs (tied by SoC integrator).
-  //----------------------------------------------------------------------------
-  input  logic [191:0]            device_id_in,
-
-  //----------------------------------------------------------------------------
   // Recovery data-plane sideband.
   //----------------------------------------------------------------------------
   output logic                    payload_available,
@@ -116,6 +111,7 @@ module usb_ocp_recovery_top
   logic                       fw_protocol_error_req;
   logic                       fw_protocol_error_accept;
   logic                       device_reset_cmd_enabled;
+  logic                       vendor_cmd_enabled;
 
   logic [7:0]                 usb_device_reset_ctrl_next;
   logic                       usb_device_reset_ctrl_we;
@@ -424,6 +420,7 @@ module usb_ocp_recovery_top
     .ctrl_xfer_done  (rec_ctrl_xfer_done),
     .ctrl_xfer_abort (rec_ctrl_xfer_abort),
     .device_reset_cmd_enabled(device_reset_cmd_enabled),
+    .vendor_cmd_enabled(vendor_cmd_enabled),
     .proto_err_rd_pulse (proto_err_rd_pulse),
     .protocol_error_vld (decode_protocol_error_vld),
     .protocol_error_code(decode_protocol_error_code),
@@ -445,6 +442,8 @@ module usb_ocp_recovery_top
       rb_hwif_out.PROT_CAP_2.AGENT_CAPS_DEVICE_RESET.value |
       rb_hwif_out.PROT_CAP_2.AGENT_CAPS_INTERFACE_ISOLATION.value |
       rb_hwif_out.PROT_CAP_2.AGENT_CAPS_FLASHLESS_BOOT.value;
+  assign vendor_cmd_enabled =
+      rb_hwif_out.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value;
 
   //////////////////////////////////////////////////////////////////////////////
   // A3 : EXT/AHB reg-bus adapter + peakrdl-generated regblock
@@ -523,11 +522,19 @@ module usb_ocp_recovery_top
       OCP_CMD_DEVICE_ID: begin
         usb_hw_cmd_len     = OCP_LEN_DEVICE_ID;
         usb_hw_host_ro_cmd = 1'b1;
-        if (usb_rb_offset < 16'd6) begin
-          usb_hw_rdata = device_id_in[usb_rb_offset[2:0]*32 +: 32];
-        end else begin
-          usb_hw_err = usb_rb_rd;
-        end
+        unique case (usb_rb_offset)
+          16'd0: usb_hw_rdata = {
+            rb_hwif_out.DEVICE_ID_0.DATA_3_2.value,
+            rb_hwif_out.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.value,
+            rb_hwif_out.DEVICE_ID_0.DESC_TYPE.value
+          };
+          16'd1: usb_hw_rdata = rb_hwif_out.DEVICE_ID_1.DATA_7_4.value;
+          16'd2: usb_hw_rdata = rb_hwif_out.DEVICE_ID_2.DATA_11_8.value;
+          16'd3: usb_hw_rdata = rb_hwif_out.DEVICE_ID_3.DATA_15_12.value;
+          16'd4: usb_hw_rdata = rb_hwif_out.DEVICE_ID_4.DATA_19_16.value;
+          16'd5: usb_hw_rdata = rb_hwif_out.DEVICE_ID_5.DATA_23_20.value;
+          default: usb_hw_err = usb_rb_rd;
+        endcase
       end
       OCP_CMD_DEVICE_STATUS: begin
         usb_hw_cmd_len     = OCP_LEN_DEVICE_STATUS;
@@ -747,14 +754,9 @@ module usb_ocp_recovery_top
   // --------------------------------------------------------------------------
   // hwif_in wiring.
   //
-  // PROT_CAP (16 B) fields are static read-only constants in the RDL
-  // (sw=r; hw=na); the regblock returns their reset directly with no hwif
-  // drive. DEVICE_ID (24 B) is fed from the SoC integrator tie
-  // (device_id_in). Those .next inputs are sampled continuously by
-  // hw=w / we=false fields, so they appear in the host read window with no
-  // extra storage cycle.
-  //
-  // DEVICE_STATUS_0 fields (DEV_STATUS / PROT_ERROR / REC_REASON_CODE)
+  // PROT_CAP and DEVICE_ID are firmware-configurable cpuif storage and are
+  // exposed to the USB endpoint through hwif_out. DEVICE_STATUS_0 fields
+  // (DEV_STATUS / PROT_ERROR / REC_REASON_CODE)
   // come from the FSM (Sec 9.2).  DEVICE_STATUS_1..15 carry the
   // optional heartbeat / vendor-status bytes (Sec 9.2 bytes 4..63);
   // those are vendor-specific and remain tied to 0 until a vendor extension
@@ -800,19 +802,6 @@ module usb_ocp_recovery_top
     rb_hwif_in.RECOVERY_CTRL.ACTIVATE_REC_IMG.we   = usb_recovery_ctrl_activate_we;
     rb_hwif_in.VENDOR.VENDOR_DATA.next            = usb_vendor_next;
     rb_hwif_in.VENDOR.VENDOR_DATA.we              = usb_vendor_we;
-
-    // DEVICE_ID: 6 DWORDs from device_id_in[191:0].  DEVICE_ID_0 is split
-    // into DESC_TYPE[7:0] / VENDOR_SPECIFIC_STR_LENGTH[15:8] / DATA_3_2[31:16];
-    // the slice into the packed device_id_in[191:0] is the same byte
-    // sequence.  DEVICE_ID_1..5 are flat 32-bit DATA fields.
-    rb_hwif_in.DEVICE_ID_0.DESC_TYPE.next                  = device_id_in[7:0];
-    rb_hwif_in.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.next = device_id_in[15:8];
-    rb_hwif_in.DEVICE_ID_0.DATA_3_2.next                   = device_id_in[31:16];
-    rb_hwif_in.DEVICE_ID_1.DATA_7_4.next                   = device_id_in[63:32];
-    rb_hwif_in.DEVICE_ID_2.DATA_11_8.next                  = device_id_in[95:64];
-    rb_hwif_in.DEVICE_ID_3.DATA_15_12.next                 = device_id_in[127:96];
-    rb_hwif_in.DEVICE_ID_4.DATA_19_16.next                 = device_id_in[159:128];
-    rb_hwif_in.DEVICE_ID_5.DATA_23_20.next                 = device_id_in[191:160];
 
     // DEVICE_STATUS_0 byte 1 is hardware-owned. Device status and recovery
     // reason are firmware-owned cpuif storage.
