@@ -67,18 +67,17 @@ addrmap usb_ocp_recovery_reg {
         // PROT_CAP "Recovery Protocol Capabilities" bitmap.
         // Bit names taken from the spec capability list.
         // FIFO-only agent; bit5 direct CMS-memory access cleared.
-        // Summation of set bits = 0x1E9B:
-        //   bit0  IDENTIFICATION         0x0001
+        // Reset defaults:
+        //   bit0  IDENTIFICATION         0x0000 (fw enables after DEVICE_ID initialization)
         //   bit1  FORCED_RECOVERY        0x0002
         //   bit3  DEVICE_RESET           0x0008
         //   bit4  DEVICE_STATUS          0x0010
         //   bit7  PUSH_C_IMAGE           0x0080
         //   bit9  HARDWARE_STATUS        0x0200
-        //   bit10 VENDOR_COMMAND         0x0400
         //   bit11 FLASHLESS_BOOT         0x0800
         //   bit12 FIFO_CMS_SUPPORT       0x1000
         //   ----------------------------- -------
-        //   total                        0x1E9B
+        //   total                        0x1A9A
         // Each sub-field is firmware-configurable (sw=rw; hw=na) with the
         // above values as RESET defaults (OCP Recovery v1.1 Sec 9.2 PROT_CAP
         // is host-RO: a USB-host write to PROT_CAP is rejected and raises
@@ -87,10 +86,10 @@ addrmap usb_ocp_recovery_reg {
         // ----------------------------------------------------------------
         field {
             name = "Identification";
-            desc = "AGENT_CAPS bit 0: Identification (DEVICE_ID structure). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1, source-qualified via rb_is_ext in usb_ocp_recovery_rb_adapter.sv).";
+            desc = "AGENT_CAPS bit 0: Identification (DEVICE_ID structure). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 0 so firmware can initialize DEVICE_ID before advertising it. Firmware-configurable (sw=rw); the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1, source-qualified via rb_is_ext in usb_ocp_recovery_rb_adapter.sv).";
             sw = rw;
             hw = r;
-            reset = 1'b1;
+            reset = 1'b0;
         } AGENT_CAPS_IDENTIFICATION[16:16];
         field {
             name = "Forced Recovery";
@@ -157,14 +156,14 @@ addrmap usb_ocp_recovery_reg {
         } AGENT_CAPS_HARDWARE_STATUS[25:25];
         field {
             name = "Vendor Command";
-            desc = "AGENT_CAPS bit 10: Vendor command (VENDOR). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 1. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
+            desc = "AGENT_CAPS bit 10: Vendor command (VENDOR). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 0. Firmware-configurable (sw=rw); host writes raise PROTOCOL_ERROR.";
             sw = rw;
             hw = r;
-            reset = 1'b1;
+            reset = 1'b0;
         } AGENT_CAPS_VENDOR_COMMAND[26:26];
         field {
             name = "Flashless Boot";
-            desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Advertised 1: this design supports flashless boot (host writes DEVICE_RESET.FORCED_RECOVERY=0xE to enter flashless boot on the next platform reset). Firmware-configurable (sw=rw), reset default 1; the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1). Sets AGENT_CAPS = 0x1E9B.";
+            desc = "AGENT_CAPS bit 11: Flashless boot (from RESET). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Advertised 1: this design supports flashless boot (host writes DEVICE_RESET.FORCED_RECOVERY=0xE to enter flashless boot on the next platform reset). Firmware-configurable (sw=rw), reset default 1; the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1).";
             sw = rw;
             hw = r;
             reset = 1'b1;
@@ -225,25 +224,22 @@ addrmap usb_ocp_recovery_reg {
         field {
             name = "Initial descriptor type";
             desc = "Byte 0 selects the DEVICE_ID encoding such as PCI, IANA, UUID, PnP, ACPI, or NVMe-MI. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
-            sw = r;
-            hw = w;
-            we = false;
+            sw = rw;
+            hw = r;
             reset = 8'h00;
         } DESC_TYPE[7:0];
         field {
             name = "Vendor specific string length";
             desc = "Byte 1 reports the optional vendor string length. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
-            sw = r;
-            hw = w;
-            we = false;
+            sw = rw;
+            hw = r;
             reset = 8'h00;
         } VENDOR_SPECIFIC_STR_LENGTH[15:8];
         field {
             name = "Descriptor payload bytes 2-3";
             desc = "Bytes 2-3 hold the first descriptor-specific payload bytes for the selected DEVICE_ID type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
-            sw = r;
-            hw = w;
-            we = false;
+            sw = rw;
+            hw = r;
             reset = 16'h0000;
         } DATA_3_2[31:16];
     } DEVICE_ID_0 @ 0x010;
@@ -254,9 +250,8 @@ addrmap usb_ocp_recovery_reg {
         field {
             name = "Device ID payload bytes 4-7";
             desc = "Bytes 4-7 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
-            sw = r;
-            hw = w;
-            we = false;
+            sw = rw;
+            hw = r;
             reset = 32'h00000000;
         } DATA_7_4[31:0];
     } DEVICE_ID_1 @ 0x014;
@@ -267,9 +262,8 @@ addrmap usb_ocp_recovery_reg {
         field {
             name = "Device ID payload bytes 8-11";
             desc = "Bytes 8-11 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
-            sw = r;
-            hw = w;
-            we = false;
+            sw = rw;
+            hw = r;
             reset = 32'h00000000;
         } DATA_11_8[31:0];
     } DEVICE_ID_2 @ 0x018;
@@ -280,9 +274,8 @@ addrmap usb_ocp_recovery_reg {
         field {
             name = "Device ID payload bytes 12-15";
             desc = "Bytes 12-15 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
-            sw = r;
-            hw = w;
-            we = false;
+            sw = rw;
+            hw = r;
             reset = 32'h00000000;
         } DATA_15_12[31:0];
     } DEVICE_ID_3 @ 0x01C;
@@ -293,9 +286,8 @@ addrmap usb_ocp_recovery_reg {
         field {
             name = "Device ID payload bytes 16-19";
             desc = "Bytes 16-19 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
-            sw = r;
-            hw = w;
-            we = false;
+            sw = rw;
+            hw = r;
             reset = 32'h00000000;
         } DATA_19_16[31:0];
     } DEVICE_ID_4 @ 0x020;
@@ -306,9 +298,8 @@ addrmap usb_ocp_recovery_reg {
         field {
             name = "Device ID payload bytes 20-23";
             desc = "Bytes 20-23 carry descriptor-specific DEVICE_ID payload data for the selected descriptor type. OCP Recovery v1.1 Sec 9.2 DEVICE_ID.";
-            sw = r;
-            hw = w;
-            we = false;
+            sw = rw;
+            hw = r;
             reset = 32'h00000000;
         } DATA_23_20[31:0];
     } DEVICE_ID_5 @ 0x024;

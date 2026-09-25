@@ -244,6 +244,50 @@ module usb_ocp_recovery_reg (
             struct packed{
                 logic [7:0] next;
                 logic load_next;
+            } DESC_TYPE;
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
+            } VENDOR_SPECIFIC_STR_LENGTH;
+            struct packed{
+                logic [15:0] next;
+                logic load_next;
+            } DATA_3_2;
+        } DEVICE_ID_0;
+        struct packed{
+            struct packed{
+                logic [31:0] next;
+                logic load_next;
+            } DATA_7_4;
+        } DEVICE_ID_1;
+        struct packed{
+            struct packed{
+                logic [31:0] next;
+                logic load_next;
+            } DATA_11_8;
+        } DEVICE_ID_2;
+        struct packed{
+            struct packed{
+                logic [31:0] next;
+                logic load_next;
+            } DATA_15_12;
+        } DEVICE_ID_3;
+        struct packed{
+            struct packed{
+                logic [31:0] next;
+                logic load_next;
+            } DATA_19_16;
+        } DEVICE_ID_4;
+        struct packed{
+            struct packed{
+                logic [31:0] next;
+                logic load_next;
+            } DATA_23_20;
+        } DEVICE_ID_5;
+        struct packed{
+            struct packed{
+                logic [7:0] next;
+                logic load_next;
             } DEV_STATUS;
             struct packed{
                 logic [15:0] next;
@@ -417,6 +461,42 @@ module usb_ocp_recovery_reg (
         struct packed{
             struct packed{
                 logic [7:0] value;
+            } DESC_TYPE;
+            struct packed{
+                logic [7:0] value;
+            } VENDOR_SPECIFIC_STR_LENGTH;
+            struct packed{
+                logic [15:0] value;
+            } DATA_3_2;
+        } DEVICE_ID_0;
+        struct packed{
+            struct packed{
+                logic [31:0] value;
+            } DATA_7_4;
+        } DEVICE_ID_1;
+        struct packed{
+            struct packed{
+                logic [31:0] value;
+            } DATA_11_8;
+        } DEVICE_ID_2;
+        struct packed{
+            struct packed{
+                logic [31:0] value;
+            } DATA_15_12;
+        } DEVICE_ID_3;
+        struct packed{
+            struct packed{
+                logic [31:0] value;
+            } DATA_19_16;
+        } DEVICE_ID_4;
+        struct packed{
+            struct packed{
+                logic [31:0] value;
+            } DATA_23_20;
+        } DEVICE_ID_5;
+        struct packed{
+            struct packed{
+                logic [7:0] value;
             } DEV_STATUS;
             struct packed{
                 logic [15:0] value;
@@ -528,7 +608,7 @@ module usb_ocp_recovery_reg (
     end
     always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
         if(~hwif_in.rst_ni) begin
-            field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value <= 1'h1;
+            field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value <= 1'h0;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value <= field_combo.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.next;
         end
@@ -738,7 +818,7 @@ module usb_ocp_recovery_reg (
     end
     always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
         if(~hwif_in.rst_ni) begin
-            field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value <= 1'h1;
+            field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value <= 1'h0;
         end else if(field_combo.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.load_next) begin
             field_storage.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.value <= field_combo.PROT_CAP_2.AGENT_CAPS_VENDOR_COMMAND.next;
         end
@@ -851,6 +931,174 @@ module usb_ocp_recovery_reg (
     end
     assign hwif_out.PROT_CAP_3.HEARTBEAT_PERIOD.value = field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value;
     assign hwif_out.PROT_CAP_3.RESERVED_31_24.value = 8'h0;
+    // Field: usb_ocp_recovery_reg.DEVICE_ID_0.DESC_TYPE
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.DEVICE_ID_0.DESC_TYPE.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.DEVICE_ID_0 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.DEVICE_ID_0.DESC_TYPE.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
+            load_next_c = '1;
+        end
+        field_combo.DEVICE_ID_0.DESC_TYPE.next = next_c;
+        field_combo.DEVICE_ID_0.DESC_TYPE.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.DEVICE_ID_0.DESC_TYPE.value <= 8'h0;
+        end else if(field_combo.DEVICE_ID_0.DESC_TYPE.load_next) begin
+            field_storage.DEVICE_ID_0.DESC_TYPE.value <= field_combo.DEVICE_ID_0.DESC_TYPE.next;
+        end
+    end
+    assign hwif_out.DEVICE_ID_0.DESC_TYPE.value = field_storage.DEVICE_ID_0.DESC_TYPE.value;
+    // Field: usb_ocp_recovery_reg.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH
+    always_comb begin
+        automatic logic [7:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.DEVICE_ID_0 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.value & ~decoded_wr_biten[15:8]) | (decoded_wr_data[15:8] & decoded_wr_biten[15:8]);
+            load_next_c = '1;
+        end
+        field_combo.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.next = next_c;
+        field_combo.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.value <= 8'h0;
+        end else if(field_combo.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.load_next) begin
+            field_storage.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.value <= field_combo.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.next;
+        end
+    end
+    assign hwif_out.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.value = field_storage.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.value;
+    // Field: usb_ocp_recovery_reg.DEVICE_ID_0.DATA_3_2
+    always_comb begin
+        automatic logic [15:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.DEVICE_ID_0.DATA_3_2.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.DEVICE_ID_0 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.DEVICE_ID_0.DATA_3_2.value & ~decoded_wr_biten[31:16]) | (decoded_wr_data[31:16] & decoded_wr_biten[31:16]);
+            load_next_c = '1;
+        end
+        field_combo.DEVICE_ID_0.DATA_3_2.next = next_c;
+        field_combo.DEVICE_ID_0.DATA_3_2.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.DEVICE_ID_0.DATA_3_2.value <= 16'h0;
+        end else if(field_combo.DEVICE_ID_0.DATA_3_2.load_next) begin
+            field_storage.DEVICE_ID_0.DATA_3_2.value <= field_combo.DEVICE_ID_0.DATA_3_2.next;
+        end
+    end
+    assign hwif_out.DEVICE_ID_0.DATA_3_2.value = field_storage.DEVICE_ID_0.DATA_3_2.value;
+    // Field: usb_ocp_recovery_reg.DEVICE_ID_1.DATA_7_4
+    always_comb begin
+        automatic logic [31:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.DEVICE_ID_1.DATA_7_4.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.DEVICE_ID_1 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.DEVICE_ID_1.DATA_7_4.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
+            load_next_c = '1;
+        end
+        field_combo.DEVICE_ID_1.DATA_7_4.next = next_c;
+        field_combo.DEVICE_ID_1.DATA_7_4.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.DEVICE_ID_1.DATA_7_4.value <= 32'h0;
+        end else if(field_combo.DEVICE_ID_1.DATA_7_4.load_next) begin
+            field_storage.DEVICE_ID_1.DATA_7_4.value <= field_combo.DEVICE_ID_1.DATA_7_4.next;
+        end
+    end
+    assign hwif_out.DEVICE_ID_1.DATA_7_4.value = field_storage.DEVICE_ID_1.DATA_7_4.value;
+    // Field: usb_ocp_recovery_reg.DEVICE_ID_2.DATA_11_8
+    always_comb begin
+        automatic logic [31:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.DEVICE_ID_2.DATA_11_8.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.DEVICE_ID_2 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.DEVICE_ID_2.DATA_11_8.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
+            load_next_c = '1;
+        end
+        field_combo.DEVICE_ID_2.DATA_11_8.next = next_c;
+        field_combo.DEVICE_ID_2.DATA_11_8.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.DEVICE_ID_2.DATA_11_8.value <= 32'h0;
+        end else if(field_combo.DEVICE_ID_2.DATA_11_8.load_next) begin
+            field_storage.DEVICE_ID_2.DATA_11_8.value <= field_combo.DEVICE_ID_2.DATA_11_8.next;
+        end
+    end
+    assign hwif_out.DEVICE_ID_2.DATA_11_8.value = field_storage.DEVICE_ID_2.DATA_11_8.value;
+    // Field: usb_ocp_recovery_reg.DEVICE_ID_3.DATA_15_12
+    always_comb begin
+        automatic logic [31:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.DEVICE_ID_3.DATA_15_12.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.DEVICE_ID_3 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.DEVICE_ID_3.DATA_15_12.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
+            load_next_c = '1;
+        end
+        field_combo.DEVICE_ID_3.DATA_15_12.next = next_c;
+        field_combo.DEVICE_ID_3.DATA_15_12.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.DEVICE_ID_3.DATA_15_12.value <= 32'h0;
+        end else if(field_combo.DEVICE_ID_3.DATA_15_12.load_next) begin
+            field_storage.DEVICE_ID_3.DATA_15_12.value <= field_combo.DEVICE_ID_3.DATA_15_12.next;
+        end
+    end
+    assign hwif_out.DEVICE_ID_3.DATA_15_12.value = field_storage.DEVICE_ID_3.DATA_15_12.value;
+    // Field: usb_ocp_recovery_reg.DEVICE_ID_4.DATA_19_16
+    always_comb begin
+        automatic logic [31:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.DEVICE_ID_4.DATA_19_16.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.DEVICE_ID_4 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.DEVICE_ID_4.DATA_19_16.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
+            load_next_c = '1;
+        end
+        field_combo.DEVICE_ID_4.DATA_19_16.next = next_c;
+        field_combo.DEVICE_ID_4.DATA_19_16.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.DEVICE_ID_4.DATA_19_16.value <= 32'h0;
+        end else if(field_combo.DEVICE_ID_4.DATA_19_16.load_next) begin
+            field_storage.DEVICE_ID_4.DATA_19_16.value <= field_combo.DEVICE_ID_4.DATA_19_16.next;
+        end
+    end
+    assign hwif_out.DEVICE_ID_4.DATA_19_16.value = field_storage.DEVICE_ID_4.DATA_19_16.value;
+    // Field: usb_ocp_recovery_reg.DEVICE_ID_5.DATA_23_20
+    always_comb begin
+        automatic logic [31:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.DEVICE_ID_5.DATA_23_20.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.DEVICE_ID_5 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.DEVICE_ID_5.DATA_23_20.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
+            load_next_c = '1;
+        end
+        field_combo.DEVICE_ID_5.DATA_23_20.next = next_c;
+        field_combo.DEVICE_ID_5.DATA_23_20.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.DEVICE_ID_5.DATA_23_20.value <= 32'h0;
+        end else if(field_combo.DEVICE_ID_5.DATA_23_20.load_next) begin
+            field_storage.DEVICE_ID_5.DATA_23_20.value <= field_combo.DEVICE_ID_5.DATA_23_20.next;
+        end
+    end
+    assign hwif_out.DEVICE_ID_5.DATA_23_20.value = field_storage.DEVICE_ID_5.DATA_23_20.value;
     // Field: usb_ocp_recovery_reg.DEVICE_STATUS_0.DEV_STATUS
     always_comb begin
         automatic logic [7:0] next_c;
@@ -1459,14 +1707,14 @@ module usb_ocp_recovery_reg (
     assign readback_array[3][15:8] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? field_storage.PROT_CAP_3.MAX_RESP_TIME.value : '0;
     assign readback_array[3][23:16] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? field_storage.PROT_CAP_3.HEARTBEAT_PERIOD.value : '0;
     assign readback_array[3][31:24] = (decoded_reg_strb.PROT_CAP_3 && !decoded_req_is_wr) ? 8'h0 : '0;
-    assign readback_array[4][7:0] = (decoded_reg_strb.DEVICE_ID_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_0.DESC_TYPE.next : '0;
-    assign readback_array[4][15:8] = (decoded_reg_strb.DEVICE_ID_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.next : '0;
-    assign readback_array[4][31:16] = (decoded_reg_strb.DEVICE_ID_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_0.DATA_3_2.next : '0;
-    assign readback_array[5][31:0] = (decoded_reg_strb.DEVICE_ID_1 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_1.DATA_7_4.next : '0;
-    assign readback_array[6][31:0] = (decoded_reg_strb.DEVICE_ID_2 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_2.DATA_11_8.next : '0;
-    assign readback_array[7][31:0] = (decoded_reg_strb.DEVICE_ID_3 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_3.DATA_15_12.next : '0;
-    assign readback_array[8][31:0] = (decoded_reg_strb.DEVICE_ID_4 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_4.DATA_19_16.next : '0;
-    assign readback_array[9][31:0] = (decoded_reg_strb.DEVICE_ID_5 && !decoded_req_is_wr) ? hwif_in.DEVICE_ID_5.DATA_23_20.next : '0;
+    assign readback_array[4][7:0] = (decoded_reg_strb.DEVICE_ID_0 && !decoded_req_is_wr) ? field_storage.DEVICE_ID_0.DESC_TYPE.value : '0;
+    assign readback_array[4][15:8] = (decoded_reg_strb.DEVICE_ID_0 && !decoded_req_is_wr) ? field_storage.DEVICE_ID_0.VENDOR_SPECIFIC_STR_LENGTH.value : '0;
+    assign readback_array[4][31:16] = (decoded_reg_strb.DEVICE_ID_0 && !decoded_req_is_wr) ? field_storage.DEVICE_ID_0.DATA_3_2.value : '0;
+    assign readback_array[5][31:0] = (decoded_reg_strb.DEVICE_ID_1 && !decoded_req_is_wr) ? field_storage.DEVICE_ID_1.DATA_7_4.value : '0;
+    assign readback_array[6][31:0] = (decoded_reg_strb.DEVICE_ID_2 && !decoded_req_is_wr) ? field_storage.DEVICE_ID_2.DATA_11_8.value : '0;
+    assign readback_array[7][31:0] = (decoded_reg_strb.DEVICE_ID_3 && !decoded_req_is_wr) ? field_storage.DEVICE_ID_3.DATA_15_12.value : '0;
+    assign readback_array[8][31:0] = (decoded_reg_strb.DEVICE_ID_4 && !decoded_req_is_wr) ? field_storage.DEVICE_ID_4.DATA_19_16.value : '0;
+    assign readback_array[9][31:0] = (decoded_reg_strb.DEVICE_ID_5 && !decoded_req_is_wr) ? field_storage.DEVICE_ID_5.DATA_23_20.value : '0;
     assign readback_array[10][7:0] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? field_storage.DEVICE_STATUS_0.DEV_STATUS.value : '0;
     assign readback_array[10][15:8] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? hwif_in.DEVICE_STATUS_0.PROT_ERROR.next : '0;
     assign readback_array[10][31:16] = (decoded_reg_strb.DEVICE_STATUS_0 && !decoded_req_is_wr) ? field_storage.DEVICE_STATUS_0.REC_REASON_CODE.value : '0;
