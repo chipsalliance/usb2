@@ -69,6 +69,7 @@ module usb_ocp_recovery_ctrl_decode (
   output logic        ctrl_set_stall,
   input  logic        ctrl_xfer_done,
   input  logic        ctrl_xfer_abort,
+  input  logic        device_id_cmd_enabled,
   input  logic        device_reset_cmd_enabled,
   input  logic        vendor_cmd_enabled,
   output logic        proto_err_rd_pulse,
@@ -131,7 +132,6 @@ module usb_ocp_recovery_ctrl_decode (
     direction_legal_s = 1'b0;
     unique case (cmd_code_s)
       OCP_CMD_PROT_CAP,
-      OCP_CMD_DEVICE_ID,
       OCP_CMD_DEVICE_STATUS,
       OCP_CMD_RECOVERY_STATUS,
       OCP_CMD_HW_STATUS,
@@ -139,6 +139,11 @@ module usb_ocp_recovery_ctrl_decode (
         cmd_supported_s   = 1'b1;
         direction_legal_s = is_in_s;
       end
+      OCP_CMD_DEVICE_ID:
+        begin
+          cmd_supported_s   = device_id_cmd_enabled;
+          direction_legal_s = is_in_s;
+        end
       OCP_CMD_DEVICE_RESET:
         begin
           cmd_supported_s   = device_reset_cmd_enabled;

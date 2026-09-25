@@ -110,6 +110,7 @@ module usb_ocp_recovery_top
   logic [7:0]                 decode_protocol_error_code;
   logic                       fw_protocol_error_req;
   logic                       fw_protocol_error_accept;
+  logic                       device_id_cmd_enabled;
   logic                       device_reset_cmd_enabled;
   logic                       vendor_cmd_enabled;
 
@@ -419,6 +420,7 @@ module usb_ocp_recovery_top
     .ctrl_set_stall  (rec_ctrl_set_stall),
     .ctrl_xfer_done  (rec_ctrl_xfer_done),
     .ctrl_xfer_abort (rec_ctrl_xfer_abort),
+    .device_id_cmd_enabled(device_id_cmd_enabled),
     .device_reset_cmd_enabled(device_reset_cmd_enabled),
     .vendor_cmd_enabled(vendor_cmd_enabled),
     .proto_err_rd_pulse (proto_err_rd_pulse),
@@ -436,6 +438,8 @@ module usb_ocp_recovery_top
     .rb_err          (usb_rb_err)
   );
 
+  assign device_id_cmd_enabled =
+      rb_hwif_out.PROT_CAP_2.AGENT_CAPS_IDENTIFICATION.value;
   assign device_reset_cmd_enabled =
       rb_hwif_out.PROT_CAP_2.AGENT_CAPS_FORCED_RECOVERY.value |
       rb_hwif_out.PROT_CAP_2.AGENT_CAPS_MGMT_RESET.value |
