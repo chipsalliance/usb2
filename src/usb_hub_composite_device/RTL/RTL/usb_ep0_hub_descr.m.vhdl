@@ -112,106 +112,106 @@ begin
   var_address    := var_desc_start;
   var_result(var_address)( 7 downto  0) := X"09"; --bLength
   var_result(var_address)(15 downto  8) := X"02"; --bDescriptorType = CONFIGURATION
-  var_result(var_address)(23 downto 16) := X"19"; --
+  var_result(var_address)(23 downto 16) := X"19"; --wTotalLength
   var_result(var_address)(31 downto 24) := X"00";
   var_address := var_address+1;
-  var_result(var_address)( 7 downto  0) := X"01";
-  var_result(var_address)(15 downto  8) := X"01";
-  var_result(var_address)(23 downto 16) := X"00";
-  var_result(var_address)(31 downto 24) := X"80"; -- Bit 6 is indicating if it is self-powered or bus-powered
+  var_result(var_address)( 7 downto  0) := X"01"; --bNumInterfaces
+  var_result(var_address)(15 downto  8) := X"01"; --bConfigurationValue
+  var_result(var_address)(23 downto 16) := X"00"; --iConfiguration
+  var_result(var_address)(31 downto 24) := X"80"; --bmAttributes : Bit 6 is indicating if it is self-powered or bus-powered
   var_address := var_address+1;
-  var_result(var_address)( 7 downto  0) := X"14"; -- 40 mA max current consumption
-  var_result(var_address)(15 downto  8) := X"09";
-  var_result(var_address)(23 downto 16) := X"04";
-  var_result(var_address)(31 downto 24) := X"00";
+  var_result(var_address)( 7 downto  0) := X"FA"; --bMaxPower : 500 mA max current consumption
+  var_result(var_address)(15 downto  8) := X"09"; --bLength
+  var_result(var_address)(23 downto 16) := X"04"; --bDescriptorType = INTERFACE
+  var_result(var_address)(31 downto 24) := X"00"; --bInterfaceNumber
   var_address := var_address+1;
-  var_result(var_address)( 7 downto  0) := X"00";
-  var_result(var_address)(15 downto  8) := X"01";
-  var_result(var_address)(23 downto 16) := X"09";
-  var_result(var_address)(31 downto 24) := X"00";
+  var_result(var_address)( 7 downto  0) := X"00"; --bAlternateSetting
+  var_result(var_address)(15 downto  8) := X"01"; --bNumEndpoints
+  var_result(var_address)(23 downto 16) := X"09"; --bInterfaceClass
+  var_result(var_address)(31 downto 24) := X"00"; --bInterfaceSubClass
   var_address := var_address+1;
-  var_result(var_address)( 7 downto  0) := X"00";
-  var_result(var_address)(15 downto  8) := X"00";
-  var_result(var_address)(23 downto 16) := X"07";
-  var_result(var_address)(31 downto 24) := X"05";
+  var_result(var_address)( 7 downto  0) := X"00"; --bInterfaceProtocol
+  var_result(var_address)(15 downto  8) := X"00"; --iInterface
+  var_result(var_address)(23 downto 16) := X"07"; --bLength
+  var_result(var_address)(31 downto 24) := X"05"; --bDescriptorType = ENDPOINT
   var_address := var_address+1;
-  var_result(var_address)( 7 downto  0) := X"81";
-  var_result(var_address)(15 downto  8) := X"03";
-  var_result(var_address)(23 downto 16) := X"01";
+  var_result(var_address)( 7 downto  0) := X"81"; --bEndpointAddress
+  var_result(var_address)(15 downto  8) := X"03"; --bmAttributes
+  var_result(var_address)(23 downto 16) := X"01"; --wMaxPacketSize
   var_result(var_address)(31 downto 24) := X"00";
   var_address := var_address+1;
   if HIGH_SPEED = false then 
-    var_result(var_address)( 7 downto  0) := X"FF";
+    var_result(var_address)( 7 downto  0) := X"FF"; --bInterval
   else
-    var_result(var_address)( 7 downto  0) := X"0F";
+    var_result(var_address)( 7 downto  0) := X"0F"; --bInterval
   end if;
 
   -- HUB DESCRIPTOR (Hub)
   var_desc_start := var_desc_start + 16;
   var_address    := var_desc_start;
-  var_result(var_address)( 7 downto  0) := X"09"; --bLength
+  var_result(var_address)( 7 downto  0) := X"09"; --bDescLength
   var_result(var_address)(15 downto  8) := X"29"; --bDescriptorType = CONFIGURATION
-  var_result(var_address)(23 downto 16) := X"02";  
-  var_result(var_address)(31 downto 24) := X"14";
+  var_result(var_address)(23 downto 16) := X"02"; --bNbrPorts
+  var_result(var_address)(31 downto 24) := X"14"; --wHubCharacteristics
   var_address := var_address+1;
-  var_result(var_address)( 7 downto  0) := X"00";
-  var_result(var_address)(15 downto  8) := X"00";
-  var_result(var_address)(23 downto 16) := X"00";
-  var_result(var_address)(31 downto 24) := X"06";
+  var_result(var_address)( 7 downto  0) := X"00"; 
+  var_result(var_address)(15 downto  8) := X"00"; --bPwrOn2PwrGood
+  var_result(var_address)(23 downto 16) := X"00"; --bHubContrCurrent
+  var_result(var_address)(31 downto 24) := X"06"; --DeviceRemovable
   var_address := var_address+1;
-  var_result(var_address)( 7 downto  0) := X"FF";
+  var_result(var_address)( 7 downto  0) := X"FF"; --PortPwrCtrlMask
 
-  if HIGH_SPEED = true then 
-    -- HUB DEVICE QUALIFIER DESCRIPTOR
+  if HIGH_SPEED then 
+    -- HUB DEVICE QUALIFIER DESCRIPTOR - The same values are returned when operating in FS or HS mode
     var_desc_start := var_desc_start + 16;
     var_address    := var_desc_start;
-    var_result(var_address)( 7 downto  0) := X"0A";
-    var_result(var_address)(15 downto  8) := X"06";
-    var_result(var_address)(23 downto 16) := X"00";
+    var_result(var_address)( 7 downto  0) := X"0A"; --bDescLength
+    var_result(var_address)(15 downto  8) := X"06"; --bDescriptorType = Device Qualifier
+    var_result(var_address)(23 downto 16) := X"00"; --bcdUSB: LPM supported = X"02",X"10"
     var_result(var_address)(31 downto 24) := X"02";
     var_address := var_address+1;
-    var_result(var_address)( 7 downto  0) := X"00";
-    var_result(var_address)(15 downto  8) := X"00";
-    var_result(var_address)(23 downto 16) := X"00";
-    var_result(var_address)(31 downto 24) := X"40";
+    var_result(var_address)( 7 downto  0) := X"00"; --bDeviceClass
+    var_result(var_address)(15 downto  8) := X"00"; --bDeviceSubClass
+    var_result(var_address)(23 downto 16) := X"00"; --bDeviceProtocol
+    var_result(var_address)(31 downto 24) := X"40"; --bMaxPacketSize
     var_address := var_address+1;
-    var_result(var_address)( 7 downto  0) := X"01";
+    var_result(var_address)( 7 downto  0) := X"01"; --bNumConfigurations
     var_result(var_address)(15 downto  8) := X"00";
   
-    -- OTHER_SPEED_CONFIGURATION DESCRIPTOR (HUB)
+    -- OTHER_SPEED_CONFIGURATION DESCRIPTOR (HUB) - The same values are returned when operating in FS or HS mode
     var_desc_start := var_desc_start + 16;
     var_address    := var_desc_start;
     var_result(var_address)( 7 downto  0) := X"09"; --bLength
     var_result(var_address)(15 downto  8) := X"07"; --bDescriptorType = OTHER CONFIGURATION
-    var_result(var_address)(23 downto 16) := X"19"; --
+    var_result(var_address)(23 downto 16) := X"19"; --wTotalLength
     var_result(var_address)(31 downto 24) := X"00";
     var_address := var_address+1;
-    var_result(var_address)( 7 downto  0) := X"01";
-    var_result(var_address)(15 downto  8) := X"01";
-    var_result(var_address)(23 downto 16) := X"00";
-    var_result(var_address)(31 downto 24) := X"80"; --Bit 6 is indicating if it is self-powered or bus-powered
+    var_result(var_address)( 7 downto  0) := X"01"; --bNumInterfaces
+    var_result(var_address)(15 downto  8) := X"01"; --bConfigurationValue
+    var_result(var_address)(23 downto 16) := X"00"; --iConfiguration
+    var_result(var_address)(31 downto 24) := X"80"; --bmAttributes : Bit 6 is indicating if it is self-powered or bus-powered
     var_address := var_address+1;
-    var_result(var_address)( 7 downto  0) := X"FA"; --500 mA max current consumption
-    var_result(var_address)(15 downto  8) := X"09";
-    var_result(var_address)(23 downto 16) := X"04";
+    var_result(var_address)( 7 downto  0) := X"FA"; --bMaxPower : 500 mA max current consumption
+    var_result(var_address)(15 downto  8) := X"09"; --bLength
+    var_result(var_address)(23 downto 16) := X"04"; --bDescriptorType = INTERFACE
+    var_result(var_address)(31 downto 24) := X"00"; --bInterfaceNumber
+    var_address := var_address+1;
+    var_result(var_address)( 7 downto  0) := X"00"; --bAlternateSetting
+    var_result(var_address)(15 downto  8) := X"01"; --bNumEndpoints
+    var_result(var_address)(23 downto 16) := X"09"; --bInterfaceClass
+    var_result(var_address)(31 downto 24) := X"00"; --bInterfaceSubClass
+    var_address := var_address+1;
+    var_result(var_address)( 7 downto  0) := X"00"; --bInterfaceProtocol
+    var_result(var_address)(15 downto  8) := X"00"; --iInterface
+    var_result(var_address)(23 downto 16) := X"07"; --bLength
+    var_result(var_address)(31 downto 24) := X"05"; --bDescriptorType = ENDPOINT
+    var_address := var_address+1;
+    var_result(var_address)( 7 downto  0) := X"81"; --bEndpointAddress
+    var_result(var_address)(15 downto  8) := X"03"; --bmAttributes
+    var_result(var_address)(23 downto 16) := X"01"; --wMaxPacketSize
     var_result(var_address)(31 downto 24) := X"00";
     var_address := var_address+1;
-    var_result(var_address)( 7 downto  0) := X"00";
-    var_result(var_address)(15 downto  8) := X"01";
-    var_result(var_address)(23 downto 16) := X"09";
-    var_result(var_address)(31 downto 24) := X"00";
-    var_address := var_address+1;
-    var_result(var_address)( 7 downto  0) := X"00";
-    var_result(var_address)(15 downto  8) := X"00";
-    var_result(var_address)(23 downto 16) := X"07";
-    var_result(var_address)(31 downto 24) := X"05";
-    var_address := var_address+1;
-    var_result(var_address)( 7 downto  0) := X"81";
-    var_result(var_address)(15 downto  8) := X"03";
-    var_result(var_address)(23 downto 16) := X"01";
-    var_result(var_address)(31 downto 24) := X"00";
-    var_address := var_address+1;
-    var_result(var_address)( 7 downto  0) := X"0F";
+    var_result(var_address)( 7 downto  0) := X"0F"; --bInterval
 
   end if;
 
@@ -364,13 +364,13 @@ begin
     var_address := var_address + 4;
     var_result(var_address  ) := X"06000680"; --GetDeviceQualifierDescriptor
     var_result(var_address+2) := X"000A0000"; --GetDeviceQualifierDescriptor
-    var_result(var_address+1) := X"FFFF8C00"; --SETUP_MASK_LSB
+    var_result(var_address+1) := X"FFFF8300"; --SETUP_MASK_LSB
     var_result(var_address+3) := X"0000FFFF"; --SETUP_MASK_MSB 
 
     var_address := var_address + 4;
     var_result(var_address  ) := X"07000680"; --GetOtherSpeedConfigurationDescriptor
     var_result(var_address+2) := X"00190000"; --GetOtherSpeedConfigurationDescriptor
-    var_result(var_address+1) := X"FFFF8E80"; --SETUP_MASK_LSB
+    var_result(var_address+1) := X"FFFF8480"; --SETUP_MASK_LSB
     var_result(var_address+3) := X"0000FFFF"; --SETUP_MASK_MSB 
 
   end if;
