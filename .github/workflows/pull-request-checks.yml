@@ -90,9 +90,9 @@ jobs:
             usb_ocp_recovery_reg.sv \
             usb_ocp_recovery_reg_addr_defs.svh \
             usb_ocp_recovery_reg_pkg.sv \
-            > "${expected_list}"
+            | LC_COLLATE=C sort > "${expected_list}"
           find "${generated_dir}" -maxdepth 1 -type f -printf '%f\n' \
-            | sort > "${actual_list}"
+            | LC_COLLATE=C sort > "${actual_list}"
 
           if ! diff -u "${expected_list}" "${actual_list}"; then
             echo "::error::Recovery generator produced an unexpected file set"
