@@ -70,6 +70,12 @@ The pull-request RDL workflow runs these validations and regenerates Recovery
 outputs in temporary storage. It fails if the generated file set or contents
 do not exactly match the checked-in collateral.
 
+The same pull-request workflow runs
+`.github/scripts/license_header_check.sh` to require Apache-2.0 SPDX headers on
+tracked source, script, workflow, filelist, and RDL files. The two
+PeakRDL-generated SystemVerilog modules are excluded because regeneration
+replaces their file headers.
+
 ## VHDL source-set selection
 
 VHDL sources and configuration bindings use `work`, meaning the library into

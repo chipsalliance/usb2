@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: RDL check
+name: Quality checks
 
 on:
   pull_request:
@@ -22,10 +22,21 @@ permissions:
   contents: read
 
 concurrency:
-  group: rdl-check-${{ github.workflow }}-${{ github.ref }}
+  group: quality-checks-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  license:
+    name: Apache-2.0 license headers
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check license headers
+        run: bash .github/scripts/license_header_check.sh
+
   rdl:
     name: Validate and regenerate RDL
     runs-on: ubuntu-24.04
