@@ -23,6 +23,59 @@ git submodule update --remote submodules/caliptra-rtl
 
 To compile: `cd tools/scripts && ./run_compile.csh` (VCS version: W-2024.09-SP1_Full64)
 
+## SystemRDL validation and generation
+
+`tools/scripts/usb2_reg_gen.py` is the authoritative SystemRDL compiler and
+OCP Recovery register generator. Install the pinned CI dependencies with:
+
+```sh
+python3 -m pip install -r tools/scripts/requirements-rdl.txt
+```
+
+The pinned tool versions are:
+
+| Package | Version |
+|---|---|
+| SystemRDL Compiler | 1.27.3 |
+| PeakRDL-regblock | 0.21.0 |
+| PeakRDL-uvm | 2.3.0 |
+| PeakRDL-html | 2.10.1 |
+
+Validate the addrmap sources without generating files:
+
+```sh
+for rdl in usb_combo usb_hub usb_ocp_recovery_reg usbhsd usbhsh; do
+  python3 tools/scripts/usb2_reg_gen.py \
+    "systemrdl/${rdl}.rdl" --validate-only
+done
+```
+
+`usb_device_memory.rdl` defines a top-level memory component rather than an
+addrmap, so validate it with compile-only mode:
+
+```sh
+python3 tools/scripts/usb2_reg_gen.py \
+  systemrdl/usb_device_memory.rdl --validate-only --compile-only
+```
+
+Regenerate the checked-in OCP Recovery register collateral with:
+
+```sh
+python3 tools/scripts/usb2_reg_gen.py \
+  systemrdl/usb_ocp_recovery_reg.rdl \
+  src/integration/rtl/generated
+```
+
+The pull-request RDL workflow runs these validations and regenerates Recovery
+outputs in temporary storage. It fails if the generated file set or contents
+do not exactly match the checked-in collateral.
+
+The same pull-request workflow runs
+`.github/scripts/license_header_check.sh` to require Apache-2.0 SPDX headers on
+tracked source, script, workflow, filelist, and RDL files. The two
+PeakRDL-generated SystemVerilog modules are excluded because regeneration
+replaces their file headers.
+
 ## VHDL source-set selection
 
 VHDL sources and configuration bindings use `work`, meaning the library into
