@@ -17,15 +17,6 @@
 # Pinned tool versions are listed in requirements-rdl.txt.
 # The current CI baseline uses peakrdl-regblock version 0.21.0.
 # 
-# TODO: To update this script to the latest version (0.11.0)
-# 1.  Import ALL_UDPS
-#     from peakrdl_regblock.udps import ALL_UDPS
-# 2.  Register ALL_UDPS after creating instance of compiler
-#     rdlc = RDLCompiler()
-#
-#     Register all UDPs that 'regblock' requires
-#     for udp in ALL_UDPS:
-#       rdlc.register_udp(udp)
 
 from systemrdl import RDLCompiler, RDLCompileError, RDLWalker
 from systemrdl import RDLListener, rdltypes
