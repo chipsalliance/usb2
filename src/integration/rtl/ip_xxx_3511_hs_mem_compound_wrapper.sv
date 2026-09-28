@@ -102,12 +102,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   input  logic usb_axi_aclk,
   input  logic usb_axi_aresetn,
 
-  // Clock-safe allowlists; every entry participates, including zero.
-  input  logic dev0_enable_axi_user_filtering_i,
-  input  logic [COMBO_AXI_USER_WIDTH-1:0] dev0_priv_axi_users_i [DEV0_NUM_PRIV_AXI_USERS],
-  input  logic dev1_enable_axi_user_filtering_i,
-  input  logic [DEV1_CSR_AXI_USER_WIDTH-1:0] dev1_priv_axi_users_i [DEV1_NUM_PRIV_AXI_USERS],
-
   // ---- Combo control AXI interface ----
   axi_if.w_sub combo_axi_if_w_sub,
   axi_if.r_sub combo_axi_if_r_sub,
@@ -123,6 +117,14 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   // ---- DEV1 memory AXI interface ----
   axi_if.w_sub dev1_mem_axi_if_w_sub,
   axi_if.r_sub dev1_mem_axi_if_r_sub,
+
+  // ---- AXI USER filtering policy ----
+  // Clock-safe allowlists; every entry participates, including zero.
+  // Declared after the AXI interfaces so their USER widths come from axi_if.
+  input  logic dev0_enable_axi_user_filtering_i,
+  input  logic [$bits(combo_axi_if_w_sub.awuser)-1:0] dev0_priv_axi_users_i [DEV0_NUM_PRIV_AXI_USERS],
+  input  logic dev1_enable_axi_user_filtering_i,
+  input  logic [$bits(dev1_csr_axi_if_w_sub.awuser)-1:0] dev1_priv_axi_users_i [DEV1_NUM_PRIV_AXI_USERS],
 
   // =========================================================================
   // USBDC0 SRAM interface  (MCU-owned device controller EP list + data buf)
