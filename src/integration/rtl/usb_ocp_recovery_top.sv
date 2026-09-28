@@ -699,11 +699,11 @@ module usb_ocp_recovery_top
   // OCP command aperture). Same-domain (dev_axi_aclk) registered field value; no
   // synchronizer needed.
   assign rec_ocp_path_disable = rb_hwif_out.CALIPTRA_CTRL.OCP_PATH_DISABLE.value;
-  assign rec_ocp_claim_abort = rb_hwif_out.CALIPTRA_CTRL.OCP_CLAIM_ABORT.swmod
-                             && rb_is_ext
-                             && cpuif_req_is_wr
-                             && cpuif_wr_biten[1]
-                             && cpuif_wr_data[1];
+  // Use the stored, self-clearing request bit instead of the combinational
+  // swmod transaction pulse. This register boundary prevents abort-driven USB
+  // request suppression from feeding back into EXT arbitration.
+  assign rec_ocp_claim_abort =
+      rb_hwif_out.CALIPTRA_CTRL.OCP_CLAIM_ABORT.value;
   assign ocp_claim_abort_clear =
       rb_hwif_out.CALIPTRA_CTRL.OCP_CLAIM_ABORT.value;
   assign fw_protocol_error_req =
