@@ -120,8 +120,6 @@ module axi_to_ahb
     logic [ReqFifoWidth-1:0]    aw_fifo_wdata, aw_fifo_rdata;
     logic                      aw_fifo_rvalid, aw_fifo_rready;
     req_ctx_t                  ar_req, aw_req, ar_head, aw_head;
-    logic                      ar_reject, aw_reject;
-    logic                      ar_head_reject, aw_head_reject;
     logic                      active_reject;
 
     // Write data queue.
@@ -145,6 +143,9 @@ module axi_to_ahb
     logic                      grant_rd, grant_wr;
     logic                      ar_fifo_pop, aw_fifo_pop, w_fifo_pop;
     logic                      rd_resp_accept, last_beat;
+    logic                      beat_ready;
+    logic [1:0]                beat_resp;  // AXI response code
+    logic [DW-1:0]             beat_rdata;
 
     // Response queues.
     logic [R_RESP_W-1:0]        r_resp_wdata, r_resp_rdata;
@@ -177,6 +178,8 @@ module axi_to_ahb
         if (ENABLE_USER_FILTER) begin : gen_user_filter
             logic [NUM_PRIV_AXI_USERS-1:0] ar_user_match;
             logic [NUM_PRIV_AXI_USERS-1:0] aw_user_match;
+            logic ar_reject, aw_reject;
+            logic ar_head_reject, aw_head_reject;
             logic active_reject_q;
 
             for (genvar user_idx = 0;
@@ -223,14 +226,10 @@ module axi_to_ahb
                 end
             end
         end else begin : gen_no_user_filter
-            assign ar_reject = 1'b0;
-            assign aw_reject = 1'b0;
             assign ar_fifo_wdata = ar_req;
             assign aw_fifo_wdata = aw_req;
             assign ar_head = req_ctx_t'(ar_fifo_rdata);
             assign aw_head = req_ctx_t'(aw_fifo_rdata);
-            assign ar_head_reject = 1'b0;
-            assign aw_head_reject = 1'b0;
             assign active_reject = 1'b0;
         end
     endgenerate
@@ -423,6 +422,12 @@ module axi_to_ahb
     assign last_beat      = (beat_cnt_q == 8'd0);
     assign rd_resp_accept = r_resp_wvalid && r_resp_wready;
 
+    // A denied transaction completes against an always-ready SLVERR result
+    // while the AHB output gate keeps the real bus idle.
+    assign beat_ready = active_reject ? 1'b1            : ahb_hreadyout;
+    assign beat_resp  = active_reject ? AXI_RESP_SLVERR : ahb_resp_to_axi(ahb_hresp);
+    assign beat_rdata = active_reject ? '0              : ahb_hrdata;
+
     // Arbitration: who gets to go next from IDLE?
     always_comb begin
         grant_rd = 1'b0;
@@ -453,7 +458,7 @@ module axi_to_ahb
             FSM_IDLE: begin
                 if (grant_rd) begin
                     ar_fifo_pop = 1'b1;
-                    fsm_d       = ar_head_reject ? FSM_RD_DATA : FSM_RD_ADDR;
+                    fsm_d       = FSM_RD_ADDR;
                 end else if (grant_wr) begin
                     aw_fifo_pop = 1'b1;
                     fsm_d       = FSM_WR_ADDR;
@@ -464,21 +469,14 @@ module axi_to_ahb
             // Read burst
             // -------------------------------------------------
             FSM_RD_ADDR: begin
-                if (ahb_hreadyout)
+                if (beat_ready)
                     fsm_d = FSM_RD_DATA;
             end
             FSM_RD_DATA: begin
-                if (active_reject) begin
-                    r_resp_wvalid = 1'b1;
-                    r_resp_wdata  = {last_beat, resp_id_q, AXI_RESP_SLVERR, DW'('0)};
-                    if (r_resp_wready && last_beat)
-                        fsm_d = FSM_IDLE;
-                end else if (ahb_hreadyout && r_resp_wready) begin
+                if (beat_ready && r_resp_wready) begin
                     // Push this beat's data to R response FIFO
                     r_resp_wvalid = 1'b1;
-                    r_resp_wdata  = {last_beat, resp_id_q,
-                                     ahb_resp_to_axi(ahb_hresp),
-                                     ahb_hrdata};
+                    r_resp_wdata  = {last_beat, resp_id_q, beat_resp, beat_rdata};
                     if (last_beat) begin
                         // Burst complete -- return to IDLE
                         fsm_d = FSM_IDLE;
@@ -493,30 +491,18 @@ module axi_to_ahb
             // Write burst
             // -------------------------------------------------
             FSM_WR_ADDR: begin
-                if (active_reject) begin
-                    // Drain by AWLEN, not WLAST, and leave the following burst in the FIFO.
-                    if (w_fifo_rvalid_pack) begin
-                        w_fifo_pop = 1'b1;
-                        if (last_beat)
-                            fsm_d = FSM_WR_DATA;
-                    end
-                end else if (ahb_hreadyout && w_fifo_rvalid_pack)
+                // Only present AHB address when W beat data is available
+                if (beat_ready && w_fifo_rvalid_pack)
                     fsm_d = FSM_WR_DATA;
             end
             FSM_WR_DATA: begin
-                if (active_reject) begin
-                    // The final W beat was consumed before entering this state.
-                    b_resp_wvalid = 1'b1;
-                    b_resp_wdata  = {resp_id_q, AXI_RESP_SLVERR};
-                    if (b_resp_wready)
-                        fsm_d = FSM_IDLE;
-                end else if (ahb_hreadyout) begin
+                if (beat_ready) begin
                     if (last_beat) begin
                         // Last beat: only complete if B-response FIFO can accept
                         if (b_resp_wready) begin
                             w_fifo_pop    = 1'b1;
                             b_resp_wvalid = 1'b1;
-                            b_resp_wdata  = {resp_id_q, resp_accum_q | ahb_resp_to_axi(ahb_hresp)};
+                            b_resp_wdata  = {resp_id_q, resp_accum_q | beat_resp};
                             fsm_d         = FSM_IDLE;
                         end
                     end else begin
@@ -566,20 +552,14 @@ module axi_to_ahb
 
                 FSM_RD_DATA: begin
                     if (rd_resp_accept && !last_beat) begin
-                        beat_cnt_q <= beat_cnt_q - 8'd1;
-                        if (!active_reject)
-                            beat_addr_q <= next_addr;
+                        beat_cnt_q  <= beat_cnt_q - 8'd1;
+                        beat_addr_q <= next_addr;
                     end
                 end
 
-                FSM_WR_ADDR: begin
-                    if (active_reject && w_fifo_pop && !last_beat)
-                        beat_cnt_q <= beat_cnt_q - 8'd1;
-                end
-
                 FSM_WR_DATA: begin
-                    if (!active_reject && w_fifo_pop) begin
-                        resp_accum_q <= resp_accum_q | ahb_resp_to_axi(ahb_hresp);
+                    if (w_fifo_pop) begin
+                        resp_accum_q <= resp_accum_q | beat_resp;
                         if (!last_beat) begin
                             beat_cnt_q  <= beat_cnt_q - 8'd1;
                             beat_addr_q <= next_addr;
