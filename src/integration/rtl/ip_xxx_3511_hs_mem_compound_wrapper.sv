@@ -36,6 +36,10 @@
 //           Each AXI interface pair uses one axi_to_ahb. The Combo AHB decoder
 //           selects among its three downstream targets; each other interface
 //           has one dedicated target.
+//           USER filtering shares the DEV0 policy across Combo and DEV0 SRAM,
+//           and the DEV1 policy across DEV1 CSR and SRAM. Each policy has an
+//           active-high filter enable; authorization is captured at AW/AR acceptance.
+//           Combo includes the reserved recovery aperture, not USB EP0 traffic.
 // -------------------------------------------------------------------------
 // RELEASE HISTORY
 // VERSION  DATE        AUTHOR   DESCRIPTION
@@ -63,6 +67,9 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   // hub_ahbs_haddr and therefore the hub register aperture.
   parameter int unsigned C_HUB_FIFO_SIZE = 172,
 
+  // ---- AXI USER ownership policies ----------------------------------------
+  parameter int unsigned DEV0_NUM_PRIV_AXI_USERS = 4,
+  parameter int unsigned DEV1_NUM_PRIV_AXI_USERS = 4,
 
   // ---- SRAM configuration -------------------------------------------------
   // Per-device EP-list / data-buffer SRAM address width. The IP splits this
@@ -92,6 +99,12 @@ module ip_xxx_3511_hs_mem_compound_wrapper
 ) (
   input  logic usb_axi_aclk,
   input  logic usb_axi_aresetn,
+
+  // Clock-safe allowlists; every entry participates, including zero.
+  input  logic dev0_enable_axi_user_filtering_i,
+  input  logic [COMBO_AXI_USER_WIDTH-1:0] dev0_priv_axi_users_i [DEV0_NUM_PRIV_AXI_USERS],
+  input  logic dev1_enable_axi_user_filtering_i,
+  input  logic [DEV1_CSR_AXI_USER_WIDTH-1:0] dev1_priv_axi_users_i [DEV1_NUM_PRIV_AXI_USERS],
 
   // ---- Combo control AXI interface ----
   axi_if.w_sub combo_axi_if_w_sub,
@@ -326,12 +339,16 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .AW(COMBO_AXI_ADDR_WIDTH),
     .DW(COMBO_AXI_DATA_WIDTH),
     .IW(COMBO_AXI_ID_WIDTH),
-    .UW(COMBO_AXI_USER_WIDTH)
+    .UW(COMBO_AXI_USER_WIDTH),
+    .ENABLE_USER_FILTER(1'b1),
+    .NUM_PRIV_AXI_USERS(DEV0_NUM_PRIV_AXI_USERS)
   ) u_combo_axi2ahb (
     .clk(usb_axi_aclk),
     .rst_n(usb_axi_aresetn),
     .axi_r(combo_axi_if_r_sub),
     .axi_w(combo_axi_if_w_sub),
+    .enable_axi_user_filtering_i(dev0_enable_axi_user_filtering_i),
+    .priv_axi_users_i(dev0_priv_axi_users_i),
     .ahb_haddr(combo_ahb_system_haddr),
     .ahb_hburst(combo_ahb_hburst),
     .ahb_hsize(combo_ahb_hsize),
@@ -348,12 +365,16 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .AW(DEV0_MEM_AXI_ADDR_WIDTH),
     .DW(DEV0_MEM_AXI_DATA_WIDTH),
     .IW(DEV0_MEM_AXI_ID_WIDTH),
-    .UW(DEV0_MEM_AXI_USER_WIDTH)
+    .UW(DEV0_MEM_AXI_USER_WIDTH),
+    .ENABLE_USER_FILTER(1'b1),
+    .NUM_PRIV_AXI_USERS(DEV0_NUM_PRIV_AXI_USERS)
   ) u_dev0_mem_axi2ahb (
     .clk(usb_axi_aclk),
     .rst_n(usb_axi_aresetn),
     .axi_r(dev0_mem_axi_if_r_sub),
     .axi_w(dev0_mem_axi_if_w_sub),
+    .enable_axi_user_filtering_i(dev0_enable_axi_user_filtering_i),
+    .priv_axi_users_i(dev0_priv_axi_users_i),
     .ahb_haddr(dev0_mem_ahb_system_haddr),
     .ahb_hburst(dev0_mem_ahb_hburst),
     .ahb_hsize(dev0_mem_ahb_hsize),
@@ -370,12 +391,16 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .AW(DEV1_CSR_AXI_ADDR_WIDTH),
     .DW(DEV1_CSR_AXI_DATA_WIDTH),
     .IW(DEV1_CSR_AXI_ID_WIDTH),
-    .UW(DEV1_CSR_AXI_USER_WIDTH)
+    .UW(DEV1_CSR_AXI_USER_WIDTH),
+    .ENABLE_USER_FILTER(1'b1),
+    .NUM_PRIV_AXI_USERS(DEV1_NUM_PRIV_AXI_USERS)
   ) u_dev1_csr_axi2ahb (
     .clk(usb_axi_aclk),
     .rst_n(usb_axi_aresetn),
     .axi_r(dev1_csr_axi_if_r_sub),
     .axi_w(dev1_csr_axi_if_w_sub),
+    .enable_axi_user_filtering_i(dev1_enable_axi_user_filtering_i),
+    .priv_axi_users_i(dev1_priv_axi_users_i),
     .ahb_haddr(dev1_csr_ahb_system_haddr),
     .ahb_hburst(dev1_csr_ahb_hburst),
     .ahb_hsize(dev1_csr_ahb_hsize),
@@ -392,12 +417,16 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .AW(DEV1_MEM_AXI_ADDR_WIDTH),
     .DW(DEV1_MEM_AXI_DATA_WIDTH),
     .IW(DEV1_MEM_AXI_ID_WIDTH),
-    .UW(DEV1_MEM_AXI_USER_WIDTH)
+    .UW(DEV1_MEM_AXI_USER_WIDTH),
+    .ENABLE_USER_FILTER(1'b1),
+    .NUM_PRIV_AXI_USERS(DEV1_NUM_PRIV_AXI_USERS)
   ) u_dev1_mem_axi2ahb (
     .clk(usb_axi_aclk),
     .rst_n(usb_axi_aresetn),
     .axi_r(dev1_mem_axi_if_r_sub),
     .axi_w(dev1_mem_axi_if_w_sub),
+    .enable_axi_user_filtering_i(dev1_enable_axi_user_filtering_i),
+    .priv_axi_users_i(dev1_priv_axi_users_i),
     .ahb_haddr(dev1_mem_ahb_system_haddr),
     .ahb_hburst(dev1_mem_ahb_hburst),
     .ahb_hsize(dev1_mem_ahb_hsize),
@@ -641,6 +670,16 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   `CALIPTRA_ASSERT_INIT(HubFifoSize_A,
                         (C_HUB_FIFO_SIZE >= HUB_FIFO_SIZE_MIN) &&
                         (C_HUB_FIFO_SIZE <= HUB_FIFO_SIZE_MAX))
+  `CALIPTRA_ASSERT_INIT(Dev0PrivAxiUserCount_A, DEV0_NUM_PRIV_AXI_USERS > 0)
+  `CALIPTRA_ASSERT_INIT(Dev1PrivAxiUserCount_A, DEV1_NUM_PRIV_AXI_USERS > 0)
+  `CALIPTRA_ASSERT_INIT(Dev0AxiUserWidth_A,
+                        (COMBO_AXI_USER_WIDTH == $bits(combo_axi_if_r_sub.aruser)) &&
+                        (COMBO_AXI_USER_WIDTH == DEV0_MEM_AXI_USER_WIDTH) &&
+                        (COMBO_AXI_USER_WIDTH == $bits(dev0_mem_axi_if_r_sub.aruser)))
+  `CALIPTRA_ASSERT_INIT(Dev1AxiUserWidth_A,
+                        (DEV1_CSR_AXI_USER_WIDTH == $bits(dev1_csr_axi_if_r_sub.aruser)) &&
+                        (DEV1_CSR_AXI_USER_WIDTH == DEV1_MEM_AXI_USER_WIDTH) &&
+                        (DEV1_CSR_AXI_USER_WIDTH == $bits(dev1_mem_axi_if_r_sub.aruser)))
   `CALIPTRA_ASSERT_INIT(ComboAxiAddrWidth_A,
                         (COMBO_AXI_ADDR_WIDTH >= COMBO_LOCAL_ADDR_WIDTH) &&
                         ($bits(combo_axi_if_w_sub.awaddr) == COMBO_AXI_ADDR_WIDTH))
@@ -666,4 +705,3 @@ module ip_xxx_3511_hs_mem_compound_wrapper
                         (DEV1_MEM_AXI_DATA_WIDTH == 32) &&
                         ($bits(dev1_mem_axi_if_r_sub.rdata) == 32))
 endmodule : ip_xxx_3511_hs_mem_compound_wrapper
-

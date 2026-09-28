@@ -26,6 +26,16 @@
 //   Clock/reset: a single clk/rst_n pair drives both the AXI and AHB sides
 //   (same clock domain assumed).
 //
+//   ENABLE_USER_FILTER adds an exact AWUSER/ARUSER allowlist sampled at
+//   each address handshake. A known low enable_axi_user_filtering_i
+//   bypasses the list; zero and all-ones USER values are ordinary entries.
+//   NUM_PRIV_AXI_USERS must be positive; every list entry participates.
+//   Unknown enable or USER comparisons cannot authorize a request.
+//   Denied bursts complete locally with SLVERR (zero read data) and never
+//   select AHB. Compile-time disable removes matching and reject storage.
+//
+
+`include "caliptra_prim_assert.sv"
 
 module axi_to_ahb
   import axi_pkg::*;
@@ -35,7 +45,9 @@ module axi_to_ahb
     parameter int unsigned IW       = 8,    // AXI ID width
     parameter int unsigned UW       = 32,   // AXI User width
     parameter int unsigned OSTD_R   = 2,    // Outstanding read depth  (full mode only)
-    parameter int unsigned OSTD_W   = 2     // Outstanding write depth (full mode only)
+    parameter int unsigned OSTD_W   = 2,    // Outstanding write depth (full mode only)
+    parameter bit ENABLE_USER_FILTER = 1'b0,
+    parameter int unsigned NUM_PRIV_AXI_USERS = 4
 ) (
     input  logic             clk,
     input  logic             rst_n,
@@ -43,6 +55,9 @@ module axi_to_ahb
     // ---- AXI Subordinate (using axi_if, no modport) ----
     axi_if.r_sub             axi_r,
     axi_if.w_sub             axi_w,
+
+    input  logic             enable_axi_user_filtering_i,
+    input  logic [UW-1:0]    priv_axi_users_i [NUM_PRIV_AXI_USERS],
 
     // ---- AHB-Lite Master ----
     output logic [AW-1:0]    ahb_haddr,
@@ -67,13 +82,6 @@ module axi_to_ahb
     localparam logic [1:0] HTRANS_IDLE   = 2'b00;
     localparam logic [1:0] HTRANS_NONSEQ = 2'b10;
 
-    // ---------------------------------------------------------------
-    // Function: map AHB hresp to AXI resp.
-    // ---------------------------------------------------------------
-    function automatic logic [1:0] ahb_resp_to_axi(input logic [1:0] hresp);
-        return (hresp == 2'b00) ? AXI_RESP_OKAY : AXI_RESP_SLVERR;
-    endfunction
-
     // =================================================================
     //  Full AXI4 Mode (burst, multiple outstanding)
     // =================================================================
@@ -82,7 +90,11 @@ module axi_to_ahb
     // Types
     // -----------------------------------------------------------
     localparam int unsigned REQ_CTX_W = AW + 2 + 3 + 8 + IW; // addr, burst, size, len, id
+    localparam int unsigned ReqFifoWidth = REQ_CTX_W + (ENABLE_USER_FILTER ? 1 : 0);
     localparam int unsigned W_CTX_W  = DW + BC;              // wdata, wstrb
+    localparam int unsigned W_FIFO_W = W_CTX_W + 1;
+    localparam int unsigned R_RESP_W = DW + 2 + IW + 1;
+    localparam int unsigned B_RESP_W = 2 + IW;
 
     typedef struct packed {
         logic [AW-1:0]  addr;
@@ -92,15 +104,138 @@ module axi_to_ahb
         logic [IW-1:0]  id;
     } req_ctx_t;
 
-    // -----------------------------------------------------------
-    // AR Request FIFO
-    // -----------------------------------------------------------
-    logic                  ar_fifo_wvalid, ar_fifo_wready;
-    logic [REQ_CTX_W-1:0] ar_fifo_wdata;
-    logic                  ar_fifo_rvalid, ar_fifo_rready;
-    logic [REQ_CTX_W-1:0] ar_fifo_rdata;
+    typedef enum logic [2:0] {
+        FSM_IDLE,
+        FSM_RD_ADDR,
+        FSM_RD_DATA,
+        FSM_WR_ADDR,
+        FSM_WR_DATA
+    } fsm_state_e;
 
-    req_ctx_t ar_req;
+    // Request queues and policy decisions.
+    logic                      ar_fifo_wvalid, ar_fifo_wready;
+    logic [ReqFifoWidth-1:0]    ar_fifo_wdata, ar_fifo_rdata;
+    logic                      ar_fifo_rvalid, ar_fifo_rready;
+    logic                      aw_fifo_wvalid, aw_fifo_wready;
+    logic [ReqFifoWidth-1:0]    aw_fifo_wdata, aw_fifo_rdata;
+    logic                      aw_fifo_rvalid, aw_fifo_rready;
+    req_ctx_t                  ar_req, aw_req, ar_head, aw_head;
+    logic                      ar_reject, aw_reject;
+    logic                      ar_head_reject, aw_head_reject;
+    logic                      active_reject;
+
+    // Write data queue.
+    logic                      w_fifo_wvalid;
+    logic [W_FIFO_W-1:0]        w_fifo_wdata_pack, w_fifo_rdata_pack;
+    logic                      w_fifo_rvalid_pack, w_fifo_rready_pack;
+    logic                      w_fifo_wready_pack;
+    logic                      w_beat_last;
+    logic [BC-1:0]             w_beat_strb;
+    logic [DW-1:0]             w_beat_data;
+
+    // Serialized transaction control and datapath.
+    fsm_state_e                fsm_q, fsm_d;
+    req_ctx_t                  active_ctx_q;
+    logic [7:0]                beat_cnt_q; // Beats remaining minus one.
+    logic [AW-1:0]             beat_addr_q;
+    logic [1:0]                resp_accum_q;
+    logic [IW-1:0]             resp_id_q;
+    logic [AW-1:0]             next_addr;
+    logic                      rr_last_was_write_q;
+    logic                      grant_rd, grant_wr;
+    logic                      ar_fifo_pop, aw_fifo_pop, w_fifo_pop;
+    logic                      rd_resp_accept, last_beat;
+
+    // Response queues.
+    logic [R_RESP_W-1:0]        r_resp_wdata, r_resp_rdata;
+    logic                      r_resp_wvalid, r_resp_wready;
+    logic                      r_resp_rvalid, r_resp_rready;
+    logic                      r_out_rlast;
+    logic [IW-1:0]             r_out_rid;
+    logic [1:0]                r_out_rresp;
+    logic [DW-1:0]             r_out_rdata;
+    logic [B_RESP_W-1:0]        b_resp_wdata, b_resp_rdata;
+    logic                      b_resp_wvalid, b_resp_wready;
+    logic                      b_resp_rvalid, b_resp_rready;
+    logic [IW-1:0]             b_out_bid;
+    logic [1:0]                b_out_bresp;
+
+    function automatic logic [1:0] ahb_resp_to_axi(input logic [1:0] hresp);
+        return (hresp == 2'b00) ? AXI_RESP_OKAY : AXI_RESP_SLVERR;
+    endfunction
+
+    function automatic logic axi_user_matches(
+        input logic [UW-1:0] request_user,
+        input logic [UW-1:0] privileged_user
+    );
+        axi_user_matches = 1'b0;
+        if (request_user == privileged_user)
+            axi_user_matches = 1'b1;
+    endfunction
+
+    generate
+        if (ENABLE_USER_FILTER) begin : gen_user_filter
+            logic [NUM_PRIV_AXI_USERS-1:0] ar_user_match;
+            logic [NUM_PRIV_AXI_USERS-1:0] aw_user_match;
+            logic active_reject_q;
+
+            for (genvar user_idx = 0;
+                 user_idx < NUM_PRIV_AXI_USERS;
+                 user_idx++) begin : gen_user_match
+                assign ar_user_match[user_idx] =
+                    axi_user_matches(axi_r.aruser, priv_axi_users_i[user_idx]);
+                assign aw_user_match[user_idx] =
+                    axi_user_matches(axi_w.awuser, priv_axi_users_i[user_idx]);
+            end
+
+            always_comb begin
+                ar_reject = 1'b1;
+                aw_reject = 1'b1;
+                unique case (enable_axi_user_filtering_i)
+                    1'b0: begin
+                        ar_reject = 1'b0;
+                        aw_reject = 1'b0;
+                    end
+                    1'b1: begin
+                        ar_reject = ~|ar_user_match;
+                        aw_reject = ~|aw_user_match;
+                    end
+                    default: begin end
+                endcase
+            end
+
+            assign ar_fifo_wdata = {ar_reject, ar_req};
+            assign aw_fifo_wdata = {aw_reject, aw_req};
+            assign {ar_head_reject, ar_head} = ar_fifo_rdata;
+            assign {aw_head_reject, aw_head} = aw_fifo_rdata;
+            assign active_reject = active_reject_q;
+
+            always_ff @(posedge clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    active_reject_q <= 1'b0;
+                end else if (fsm_q == FSM_IDLE) begin
+                    if (grant_rd)
+                        active_reject_q <= ar_head_reject;
+                    else if (grant_wr)
+                        active_reject_q <= aw_head_reject;
+                    else
+                        active_reject_q <= '0;
+                end
+            end
+        end else begin : gen_no_user_filter
+            assign ar_reject = 1'b0;
+            assign aw_reject = 1'b0;
+            assign ar_fifo_wdata = ar_req;
+            assign aw_fifo_wdata = aw_req;
+            assign ar_head = req_ctx_t'(ar_fifo_rdata);
+            assign aw_head = req_ctx_t'(aw_fifo_rdata);
+            assign ar_head_reject = 1'b0;
+            assign aw_head_reject = 1'b0;
+            assign active_reject = 1'b0;
+        end
+    endgenerate
+
+    // AR request FIFO.
     assign ar_req.addr  = axi_r.araddr;
     assign ar_req.burst = axi_r.arburst;
     assign ar_req.size  = axi_r.arsize;
@@ -109,10 +244,9 @@ module axi_to_ahb
 
     assign ar_fifo_wvalid = axi_r.arvalid;
     assign axi_r.arready  = ar_fifo_wready;
-    assign ar_fifo_wdata  = ar_req;
 
     caliptra_prim_fifo_sync #(
-        .Width           (REQ_CTX_W),
+        .Width           (ReqFifoWidth),
         .Pass            (1'b0),
         .Depth           (OSTD_R),
         .OutputZeroIfEmpty(1'b1)
@@ -134,12 +268,6 @@ module axi_to_ahb
     // -----------------------------------------------------------
     // AW Request FIFO
     // -----------------------------------------------------------
-    logic                  aw_fifo_wvalid, aw_fifo_wready;
-    logic [REQ_CTX_W-1:0] aw_fifo_wdata;
-    logic                  aw_fifo_rvalid, aw_fifo_rready;
-    logic [REQ_CTX_W-1:0] aw_fifo_rdata;
-
-    req_ctx_t aw_req;
     assign aw_req.addr  = axi_w.awaddr;
     assign aw_req.burst = axi_w.awburst;
     assign aw_req.size  = axi_w.awsize;
@@ -148,10 +276,9 @@ module axi_to_ahb
 
     assign aw_fifo_wvalid  = axi_w.awvalid;
     assign axi_w.awready   = aw_fifo_wready;
-    assign aw_fifo_wdata   = aw_req;
 
     caliptra_prim_fifo_sync #(
-        .Width           (REQ_CTX_W),
+        .Width           (ReqFifoWidth),
         .Pass            (1'b0),
         .Depth           (OSTD_W),
         .OutputZeroIfEmpty(1'b1)
@@ -176,17 +303,6 @@ module axi_to_ahb
     // matches outstanding writes; beats beyond that are
     // back-pressured on wready.
     // -----------------------------------------------------------
-    logic                 w_fifo_wvalid, w_fifo_wready;
-    logic [W_CTX_W-1:0]  w_fifo_wdata;
-    logic                 w_fifo_rvalid, w_fifo_rready;
-    logic [W_CTX_W-1:0]  w_fifo_rdata;
-    // Pack wlast alongside wdata+wstrb
-    localparam int unsigned W_FIFO_W = W_CTX_W + 1; // +1 for wlast
-
-    logic [W_FIFO_W-1:0] w_fifo_wdata_pack, w_fifo_rdata_pack;
-    logic                 w_fifo_rvalid_pack, w_fifo_rready_pack;
-    logic                 w_fifo_wready_pack;
-
     assign w_fifo_wdata_pack = {axi_w.wlast, axi_w.wstrb, axi_w.wdata};
     assign w_fifo_wvalid     = axi_w.wvalid;
     assign axi_w.wready      = w_fifo_wready_pack;
@@ -212,42 +328,7 @@ module axi_to_ahb
     );
 
     // Unpack W FIFO read port
-    logic             w_beat_last;
-    logic [BC-1:0]    w_beat_strb;
-    logic [DW-1:0]    w_beat_data;
     assign {w_beat_last, w_beat_strb, w_beat_data} = w_fifo_rdata_pack;
-
-    // -----------------------------------------------------------
-    // Decode head-of-line FIFO entries
-    // -----------------------------------------------------------
-    req_ctx_t ar_head, aw_head;
-    assign ar_head = req_ctx_t'(ar_fifo_rdata);
-    assign aw_head = req_ctx_t'(aw_fifo_rdata);
-
-    // -----------------------------------------------------------
-    // Main FSM
-    // -----------------------------------------------------------
-    typedef enum logic [2:0] {
-        FSM_IDLE,
-        FSM_RD_ADDR,       // AHB address phase for a read beat
-        FSM_RD_DATA,       // AHB data phase for a read beat (wait hreadyout)
-        FSM_WR_ADDR,       // AHB address phase for a write beat
-        FSM_WR_DATA        // AHB data phase for a write beat
-    } fsm_state_e;
-
-    fsm_state_e fsm_q, fsm_d;
-
-    // Active transaction context (latched from FIFO head)
-    req_ctx_t          active_ctx_q;
-    logic [7:0]        beat_cnt_q;       // Remaining beats (counts down from len)
-    logic [AW-1:0]     beat_addr_q;      // Current beat address
-
-    // AXI response accumulation
-    logic [1:0]        resp_accum_q;     // Worst-case AHB response across beats
-    logic [IW-1:0]     resp_id_q;
-
-    // Address calculator
-    logic [AW-1:0]     next_addr;
 
     axi_addr #(
         .AW(AW),
@@ -260,9 +341,7 @@ module axi_to_ahb
         .o_next_addr (next_addr)
     );
 
-    // Round-robin arbiter: alternate priority between R and W
-    logic rr_last_was_write_q;
-
+    // Round-robin arbiter: alternate priority between R and W.
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             rr_last_was_write_q <= 1'b0;
@@ -276,11 +355,6 @@ module axi_to_ahb
     // Depth = max burst len would be large; instead use a modest
     // FIFO and stall AHB if the R channel backs up.
     // -----------------------------------------------------------
-    localparam int unsigned R_RESP_W = DW + 2 + IW + 1; // rdata, rresp, rid, rlast
-    logic [R_RESP_W-1:0] r_resp_wdata, r_resp_rdata;
-    logic                 r_resp_wvalid, r_resp_wready;
-    logic                 r_resp_rvalid, r_resp_rready;
-
     caliptra_prim_fifo_sync #(
         .Width           (R_RESP_W),
         .Pass            (1'b1),
@@ -302,10 +376,6 @@ module axi_to_ahb
     );
 
     // R response FIFO -> AXI R channel
-    logic             r_out_rlast;
-    logic [IW-1:0]    r_out_rid;
-    logic [1:0]       r_out_rresp;
-    logic [DW-1:0]    r_out_rdata;
     assign {r_out_rlast, r_out_rid, r_out_rresp, r_out_rdata} = r_resp_rdata;
 
     assign axi_r.rvalid = r_resp_rvalid;
@@ -319,11 +389,6 @@ module axi_to_ahb
     // -----------------------------------------------------------
     // B response FIFO
     // -----------------------------------------------------------
-    localparam int unsigned B_RESP_W = 2 + IW; // bresp, bid
-    logic [B_RESP_W-1:0] b_resp_wdata, b_resp_rdata;
-    logic                 b_resp_wvalid, b_resp_wready;
-    logic                 b_resp_rvalid, b_resp_rready;
-
     caliptra_prim_fifo_sync #(
         .Width           (B_RESP_W),
         .Pass            (1'b1),
@@ -344,8 +409,6 @@ module axi_to_ahb
         .err_o    ()
     );
 
-    logic [IW-1:0] b_out_bid;
-    logic [1:0]    b_out_bresp;
     assign {b_out_bid, b_out_bresp} = b_resp_rdata;
 
     assign axi_w.bvalid = b_resp_rvalid;
@@ -357,19 +420,10 @@ module axi_to_ahb
     // -----------------------------------------------------------
     // FSM combinational logic
     // -----------------------------------------------------------
-    // "effective done" signals gate on both AHB slave readyout
-    // AND downstream FIFO acceptance to prevent data loss.
-    logic ahb_rd_beat_done; // Read data phase truly complete
-    logic ahb_wr_beat_done; // Write data phase truly complete
-    logic last_beat;
-
-    assign last_beat        = (beat_cnt_q == 8'd0);
-    assign ahb_rd_beat_done = (fsm_q == FSM_RD_DATA) && ahb_hreadyout && r_resp_wready;
-    assign ahb_wr_beat_done = (fsm_q == FSM_WR_DATA) && ahb_hreadyout
-                            & (last_beat ? b_resp_wready : 1'b1);
+    assign last_beat      = (beat_cnt_q == 8'd0);
+    assign rd_resp_accept = r_resp_wvalid && r_resp_wready;
 
     // Arbitration: who gets to go next from IDLE?
-    logic grant_rd, grant_wr;
     always_comb begin
         grant_rd = 1'b0;
         grant_wr = 1'b0;
@@ -383,12 +437,6 @@ module axi_to_ahb
             grant_wr = 1'b1;
         end
     end
-
-    // Track whether we consumed the first W beat for a write burst
-    // (AW FIFO popped, but W beats consumed incrementally)
-    logic aw_fifo_pop;
-    logic w_fifo_pop;
-    logic ar_fifo_pop;
 
     always_comb begin
         fsm_d           = fsm_q;
@@ -405,7 +453,7 @@ module axi_to_ahb
             FSM_IDLE: begin
                 if (grant_rd) begin
                     ar_fifo_pop = 1'b1;
-                    fsm_d       = FSM_RD_ADDR;
+                    fsm_d       = ar_head_reject ? FSM_RD_DATA : FSM_RD_ADDR;
                 end else if (grant_wr) begin
                     aw_fifo_pop = 1'b1;
                     fsm_d       = FSM_WR_ADDR;
@@ -420,7 +468,12 @@ module axi_to_ahb
                     fsm_d = FSM_RD_DATA;
             end
             FSM_RD_DATA: begin
-                if (ahb_hreadyout && r_resp_wready) begin
+                if (active_reject) begin
+                    r_resp_wvalid = 1'b1;
+                    r_resp_wdata  = {last_beat, resp_id_q, AXI_RESP_SLVERR, DW'('0)};
+                    if (r_resp_wready && last_beat)
+                        fsm_d = FSM_IDLE;
+                end else if (ahb_hreadyout && r_resp_wready) begin
                     // Push this beat's data to R response FIFO
                     r_resp_wvalid = 1'b1;
                     r_resp_wdata  = {last_beat, resp_id_q,
@@ -440,12 +493,24 @@ module axi_to_ahb
             // Write burst
             // -------------------------------------------------
             FSM_WR_ADDR: begin
-                // Only present AHB address when W beat data is available
-                if (ahb_hreadyout && w_fifo_rvalid_pack)
+                if (active_reject) begin
+                    // Drain by AWLEN, not WLAST, and leave the following burst in the FIFO.
+                    if (w_fifo_rvalid_pack) begin
+                        w_fifo_pop = 1'b1;
+                        if (last_beat)
+                            fsm_d = FSM_WR_DATA;
+                    end
+                end else if (ahb_hreadyout && w_fifo_rvalid_pack)
                     fsm_d = FSM_WR_DATA;
             end
             FSM_WR_DATA: begin
-                if (ahb_hreadyout) begin
+                if (active_reject) begin
+                    // The final W beat was consumed before entering this state.
+                    b_resp_wvalid = 1'b1;
+                    b_resp_wdata  = {resp_id_q, AXI_RESP_SLVERR};
+                    if (b_resp_wready)
+                        fsm_d = FSM_IDLE;
+                end else if (ahb_hreadyout) begin
                     if (last_beat) begin
                         // Last beat: only complete if B-response FIFO can accept
                         if (b_resp_wready) begin
@@ -483,7 +548,7 @@ module axi_to_ahb
         end else begin
             fsm_q <= fsm_d;
 
-            case (fsm_q)
+            unique case (fsm_q)
                 FSM_IDLE: begin
                     resp_accum_q <= '0;
                     if (grant_rd) begin
@@ -500,16 +565,20 @@ module axi_to_ahb
                 end
 
                 FSM_RD_DATA: begin
-                    if (ahb_hreadyout && r_resp_wready) begin
-                        if (!last_beat) begin
-                            beat_cnt_q  <= beat_cnt_q - 8'd1;
+                    if (rd_resp_accept && !last_beat) begin
+                        beat_cnt_q <= beat_cnt_q - 8'd1;
+                        if (!active_reject)
                             beat_addr_q <= next_addr;
-                        end
                     end
                 end
 
+                FSM_WR_ADDR: begin
+                    if (active_reject && w_fifo_pop && !last_beat)
+                        beat_cnt_q <= beat_cnt_q - 8'd1;
+                end
+
                 FSM_WR_DATA: begin
-                    if (ahb_hreadyout && (last_beat ? b_resp_wready : 1'b1)) begin
+                    if (!active_reject && w_fifo_pop) begin
                         resp_accum_q <= resp_accum_q | ahb_resp_to_axi(ahb_hresp);
                         if (!last_beat) begin
                             beat_cnt_q  <= beat_cnt_q - 8'd1;
@@ -517,7 +586,7 @@ module axi_to_ahb
                         end
                     end
                 end
-
+                default: begin end
             endcase
         end
     end
@@ -535,40 +604,80 @@ module axi_to_ahb
         ahb_hsel      = 1'b0;
         ahb_hreadymux = 1'b1;
 
-        unique case (fsm_q)
-            FSM_RD_ADDR: begin
-                ahb_haddr  = beat_addr_q;
-                ahb_htrans = HTRANS_NONSEQ;
-                ahb_hwrite = 1'b0;
-                ahb_hsel   = 1'b1;
-                ahb_hsize  = active_ctx_q.size;
-            end
-            FSM_RD_DATA: begin
-                ahb_hsel     = 1'b1;
-                ahb_hreadymux = ahb_hreadyout & r_resp_wready;
-            end
-            FSM_WR_ADDR: begin
-                ahb_haddr  = beat_addr_q;
-                // Only issue NONSEQ when W data is available; otherwise
-                // hold IDLE to prevent the slave latching an address
-                // for which we have no data yet.
-                ahb_htrans = w_fifo_rvalid_pack ? HTRANS_NONSEQ : HTRANS_IDLE;
-                ahb_hwrite = 1'b1;
-                ahb_hsel   = 1'b1;
-                ahb_hsize  = active_ctx_q.size;
-            end
-            FSM_WR_DATA: begin
-                ahb_hwdata    = w_beat_data;
-                ahb_hsel      = 1'b1;
-                ahb_hwrite    = 1'b1;
-                ahb_hreadymux = ahb_hreadyout
-                              & w_fifo_rvalid_pack
-                              & (last_beat ? b_resp_wready : 1'b1);
-            end
-            default: begin
-                ahb_htrans = HTRANS_IDLE;
-            end
-        endcase
+        if (!active_reject) begin
+            unique case (fsm_q)
+                FSM_RD_ADDR: begin
+                    ahb_haddr  = beat_addr_q;
+                    ahb_htrans = HTRANS_NONSEQ;
+                    ahb_hwrite = 1'b0;
+                    ahb_hsel   = 1'b1;
+                    ahb_hsize  = active_ctx_q.size;
+                end
+                FSM_RD_DATA: begin
+                    ahb_hsel     = 1'b1;
+                    ahb_hreadymux = ahb_hreadyout & r_resp_wready;
+                end
+                FSM_WR_ADDR: begin
+                    ahb_haddr  = beat_addr_q;
+                    // Only issue NONSEQ when W data is available; otherwise
+                    // hold IDLE to prevent the slave latching an address
+                    // for which we have no data yet.
+                    ahb_htrans = w_fifo_rvalid_pack ? HTRANS_NONSEQ : HTRANS_IDLE;
+                    ahb_hwrite = 1'b1;
+                    ahb_hsel   = 1'b1;
+                    ahb_hsize  = active_ctx_q.size;
+                end
+                FSM_WR_DATA: begin
+                    ahb_hwdata    = w_beat_data;
+                    ahb_hsel      = 1'b1;
+                    ahb_hwrite    = 1'b1;
+                    ahb_hreadymux = ahb_hreadyout
+                                  & w_fifo_rvalid_pack
+                                  & (last_beat ? b_resp_wready : 1'b1);
+                end
+                default: begin
+                    ahb_htrans = HTRANS_IDLE;
+                end
+            endcase
+        end
     end
+
+    // -----------------------------------------------------------
+    // Assertions
+    // -----------------------------------------------------------
+    `CALIPTRA_ASSERT_INIT(NumPrivAxiUsers_A, NUM_PRIV_AXI_USERS > 0)
+
+    generate
+        if (ENABLE_USER_FILTER) begin : gen_user_filter_assertions
+            `CALIPTRA_ASSERT_INIT(UserWidthsMatch_A,
+                ($bits(axi_r.aruser) == UW) && ($bits(axi_w.awuser) == UW))
+            `CALIPTRA_ASSERT(EnableKnownAtAddress_A,
+                ((axi_r.arvalid && axi_r.arready) || (axi_w.awvalid && axi_w.awready))
+                |-> !$isunknown(enable_axi_user_filtering_i), clk, !rst_n)
+            `CALIPTRA_ASSERT(ReadUserKnownAtAddress_A,
+                (axi_r.arvalid && axi_r.arready && (enable_axi_user_filtering_i === 1'b1))
+                |-> !$isunknown(axi_r.aruser), clk, !rst_n)
+            `CALIPTRA_ASSERT(WriteUserKnownAtAddress_A,
+                (axi_w.awvalid && axi_w.awready && (enable_axi_user_filtering_i === 1'b1))
+                |-> !$isunknown(axi_w.awuser), clk, !rst_n)
+            for (genvar user_idx = 0;
+                 user_idx < NUM_PRIV_AXI_USERS;
+                 user_idx++) begin : gen_policy_assert
+                `CALIPTRA_ASSERT(ListEntryKnownAtAddress_A,
+                    (((axi_r.arvalid && axi_r.arready) || (axi_w.awvalid && axi_w.awready))
+                     && (enable_axi_user_filtering_i === 1'b1))
+                    |-> !$isunknown(priv_axi_users_i[user_idx]), clk, !rst_n)
+            end
+            `CALIPTRA_ASSERT(ActiveRejectKnown_A,
+                (fsm_q != FSM_IDLE) |-> !$isunknown(active_reject), clk, !rst_n)
+            `CALIPTRA_ASSERT(DeniedRequestDoesNotSelectAhb_A,
+                active_reject |-> (!ahb_hsel && (ahb_htrans == HTRANS_IDLE)
+                                  && ahb_hreadymux), clk, !rst_n)
+        end
+    endgenerate
+
+    `CALIPTRA_ASSERT(WriteLastPlacement_A,
+        (w_fifo_rvalid_pack && w_fifo_rready_pack) |-> (w_beat_last == last_beat),
+        clk, !rst_n)
 
 endmodule
