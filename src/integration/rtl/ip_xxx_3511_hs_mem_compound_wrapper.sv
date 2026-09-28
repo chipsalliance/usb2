@@ -24,7 +24,7 @@
 //           AXI subordinate map:
 //             combo_axi_if
 //               -> DEV0 CSR
-//               -> OCP Recovery registers (temporarily tied off)
+//               -> OCP Recovery registers
 //               -> HUB control and descriptor storage
 //             dev0_mem_axi_if
 //               -> DEV0 packet SRAM
@@ -54,6 +54,8 @@
 // 0.4      2026-09-11  Clayton  Overhaul AXI connections to interfaces and
 //                               hide hub behind a combo AXI interface with
 //                               DEV0
+// 0.5      2026-09-23  MSFT     Instantiate OCP Recovery datapath on device0.
+//                               Includes CONTROL arbiter, cmd decode, register set.
 // -------------------------------------------------------------------------
 
 `include "caliptra_prim_assert.sv"
@@ -150,6 +152,8 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   output logic dev1_usb_irq,     // USBDC1 IRQ -> SoC-uC
   output logic dev1_usb_fiq,     // USBDC1 FIQ -> SoC-uC
   output logic usb_frametoggle,  // SOF frame toggle
+  output logic payload_available,
+  output logic ocp_firmware_activated,
 
   // =========================================================================
   // USB power / VBus
@@ -325,6 +329,44 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   logic hub_hreadyout;
   logic [1:0] hub_hresp;
 
+  // ---- Recovery AHB interface ----
+  logic [RECOVERY_LOCAL_ADDR_WIDTH-1:0] recovery_haddr;
+  logic [1:0] recovery_htrans;
+  logic [2:0] recovery_hburst;
+  logic [2:0] recovery_hsize;
+  logic recovery_hwrite;
+  logic [31:0] recovery_hwdata;
+  logic recovery_hsel;
+  logic recovery_hreadyin;
+  logic [31:0] recovery_hrdata;
+  logic recovery_hreadyout;
+  logic [1:0] recovery_hresp;
+
+  // ---- VHDL recovery arbiter interface ----
+  logic rec_setup_pkt_vld_w;
+  logic [63:0] rec_setup_pkt_w;
+  logic [31:0] rec_ctrl_out_data_w;
+  logic rec_ctrl_out_vld_w;
+  logic rec_ctrl_out_last_w;
+  logic rec_ctrl_out_rdy_w;
+  logic [31:0] rec_ctrl_in_data_w;
+  logic [3:0] rec_ctrl_in_be_w;
+  logic rec_ctrl_in_vld_w;
+  logic rec_ctrl_in_last_w;
+  logic rec_ctrl_in_rdy_w;
+  logic [6:0] rec_ctrl_in_resp_bytes_w;
+  logic rec_ctrl_in_resp_known_w;
+  logic rec_ctrl_set_stall_w;
+  logic rec_ctrl_xfer_done_w;
+  logic rec_ctrl_xfer_abort_w;
+  logic rec_ctrl_fifo_batch_abort_w;
+  logic rec_ctrl_length_error_w;
+  logic rec_ocp_path_disable_w;
+  logic rec_ocp_claim_abort_w;
+  logic rec_fw_protocol_error_req_w;
+  logic [6:0] rec_fifo_free_dwords_w;
+  logic rec_fifo_reservation_active_w;
+
   // Keep AXI2AHB at the caller's system address width, then explicitly localize
   // each port before it reaches the USB address map.
   assign combo_ahb_local_haddr = combo_ahb_system_haddr[COMBO_LOCAL_ADDR_WIDTH-1:0];
@@ -482,20 +524,60 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .hub_hreadyout(hub_hreadyout),
     .hub_hresp(hub_hresp),
 
-    // ---- Recovery AHB stub interface ----
-    // FIXME: Connect the recovery endpoint. These temporary ready/ERROR tie-offs
-    // omit AHB's required first error wait cycle; they are not protocol-complete.
-    .recovery_haddr(),
-    .recovery_htrans(),
-    .recovery_hburst(),
-    .recovery_hsize(),
-    .recovery_hwrite(),
-    .recovery_hwdata(),
-    .recovery_hsel(),
-    .recovery_hreadyin(),
-    .recovery_hrdata(32'h0000_0000),
-    .recovery_hreadyout(1'b1),
-    .recovery_hresp(2'b01)
+    // ---- Recovery AHB interface ----
+    .recovery_haddr(recovery_haddr),
+    .recovery_htrans(recovery_htrans),
+    .recovery_hburst(recovery_hburst),
+    .recovery_hsize(recovery_hsize),
+    .recovery_hwrite(recovery_hwrite),
+    .recovery_hwdata(recovery_hwdata),
+    .recovery_hsel(recovery_hsel),
+    .recovery_hreadyin(recovery_hreadyin),
+    .recovery_hrdata(recovery_hrdata),
+    .recovery_hreadyout(recovery_hreadyout),
+    .recovery_hresp(recovery_hresp)
+  );
+
+  usb_ocp_recovery_top #(
+    .RECOVERY_LOCAL_ADDR_WIDTH(RECOVERY_LOCAL_ADDR_WIDTH)
+  ) u_ocp_recovery (
+    .clk(usb_axi_aclk),
+    .rst_ni(usb_axi_aresetn),
+    .rec_setup_pkt_vld(rec_setup_pkt_vld_w),
+    .rec_setup_pkt(rec_setup_pkt_w),
+    .rec_ctrl_out_data(rec_ctrl_out_data_w),
+    .rec_ctrl_out_vld(rec_ctrl_out_vld_w),
+    .rec_ctrl_out_last(rec_ctrl_out_last_w),
+    .rec_ctrl_out_rdy(rec_ctrl_out_rdy_w),
+    .rec_ctrl_in_data(rec_ctrl_in_data_w),
+    .rec_ctrl_in_be(rec_ctrl_in_be_w),
+    .rec_ctrl_in_vld(rec_ctrl_in_vld_w),
+    .rec_ctrl_in_last(rec_ctrl_in_last_w),
+    .rec_ctrl_in_rdy(rec_ctrl_in_rdy_w),
+    .rec_ctrl_in_resp_bytes(rec_ctrl_in_resp_bytes_w),
+    .rec_ctrl_in_resp_known(rec_ctrl_in_resp_known_w),
+    .rec_ctrl_set_stall(rec_ctrl_set_stall_w),
+    .rec_ctrl_xfer_done(rec_ctrl_xfer_done_w),
+    .rec_ctrl_xfer_abort(rec_ctrl_xfer_abort_w),
+    .rec_ctrl_fifo_batch_abort(rec_ctrl_fifo_batch_abort_w),
+    .rec_ctrl_length_error(rec_ctrl_length_error_w),
+    .rec_ocp_path_disable(rec_ocp_path_disable_w),
+    .rec_ocp_claim_abort(rec_ocp_claim_abort_w),
+    .rec_fw_protocol_error_req(rec_fw_protocol_error_req_w),
+    .rec_fifo_free_dwords(rec_fifo_free_dwords_w),
+    .rec_fifo_reservation_active(rec_fifo_reservation_active_w),
+    .rec_ahb_haddr(recovery_haddr),
+    .rec_ahb_htrans(recovery_htrans),
+    .rec_ahb_hsize(recovery_hsize),
+    .rec_ahb_hwrite(recovery_hwrite),
+    .rec_ahb_hwdata(recovery_hwdata),
+    .rec_ahb_hsel(recovery_hsel),
+    .rec_ahb_hreadyin(recovery_hreadyin),
+    .rec_ahb_hrdata(recovery_hrdata),
+    .rec_ahb_hreadyout(recovery_hreadyout),
+    .rec_ahb_hresp(recovery_hresp),
+    .payload_available(payload_available),
+    .recovery_image_activated(ocp_firmware_activated)
   );
 
   // The VHDL CSR samples its address every clock, including global waits.
@@ -618,6 +700,30 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .dev1_usb_fiq(dev1_usb_fiq),
     // ---- SOF frame toggle ----
     .USB_FrameToggle(usb_frametoggle),
+    .rec_setup_pkt_vld(rec_setup_pkt_vld_w),
+    .rec_setup_pkt(rec_setup_pkt_w),
+    .rec_ctrl_out_data(rec_ctrl_out_data_w),
+    .rec_ctrl_out_vld(rec_ctrl_out_vld_w),
+    .rec_ctrl_out_last(rec_ctrl_out_last_w),
+    .rec_ctrl_out_rdy(rec_ctrl_out_rdy_w),
+    .rec_ctrl_in_data(rec_ctrl_in_data_w),
+    .rec_ctrl_in_be(rec_ctrl_in_be_w),
+    .rec_ctrl_in_vld(rec_ctrl_in_vld_w),
+    .rec_ctrl_in_last(rec_ctrl_in_last_w),
+    .rec_ctrl_in_rdy(rec_ctrl_in_rdy_w),
+    .rec_ctrl_in_resp_bytes(rec_ctrl_in_resp_bytes_w),
+    .rec_ctrl_in_resp_known(rec_ctrl_in_resp_known_w),
+    .rec_ctrl_set_stall(rec_ctrl_set_stall_w),
+    .rec_ctrl_xfer_done(rec_ctrl_xfer_done_w),
+    .rec_ctrl_xfer_abort(rec_ctrl_xfer_abort_w),
+    .rec_ctrl_fifo_batch_abort(rec_ctrl_fifo_batch_abort_w),
+    .rec_ctrl_length_error(rec_ctrl_length_error_w),
+    .rec_ocp_path_disable(rec_ocp_path_disable_w),
+    .rec_ocp_claim_abort(rec_ocp_claim_abort_w),
+    .rec_fw_protocol_error_req(rec_fw_protocol_error_req_w),
+    .rec_fifo_free_dwords(rec_fifo_free_dwords_w),
+    .rec_fifo_payload_available(payload_available),
+    .rec_fifo_reservation_active(rec_fifo_reservation_active_w),
     // ---- VBus / session ----
     .USB_VBus(USB_VBus),
     .vbuscomp_on(vbuscomp_on),

@@ -63,7 +63,7 @@ module usb_compound_ahb_decoder
   input  logic                               hub_hreadyout,
   input  logic [1:0]                         hub_hresp,
 
-  // ---- Recovery AHB stub interface (local byte address) ----
+  // ---- Recovery AHB interface (local byte address) ----
   output logic [RECOVERY_LOCAL_ADDR_WIDTH-1:0] recovery_haddr,
   output logic [1:0]                         recovery_htrans,
   output logic [2:0]                         recovery_hburst,

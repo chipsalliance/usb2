@@ -15,9 +15,7 @@
 
 `include "usbhsd.rdl"
 `include "usb_hub.rdl"
-
-// FIXME: Enable this include after the Recovery RDL is committed to usb2.
-// `include "usb_ocp_recovery_reg.rdl"
+`include "usb_ocp_recovery_reg.rdl"
 
 // USB-local map presented by the Combo AXI subordinate port.
 addrmap usb_combo #(
@@ -37,7 +35,7 @@ addrmap usb_combo #(
     longint unsigned HUB_FIFO_WORDS = 172
 ) {
     name = "USB Combo AXI Port";
-    desc = "USB-local map for the Combo AXI subordinate port. DEV0 control/status begins at 0x0000, the future 2 KiB Recovery block is reserved at 0x0800, and the rounded HUB aperture begins at 0x1000. Until Recovery is integrated, its window returns a bus error. Offsets outside these target windows are unmapped and return a bus error.";
+    desc = "USB-local map for the Combo AXI subordinate port. DEV0 control/status begins at 0x0000, the 2 KiB Recovery block is at 0x0800, and the rounded HUB aperture begins at 0x1000. Offsets outside these target windows are unmapped and return a bus error.";
 
     usbhsd #(
         .NBPHYSEP(DEV0_NBPHYSEP),
@@ -56,8 +54,10 @@ addrmap usb_combo #(
         .MAJOR_REV(DEV0_MAJOR_REV)
     ) dev0_csr @ 0x0000;
 
-    // FIXME: Instantiate the 2 KiB Recovery register map here after it lands.
-    // usb_ocp_recovery_reg recovery @ 0x0800;
+    // Recovery block: DEV0-only OCP Recovery aperture at Combo-local 0x0800..0x0FFF.
+    // The recovery register block is generated separately from
+    // usb_ocp_recovery_reg.rdl; this instance freezes the compound offset.
+    usb_ocp_recovery_reg recovery @ 0x0800;
 
     usb_hub #(
         .FIFO_WORDS(HUB_FIFO_WORDS)
