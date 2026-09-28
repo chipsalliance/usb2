@@ -290,10 +290,6 @@ component usb_reg_if
           C_MINOR_REV              : std_logic_vector(7 downto 0) := X"00";
           C_MAJOR_REV              : std_logic_vector(7 downto 0) := X"00");
   port (
-        -- synthesis read_comments_as_HDL on
-        --phy_interface            : in  std_logic;
-        --fpga_pll_on              : in std_logic;
-        -- synthesis read_comments_as_HDL off
         hclk                     : in  std_logic;
         hresetn                  : in  std_logic;
         USB_Int_Req_Irq       : out std_logic;
@@ -1347,10 +1343,6 @@ usb_reg_if_1 : usb_reg_if
                C_MINOR_REV               => C_MINOR_REV,
                C_MAJOR_REV               => C_MAJOR_REV)
   port map    (
-              -- synthesis read_comments_as_HDL on
-              --phy_interface           => phy_interface,
-              --fpga_pll_on             => fpga_pll_on,
-              -- synthesis read_comments_as_HDL off
               hclk                       => hclk,
               hresetn                    => hresetn,
               USB_Int_Req_Irq            => dev0_usb_irq,
