@@ -384,7 +384,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .DW(COMBO_AXI_DATA_WIDTH),
     .IW(COMBO_AXI_ID_WIDTH),
     .UW(COMBO_AXI_USER_WIDTH),
-    .ENABLE_USER_FILTER(1'b1),
     .NUM_PRIV_AXI_USERS(DEV0_NUM_PRIV_AXI_USERS)
   ) u_combo_axi2ahb (
     .clk(usb_axi_aclk),
@@ -410,7 +409,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .DW(DEV0_MEM_AXI_DATA_WIDTH),
     .IW(DEV0_MEM_AXI_ID_WIDTH),
     .UW(DEV0_MEM_AXI_USER_WIDTH),
-    .ENABLE_USER_FILTER(1'b1),
     .NUM_PRIV_AXI_USERS(DEV0_NUM_PRIV_AXI_USERS)
   ) u_dev0_mem_axi2ahb (
     .clk(usb_axi_aclk),
@@ -436,7 +434,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .DW(DEV1_CSR_AXI_DATA_WIDTH),
     .IW(DEV1_CSR_AXI_ID_WIDTH),
     .UW(DEV1_CSR_AXI_USER_WIDTH),
-    .ENABLE_USER_FILTER(1'b1),
     .NUM_PRIV_AXI_USERS(DEV1_NUM_PRIV_AXI_USERS)
   ) u_dev1_csr_axi2ahb (
     .clk(usb_axi_aclk),
@@ -462,7 +459,6 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .DW(DEV1_MEM_AXI_DATA_WIDTH),
     .IW(DEV1_MEM_AXI_ID_WIDTH),
     .UW(DEV1_MEM_AXI_USER_WIDTH),
-    .ENABLE_USER_FILTER(1'b1),
     .NUM_PRIV_AXI_USERS(DEV1_NUM_PRIV_AXI_USERS)
   ) u_dev1_mem_axi2ahb (
     .clk(usb_axi_aclk),

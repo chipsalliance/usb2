@@ -573,6 +573,8 @@ module ip_xxx_3516_hs_mem_wrapper
        .rst_n         (dev_axi_aresetn),
        .axi_r         (dev_axi_if),
        .axi_w         (dev_axi_if),
+       .enable_axi_user_filtering_i (1'b0),
+       .priv_axi_users_i ('{default: '0}),
        .ahb_haddr     (dev_ahb_haddr),
        .ahb_hburst    (dev_ahb_hburst),
        .ahb_hsize     (dev_ahb_hsize),
@@ -617,8 +619,7 @@ module ip_xxx_3516_hs_mem_wrapper
        .IW       (AXI_ID_WIDTH),
        .UW       (AXI_USER_WIDTH),
        .OSTD_R   (2),
-       .OSTD_W   (2),
-       .ENABLE_USER_FILTER (1'b0)
+       .OSTD_W   (2)
    ) u_dma_axi2ahb (
        .clk           (dma_axi_aclk),
        .rst_n         (dma_axi_aresetn),
