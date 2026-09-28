@@ -143,7 +143,7 @@ begin
   if HIGH_SPEED = false then 
     var_result(var_address)( 7 downto  0) := X"FF"; --bInterval
   else
-    var_result(var_address)( 7 downto  0) := X"0F"; --bInterval
+    var_result(var_address)( 7 downto  0) := X"0C"; --bInterval
   end if;
 
   -- HUB DESCRIPTOR (Hub)
@@ -211,7 +211,7 @@ begin
     var_result(var_address)(23 downto 16) := X"01"; --wMaxPacketSize
     var_result(var_address)(31 downto 24) := X"00";
     var_address := var_address+1;
-    var_result(var_address)( 7 downto  0) := X"0F"; --bInterval
+    var_result(var_address)( 7 downto  0) := X"0C"; --bInterval
 
   end if;
 
