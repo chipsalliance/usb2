@@ -617,6 +617,11 @@ module usb_ocp_recovery_top
           usb_protocol_error_set = 1'b1;
         end
       end
+      OCP_CMD_INDIRECT_FIFO_DATA: begin
+        // FIFO DATA is implemented entirely by the direct CMS FIFO path.
+        // Keeping it out of the default case prevents accepted OUT beats from
+        // being misreported as unsupported commands.
+      end
       OCP_CMD_VENDOR: begin
         usb_hw_cmd_len = OCP_LEN_VENDOR;
         usb_hw_rdata   = {24'h0, rb_hwif_out.VENDOR.VENDOR_DATA.value};
