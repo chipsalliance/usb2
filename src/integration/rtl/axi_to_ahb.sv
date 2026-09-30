@@ -20,6 +20,11 @@
 //   individual NONSEQ AHB transfers; the AHB side is single-outstanding,
 //   so requests are serialized.
 //
+//   Response backpressure is applied before issue: a read beat, or the
+//   final beat of a write, is issued only when its R or B response FIFO
+//   has a free slot. The bridge never extends an AHB data phase; HREADY
+//   follows the selected subordinate's HREADYOUT.
+//
 //   The AXI subordinate interface uses the Caliptra `axi_if` SystemVerilog
 //   interface.  The AHB master side uses discrete signals.
 //
@@ -29,9 +34,9 @@
 //   AWUSER/ARUSER filtering: each request's USER is compared against an
 //   exact-match allowlist when its address is accepted, and the decision is
 //   stored with the request. A low enable_axi_user_filtering_i allows all
-//   requests. Zero and all-ones are ordinary entries; NUM_PRIV_AXI_USERS must
-//   be positive and every entry participates. Denied bursts complete locally
-//   with SLVERR (zero read data) and never select AHB.
+//   requests. NUM_PRIV_AXI_USERS must be positive and every entry 
+//   participates. Denied bursts complete locally with SLVERR (zero read data) 
+//   and never select AHB.
 //
 
 `include "caliptra_prim_assert.sv"
@@ -66,7 +71,7 @@ module axi_to_ahb
     output logic             ahb_hwrite,
     output logic [DW-1:0]    ahb_hwdata,
     output logic             ahb_hsel,
-    output logic             ahb_hreadymux,   // Subordinate HREADYIN; low while the subordinate or the bridge stalls the data phase
+    output logic             ahb_hreadymux,   // Subordinate HREADYIN; follows ahb_hreadyout, so only the subordinate stalls the data phase
     input  logic [DW-1:0]    ahb_hrdata,
     input  logic             ahb_hreadyout,
     input  logic [1:0]       ahb_hresp
@@ -141,6 +146,7 @@ module axi_to_ahb
     logic                      grant_rd, grant_wr;
     logic                      ar_fifo_pop, aw_fifo_pop, w_fifo_pop;
     logic                      last_beat;
+    logic                      wr_issue_rdy; // W beat present and, on the final beat, a free B slot
 
     // Response queues.
     logic [R_RESP_W-1:0]        r_resp_wdata, r_resp_rdata;
@@ -302,7 +308,7 @@ module axi_to_ahb
     // -----------------------------------------------------------
     // Read response FIFO -- holds up to OSTD_R + 1 R beats so AHB
     // reads can continue while RREADY is low. When it is full, the
-    // FSM stalls the AHB data phase.
+    // FSM holds the next read in RD_ADDR until a slot frees.
     // -----------------------------------------------------------
     caliptra_prim_fifo_sync #(
         .Width           (R_RESP_W),
@@ -375,6 +381,13 @@ module axi_to_ahb
     // the WLAST supplied with the data agrees with this address-derived count.
     assign last_beat      = (beat_cnt_q == 8'd0);
 
+    // Response backpressure is applied before issue. The FSM is the only
+    // producer of the R and B FIFOs and serializes all requests, so a slot that
+    // is free when a response-producing NONSEQ issues stays free until that
+    // data phase completes. The bridge therefore never extends a data phase.
+    assign wr_issue_rdy  = w_fifo_rvalid_pack && (!last_beat || b_resp_wready);
+    assign ahb_hreadymux = ahb_hreadyout;
+
     // Arbitration from IDLE: alternate between read and write when both are
     // ready; otherwise take the ready one. A write is ready only when its
     // first W beat is available, so an AW waiting for data does not block reads.
@@ -415,7 +428,6 @@ module axi_to_ahb
         ahb_hwrite          = 1'b0;
         ahb_hwdata          = '0;
         ahb_hsel            = 1'b0;
-        ahb_hreadymux       = 1'b1;
 
         unique case (fsm_q)
             // -------------------------------------------------
@@ -444,21 +456,21 @@ module axi_to_ahb
             // -------------------------------------------------
             FSM_RD_ADDR: begin
                 ahb_haddr  = active_ctx_q.addr;
-                ahb_htrans = HTRANS_NONSEQ;
+                // Issue only with a free R slot; otherwise hold IDLE until the
+                // AXI side drains one. The slot then stays reserved.
+                ahb_htrans = r_resp_wready ? HTRANS_NONSEQ : HTRANS_IDLE;
                 ahb_hwrite = 1'b0;
                 ahb_hsel   = 1'b1;
                 ahb_hsize  = active_ctx_q.size;
                 // Wait for address-phase acceptance before sampling read data
                 // in RD_DATA; HREADYOUT here is not this new read's result.
-                if (ahb_hreadyout)
+                if (ahb_hreadyout && r_resp_wready)
                     fsm_d = FSM_RD_DATA;
             end
             FSM_RD_DATA: begin
-                ahb_hsel      = 1'b1;
-                // Hold the data phase until both the AHB result and storage for
-                // its AXI response are available, so backpressure cannot lose it.
-                ahb_hreadymux = ahb_hreadyout & r_resp_wready;
-                if (ahb_hreadyout && r_resp_wready) begin
+                ahb_hsel = 1'b1;
+                // Capture on the subordinate's completion into the reserved slot.
+                if (ahb_hreadyout) begin
                     // Push this beat's data to R response FIFO
                     r_resp_wvalid = 1'b1;
                     r_resp_wdata  = {last_beat, active_ctx_q.id, ahb_resp_to_axi(ahb_hresp), ahb_hrdata};
@@ -481,47 +493,36 @@ module axi_to_ahb
             // -------------------------------------------------
             FSM_WR_ADDR: begin
                 ahb_haddr  = active_ctx_q.addr;
-                // Only issue NONSEQ when W data is available; otherwise
-                // hold IDLE to prevent the slave latching an address
-                // for which we have no data yet.
-                ahb_htrans = w_fifo_rvalid_pack ? HTRANS_NONSEQ : HTRANS_IDLE;
+                // Issue only when the W beat is available and, for the final
+                // beat, a B slot is free; otherwise hold IDLE so no subordinate
+                // latches an address the bridge cannot complete.
+                ahb_htrans = wr_issue_rdy ? HTRANS_NONSEQ : HTRANS_IDLE;
                 ahb_hwrite = 1'b1;
                 ahb_hsel   = 1'b1;
                 ahb_hsize  = active_ctx_q.size;
                 // Both conditions are needed: AHB readiness alone would also
-                // accept the IDLE cycle driven when the W FIFO is empty.
-                if (ahb_hreadyout && w_fifo_rvalid_pack)
+                // accept the IDLE cycle driven while issue is held.
+                if (ahb_hreadyout && wr_issue_rdy)
                     fsm_d = FSM_WR_DATA;
             end
             FSM_WR_DATA: begin
                 // WR_ADDR required a valid W head and did not pop it. Keep that
                 // same beat available and stable throughout AHB wait states.
-                ahb_hwdata    = w_beat_data;
-                ahb_hsel      = 1'b1;
-                ahb_hwrite    = 1'b1;
-                // Only the final beat generates a B response; a full B FIFO
-                // must not prevent earlier beats of this burst from advancing.
-                ahb_hreadymux = ahb_hreadyout
-                              & w_fifo_rvalid_pack
-                              & (last_beat ? b_resp_wready : 1'b1);
+                ahb_hwdata = w_beat_data;
+                ahb_hsel   = 1'b1;
+                ahb_hwrite = 1'b1;
                 if (ahb_hreadyout) begin
+                    // Keep any earlier error sticky; every beat is consumed.
+                    w_fifo_pop   = 1'b1;
+                    resp_accum_d = resp_accum_q | ahb_resp_to_axi(ahb_hresp);
                     if (last_beat) begin
-                        // AXI requires one B response for the entire burst.
-                        // Retire the last write only when that response fits.
-                        if (b_resp_wready) begin
-                            w_fifo_pop    = 1'b1;
-                            resp_accum_d  = resp_accum_q | ahb_resp_to_axi(ahb_hresp);
-                            b_resp_wvalid = 1'b1;
-                            // Include this beat's status too; resp_accum_q only
-                            // contains errors from previously completed beats.
-                            b_resp_wdata  = {active_ctx_q.id, resp_accum_q | ahb_resp_to_axi(ahb_hresp)};
-                            fsm_d         = FSM_IDLE;
-                        end
+                        // AXI requires one B response for the entire burst, and
+                        // WR_ADDR reserved its slot. Include this beat's status
+                        // too; resp_accum_q only holds earlier beats' errors.
+                        b_resp_wvalid = 1'b1;
+                        b_resp_wdata  = {active_ctx_q.id, resp_accum_q | ahb_resp_to_axi(ahb_hresp)};
+                        fsm_d         = FSM_IDLE;
                     end else begin
-                        // Keep any earlier error sticky, but still consume all
-                        // AWLEN+1 beats before returning the burst's response.
-                        w_fifo_pop        = 1'b1;
-                        resp_accum_d      = resp_accum_q | ahb_resp_to_axi(ahb_hresp);
                         beat_cnt_d        = beat_cnt_q - 8'd1;
                         active_ctx_d.addr = next_addr;
                         fsm_d             = FSM_WR_ADDR;
@@ -652,10 +653,11 @@ module axi_to_ahb
         |=> (fsm_q == ($past(aw_head.reject) ? FSM_WR_REJECT : FSM_WR_ADDR)), clk, !rst_n)
 
     // In any reject state the AHB side stays idle: no select, IDLE transfer,
-    // HREADY high, and all other AHB outputs at their default values.
+    // and all other AHB outputs at their default values. HREADY is not a
+    // reject-state output: it follows the subordinate's HREADYOUT.
     `CALIPTRA_ASSERT(DeniedRequestDoesNotSelectAhb_A,
         (fsm_q inside {FSM_RD_REJECT, FSM_WR_REJECT, FSM_WR_REJECT_RESP})
-        |-> (!ahb_hsel && (ahb_htrans == HTRANS_IDLE) && ahb_hreadymux
+        |-> (!ahb_hsel && (ahb_htrans == HTRANS_IDLE)
              && (ahb_haddr == '0) && (ahb_hwdata == '0) && !ahb_hwrite
              && (ahb_hsize == 3'b010) && (ahb_hburst == 3'b000)), clk, !rst_n)
 
@@ -691,5 +693,56 @@ module axi_to_ahb
     `CALIPTRA_ASSERT(WriteLastPlacement_A,
         (w_fifo_rvalid_pack && w_fifo_rready_pack) |-> (w_beat_last == last_beat),
         clk, !rst_n)
+
+    // Issue-time response reservation needs real storage: a depth-0 FIFO would
+    // pass BREADY straight through as its write-ready.
+    `CALIPTRA_ASSERT_INIT(ReadQueueDepthPositive_A, OSTD_R > 0)
+    `CALIPTRA_ASSERT_INIT(WriteQueueDepthPositive_A, OSTD_W > 0)
+
+    // The reservation made at issue must hold for the whole data phase,
+    // including subordinate wait states and two-cycle ERROR responses.
+    `CALIPTRA_ASSERT(ReadDataHasRSlot_A,
+        (fsm_q == FSM_RD_DATA) |-> r_resp_wready, clk, !rst_n)
+    `CALIPTRA_ASSERT(WriteFinalDataHasBSlot_A,
+        ((fsm_q == FSM_WR_DATA) && last_beat) |-> b_resp_wready, clk, !rst_n)
+    `CALIPTRA_ASSERT(WriteDataHasWBeat_A,
+        (fsm_q == FSM_WR_DATA) |-> w_fifo_rvalid_pack, clk, !rst_n)
+
+    // An address state held for response or W space presents IDLE and keeps
+    // its burst context.
+    `CALIPTRA_ASSERT(BlockedReadHoldsContext_A,
+        ((fsm_q == FSM_RD_ADDR) && !r_resp_wready)
+        |-> (ahb_htrans == HTRANS_IDLE)
+            ##1 ((fsm_q == FSM_RD_ADDR) && $stable(active_ctx_q) && $stable(beat_cnt_q)), clk, !rst_n)
+    `CALIPTRA_ASSERT(BlockedWriteHoldsContext_A,
+        ((fsm_q == FSM_WR_ADDR) && !wr_issue_rdy)
+        |-> (ahb_htrans == HTRANS_IDLE)
+            ##1 ((fsm_q == FSM_WR_ADDR) && $stable(active_ctx_q) && $stable(beat_cnt_q)), clk, !rst_n)
+
+    // A data state is entered only through an accepted NONSEQ.
+    `CALIPTRA_ASSERT(ReadDataFollowsAcceptedIssue_A,
+        ((fsm_q == FSM_RD_ADDR) && (fsm_d == FSM_RD_DATA))
+        |-> ((ahb_htrans == HTRANS_NONSEQ) && ahb_hreadyout), clk, !rst_n)
+    `CALIPTRA_ASSERT(WriteDataFollowsAcceptedIssue_A,
+        ((fsm_q == FSM_WR_ADDR) && (fsm_d == FSM_WR_DATA))
+        |-> ((ahb_htrans == HTRANS_NONSEQ) && ahb_hreadyout), clk, !rst_n)
+
+    // Each completing data phase produces exactly one result: one R push per
+    // read beat, one W pop per write beat, and one B push per write burst.
+    `CALIPTRA_ASSERT(ReadCompletionPushesOnce_A,
+        (fsm_q == FSM_RD_DATA) |-> (r_resp_wvalid == ahb_hreadyout), clk, !rst_n)
+    `CALIPTRA_ASSERT(WriteCompletionPopsOnce_A,
+        (fsm_q == FSM_WR_DATA)
+        |-> ((w_fifo_pop == ahb_hreadyout) && (b_resp_wvalid == (ahb_hreadyout && last_beat))),
+        clk, !rst_n)
+
+    // Cover the reservation path: a full response FIFO defers issue, then
+    // the transfer issues and completes.
+    `CALIPTRA_COVER(ReadIssueDeferredThenCompleted_C,
+        ((fsm_q == FSM_RD_ADDR) && !r_resp_wready)
+        ##[1:$] ((fsm_q == FSM_RD_DATA) && ahb_hreadyout), clk, !rst_n)
+    `CALIPTRA_COVER(WriteFinalIssueDeferredThenCompleted_C,
+        ((fsm_q == FSM_WR_ADDR) && last_beat && w_fifo_rvalid_pack && !b_resp_wready)
+        ##[1:$] ((fsm_q == FSM_WR_DATA) && last_beat && ahb_hreadyout), clk, !rst_n)
 
 endmodule

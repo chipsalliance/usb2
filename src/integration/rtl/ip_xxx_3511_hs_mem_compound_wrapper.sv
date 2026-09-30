@@ -36,7 +36,7 @@
 //           Each AXI interface pair uses one axi_to_ahb. The Combo AHB decoder
 //           selects among its three downstream targets; each other interface
 //           has one dedicated target.
-//           USER filtering shares the DEV0 policy across Combo and DEV0 SRAM,
+//           USER filtering shares the Combo policy across Combo and DEV0 SRAM,
 //           and the DEV1 policy across DEV1 CSR and SRAM. Each policy has an
 //           active-high filter enable; authorization is captured at AW/AR acceptance.
 //           Combo includes the reserved recovery aperture, not USB EP0 traffic.
@@ -70,7 +70,7 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   parameter int unsigned C_HUB_FIFO_SIZE = 172,
 
   // ---- AXI USER ownership policies ----------------------------------------
-  parameter int unsigned DEV0_NUM_PRIV_AXI_USERS = 4,
+  parameter int unsigned COMBO_NUM_PRIV_AXI_USERS = 4,
   parameter int unsigned DEV1_NUM_PRIV_AXI_USERS = 4,
 
   // ---- SRAM configuration -------------------------------------------------
@@ -119,10 +119,12 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   axi_if.r_sub dev1_mem_axi_if_r_sub,
 
   // ---- AXI USER filtering policy ----
+  // The Combo policy covers the Combo and DEV0 memory interfaces; the DEV1
+  // policy covers the DEV1 CSR and DEV1 memory interfaces.
   // Clock-safe allowlists; every entry participates, including zero.
   // Declared after the AXI interfaces so their USER widths come from axi_if.
-  input  logic dev0_enable_axi_user_filtering_i,
-  input  logic [$bits(combo_axi_if_w_sub.awuser)-1:0] dev0_priv_axi_users_i [DEV0_NUM_PRIV_AXI_USERS],
+  input  logic combo_enable_axi_user_filtering_i,
+  input  logic [$bits(combo_axi_if_w_sub.awuser)-1:0] combo_priv_axi_users_i [COMBO_NUM_PRIV_AXI_USERS],
   input  logic dev1_enable_axi_user_filtering_i,
   input  logic [$bits(dev1_csr_axi_if_w_sub.awuser)-1:0] dev1_priv_axi_users_i [DEV1_NUM_PRIV_AXI_USERS],
 
@@ -384,14 +386,14 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .DW(COMBO_AXI_DATA_WIDTH),
     .IW(COMBO_AXI_ID_WIDTH),
     .UW(COMBO_AXI_USER_WIDTH),
-    .NUM_PRIV_AXI_USERS(DEV0_NUM_PRIV_AXI_USERS)
+    .NUM_PRIV_AXI_USERS(COMBO_NUM_PRIV_AXI_USERS)
   ) u_combo_axi2ahb (
     .clk(usb_axi_aclk),
     .rst_n(usb_axi_aresetn),
     .axi_r(combo_axi_if_r_sub),
     .axi_w(combo_axi_if_w_sub),
-    .enable_axi_user_filtering_i(dev0_enable_axi_user_filtering_i),
-    .priv_axi_users_i(dev0_priv_axi_users_i),
+    .enable_axi_user_filtering_i(combo_enable_axi_user_filtering_i),
+    .priv_axi_users_i(combo_priv_axi_users_i),
     .ahb_haddr(combo_ahb_system_haddr),
     .ahb_hburst(combo_ahb_hburst),
     .ahb_hsize(combo_ahb_hsize),
@@ -409,14 +411,14 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .DW(DEV0_MEM_AXI_DATA_WIDTH),
     .IW(DEV0_MEM_AXI_ID_WIDTH),
     .UW(DEV0_MEM_AXI_USER_WIDTH),
-    .NUM_PRIV_AXI_USERS(DEV0_NUM_PRIV_AXI_USERS)
+    .NUM_PRIV_AXI_USERS(COMBO_NUM_PRIV_AXI_USERS)
   ) u_dev0_mem_axi2ahb (
     .clk(usb_axi_aclk),
     .rst_n(usb_axi_aresetn),
     .axi_r(dev0_mem_axi_if_r_sub),
     .axi_w(dev0_mem_axi_if_w_sub),
-    .enable_axi_user_filtering_i(dev0_enable_axi_user_filtering_i),
-    .priv_axi_users_i(dev0_priv_axi_users_i),
+    .enable_axi_user_filtering_i(combo_enable_axi_user_filtering_i),
+    .priv_axi_users_i(combo_priv_axi_users_i),
     .ahb_haddr(dev0_mem_ahb_system_haddr),
     .ahb_hburst(dev0_mem_ahb_hburst),
     .ahb_hsize(dev0_mem_ahb_hsize),
@@ -774,9 +776,9 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   `CALIPTRA_ASSERT_INIT(HubFifoSize_A,
                         (C_HUB_FIFO_SIZE >= HUB_FIFO_SIZE_MIN) &&
                         (C_HUB_FIFO_SIZE <= HUB_FIFO_SIZE_MAX))
-  `CALIPTRA_ASSERT_INIT(Dev0PrivAxiUserCount_A, DEV0_NUM_PRIV_AXI_USERS > 0)
+  `CALIPTRA_ASSERT_INIT(ComboPrivAxiUserCount_A, COMBO_NUM_PRIV_AXI_USERS > 0)
   `CALIPTRA_ASSERT_INIT(Dev1PrivAxiUserCount_A, DEV1_NUM_PRIV_AXI_USERS > 0)
-  `CALIPTRA_ASSERT_INIT(Dev0AxiUserWidth_A,
+  `CALIPTRA_ASSERT_INIT(ComboAxiUserWidth_A,
                         (COMBO_AXI_USER_WIDTH == $bits(combo_axi_if_r_sub.aruser)) &&
                         (COMBO_AXI_USER_WIDTH == DEV0_MEM_AXI_USER_WIDTH) &&
                         (COMBO_AXI_USER_WIDTH == $bits(dev0_mem_axi_if_r_sub.aruser)))
