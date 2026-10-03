@@ -54,7 +54,7 @@ module usb_ocp_recovery_top
   input  logic                    rec_ctrl_length_error,
 
   // Emergency-fallback path-disable control: mirrors CALIPTRA_CTRL.OCP_PATH_DISABLE
-  // (regblock field, EXT/firmware write-only via rb_is_ext/swwe gating -- see
+  // (regblock field, EXT/firmware write-only via cpuif_req/swwe gating -- see
   // rb_hwif_in assignment below) out to the VHDL arbiter
   // (usb_ocp_recovery_post_sync_arb ocp_path_disable_i), which forces legacy
   // SIE pass-through when set. Both this module and the arbiter live in
@@ -129,15 +129,6 @@ module usb_ocp_recovery_top
   logic [7:0]                 usb_vendor_next;
   logic                       usb_vendor_we;
 
-  // --- EXT reg-bus into A3 (word-wide) ---
-  logic                       rb_wr;
-  logic                       rb_rd;
-  logic [31:0]                rb_wdata;
-  logic [3:0]                 rb_wstrb;
-  logic [31:0]                rb_rdata;
-  logic                       rb_ack;
-  logic                       rb_err;
-
   // --- USB direct FIFO command path into A4 (32-bit word + byte strobe) ---
   logic                       fifo_rb_sel;
   logic [7:0]                 fifo_rb_cmd;
@@ -151,7 +142,7 @@ module usb_ocp_recovery_top
   logic                       fifo_rb_err;
   logic                       usb_fifo_req;
   logic                       usb_fifo_packet_active_q;
-  logic                       cpuif_req_block;
+  logic                       usb_fifo_owned;
   logic [3:0]                 cpuif_wr_strb;
   logic                       ext_fifo_ctrl_0_access;
   logic                       ext_fifo_ctrl_1_access;
@@ -162,10 +153,8 @@ module usb_ocp_recovery_top
   logic                       ext_fifo_status_4_access;
   logic                       ext_fifo_data_read;
   logic                       ext_fifo_data_write;
-  logic                       ext_fifo_aperture_access;
-  logic                       ext_fifo_data_aperture_access;
 
-  // --- AHB slave client and internal external-master request ---
+  // --- AHB slave client into the EXT/CPUif adapter ---
   logic                       ahb_dv;
   logic                       ahb_hld;
   logic                       ahb_err;
@@ -175,13 +164,7 @@ module usb_ocp_recovery_top
   logic [31:0]                ahb_rdata;
   logic                       ahb_hresp;
   logic                       ahb_access_invalid_q;
-  logic                       ext_rb_wr;
-  logic                       ext_rb_rd;
-  logic [31:0]                ext_rb_wdata;
-  logic [31:0]                ext_rb_rdata;
-  logic                       ext_rb_ack;
-  logic                       ext_rb_err;
-  logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] ext_aperture_offset;
+  logic                       ext_write_pending;
 
   // OCP Recovery v1.1 Sec 9.2 defines PROTOCOL_ERROR clear-on-read for the
   // Recovery Agent USB command. The control decoder pulses this only after a
@@ -236,23 +219,7 @@ module usb_ocp_recovery_top
   logic [31:0]                fifo_status_word_4;
   logic [31:0]                fifo_data_peek;
 
-  //////////////////////////////////////////////////////////////////////////////
-  // Firmware cpuif arbiter. USB register and FIFO commands bypass this
-  // arbitration through their dedicated hardware paths.
-  //
-  // EXT in-flight gating: once EXT is granted, retain its command until its
-  // ack lands. This protects multi-cycle cms_fifo accesses while the register
-  // adapter suppresses repeated CPU-interface request pulses.
-  // USB side already pulses rb_wr per word from ctrl_decode and is
-  // intentionally not gated to preserve its 1-cycle ack semantics.
-  //////////////////////////////////////////////////////////////////////////////
-
   logic       usb_req_now;
-  logic       ext_req_now;
-  logic       grant_ext;
-  logic       ext_in_flight_q;
-  logic       ext_write_q;
-  logic       rb_is_ext;
 
 `ifndef SYNTHESIS
   // synopsys translate_off
@@ -291,20 +258,6 @@ module usb_ocp_recovery_top
   );
 
   assign rec_ahb_hresp = {1'b0, ahb_hresp};
-  assign ext_aperture_offset = ahb_addr[OCP_RECOVERY_APERTURE_ADDR_W-1:0];
-  assign ext_rb_wdata = ahb_wdata;
-  // ext_rb_wr/ext_rb_rd are held level across the AHB dv window: the internal
-  // cpuif arbiter uses ext_in_flight_q as the one-shot guard, granting the
-  // register-block or FIFO request exactly once per transfer even when USB
-  // priority momentarily blocks a grant. Held levels also keep the aperture
-  // offset stable across multi-cycle cms_fifo accesses.
-  assign ext_rb_wr = ahb_dv && !ahb_access_invalid_q && ahb_write;
-  assign ext_rb_rd = ahb_dv && !ahb_access_invalid_q && !ahb_write;
-  assign ahb_rdata = ext_rb_rdata;
-  assign ahb_hld = ahb_dv && !ahb_access_invalid_q && !ext_rb_ack;
-  assign ahb_err = ahb_dv &&
-                   (ahb_access_invalid_q ||
-                    (ext_rb_ack && ext_rb_err));
 
   // Aligned-word validation. Register on the address-phase acceptance so the
   // data-phase err/hld terms observe the qualified transfer. AHB address decode
@@ -319,64 +272,16 @@ module usb_ocp_recovery_top
     end
   end
 
-  always_comb begin
-    usb_req_now = usb_rb_wr | usb_rb_rd;
-    ext_req_now = ext_rb_wr | ext_rb_rd;
-    grant_ext   = ext_req_now & ~ext_in_flight_q & ~usb_req_now;
-  end
-
-  always_comb begin
-    rb_wr     = 1'b0;
-    rb_rd     = 1'b0;
-    rb_wdata  = '0;
-    rb_wstrb  = 4'h0;
-    if (grant_ext | ext_in_flight_q) begin
-      // The bus is held for the whole in-flight window so a multi-cycle
-      // cms_fifo read keeps its aperture offset stable until it acks.
-      rb_wr     = (grant_ext && ext_rb_wr) ||
-                  (ext_in_flight_q && ext_write_q);
-      rb_rd     = (grant_ext && ext_rb_rd) ||
-                  (ext_in_flight_q && !ext_write_q);
-      rb_wdata  = ext_rb_wdata;
-      rb_wstrb  = 4'hF;
-    end
-  end
-
-  always_ff @(posedge clk or negedge rst_ni) begin
-    if (!rst_ni) begin
-      ext_in_flight_q  <= 1'b0;
-      ext_write_q      <= 1'b0;
-    end else begin
-      if (grant_ext)      ext_write_q <= ext_rb_wr;
-
-      // EXT in-flight: set when grant_ext fires, cleared when its ack
-      // returns.  Same-cycle ack (cms_fifo register combinational
-      // paths) is naturally handled because the clear term dominates
-      // the set term -- if grant and ack co-occur in cycle K, the
-      // flop stays low and the bridge advances next cycle.
-      ext_in_flight_q <= (ext_in_flight_q | grant_ext) & ~ext_rb_ack;
-    end
-  end
+  assign usb_req_now = usb_rb_wr | usb_rb_rd;
 
   // USB FIFO commands connect directly to cms_fifo. Non-FIFO USB accesses are
-  // served directly by the hardware-interface endpoint. Neither response path
-  // depends on ext_in_flight_q.
+  // served directly by the hardware-interface endpoint.
   assign usb_fifo_req = usb_is_fifo_cmd & (usb_rb_wr | usb_rb_rd);
+  assign usb_fifo_owned = usb_fifo_req || usb_fifo_packet_active_q
+                        || rec_fifo_reservation_active;
   assign usb_rb_rdata = usb_is_fifo_cmd ? fifo_rb_rdata : usb_hw_rdata;
   assign usb_rb_ack   = usb_is_fifo_cmd ? fifo_rb_ack   : usb_hw_ack;
   assign usb_rb_err   = usb_is_fifo_cmd ? fifo_rb_err   : usb_hw_err;
-
-  // EXT is word-native: return the full 32-bit read word. The shared AHB slave
-  // holds the aperture offset across the request handshake. The ack/err
-  // are qualified with the active EXT request window so same-cycle reads,
-  // registered writes, and multi-cycle FIFO reads all return to the SoC master.
-  assign ext_rb_rdata = rb_rdata[31:0];
-  assign ext_rb_ack   = rb_ack & rb_is_ext;
-  assign ext_rb_err   = rb_err & rb_is_ext;
-
-  // Request-cycle EXT qualifier for firmware-only side effects and FIFO
-  // arbitration. Do not derive this from the registered response owner.
-  assign rb_is_ext = grant_ext | ext_in_flight_q;
 
   //////////////////////////////////////////////////////////////////////////////
   // EP0 SETUP routing
@@ -651,21 +556,25 @@ module usb_ocp_recovery_top
     .clk             (clk),
     .rst_ni          (rst_ni),
 
-    .rb_wr           (rb_wr),
-    .rb_rd           (rb_rd),
-    .rb_wdata        (rb_wdata),
-    .rb_wstrb        (rb_wstrb),
-    .rb_rdata        (rb_rdata),
-    .rb_ack          (rb_ack),
-    .rb_err          (rb_err),
-    .ext_aperture_offset(ext_aperture_offset),
+    .ext_dv          (ahb_dv),
+    .ext_access_invalid(ahb_access_invalid_q),
+    .ext_write       (ahb_write),
+    .ext_wdata       (ahb_wdata),
+    .ext_addr        (ahb_addr[OCP_RECOVERY_APERTURE_ADDR_W-1:0]),
+    .ext_rdata       (ahb_rdata),
+    .ext_hld         (ahb_hld),
+    .ext_err         (ahb_err),
+    .ext_write_pending(ext_write_pending),
+
+    .usb_req         (usb_req_now),
+    .usb_fifo_owned  (usb_fifo_owned),
+    .payload_available(payload_available),
 
      .cpuif_req       (cpuif_req),
      .cpuif_req_is_wr (cpuif_req_is_wr),
      .cpuif_addr      (cpuif_addr),
      .cpuif_wr_data   (cpuif_wr_data),
      .cpuif_wr_biten  (cpuif_wr_biten),
-     .cpuif_req_block (cpuif_req_block),
      .cpuif_rd_ack    (cpuif_rd_ack),
      .cpuif_rd_err    (cpuif_rd_err),
      .cpuif_rd_data   (cpuif_rd_data),
@@ -713,7 +622,7 @@ module usb_ocp_recovery_top
       rb_hwif_out.CALIPTRA_CTRL.OCP_CLAIM_ABORT.value;
   assign fw_protocol_error_req =
       rb_hwif_out.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.swmod
-      && rb_is_ext
+      && cpuif_req
       && cpuif_req_is_wr
       && cpuif_wr_biten[2]
       && cpuif_wr_data[2];
@@ -741,24 +650,6 @@ module usb_ocp_recovery_top
   assign ext_fifo_data_write = cpuif_req
                              && cpuif_req_is_wr
                              && rb_hwif_out.INDIRECT_FIFO_DATA.DATA.swacc;
-
-  // A USB FIFO command owns the complete claimed control transfer. Defer every
-  // EXT FIFO CPUif request until that transfer retires so a ctrl_decode skid
-  // bubble cannot let firmware interleave FIFO control, status, or data access.
-  // DATA reads remain blocking until a full or terminal batch is available.
-  assign ext_fifo_aperture_access = rb_is_ext
-                                  && (ext_aperture_offset >= OCP_ADDR_INDIRECT_FIFO_CTRL[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
-                                  && (ext_aperture_offset <  OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
-  assign ext_fifo_data_aperture_access = rb_is_ext
-                                       && (ext_aperture_offset >= OCP_ADDR_INDIRECT_FIFO_DATA[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
-                                       && (ext_aperture_offset <  OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
-  assign cpuif_req_block = rb_is_ext
-                           && ((ext_fifo_aperture_access
-                                 && (usb_fifo_req || usb_fifo_packet_active_q
-                                     || rec_fifo_reservation_active))
-                               || (ext_fifo_data_aperture_access
-                                   && rb_rd
-                                   && !payload_available));
 
   // --------------------------------------------------------------------------
   // hwif_in wiring.
@@ -817,16 +708,19 @@ module usb_ocp_recovery_top
     rb_hwif_in.DEVICE_STATUS_0.PROT_ERROR.next = protocol_error_q;
 
     // CALIPTRA_CTRL.OCP_PATH_DISABLE (emergency-fallback path-disable control):
-    // software write-enable gated by rb_is_ext so only EXT/firmware writes
+    // software write-enable gated by the accepted EXT CPUif write pulse
     // commit; a USB-host write is silently ignored (swwe=0), matching the
     // same source-qualification pattern used for PROT_CAP capability writes.
     // The register itself lives outside the OCP command aperture and is only
     // reachable via the firmware/AXI sub-decoder.
-    rb_hwif_in.CALIPTRA_CTRL.OCP_PATH_DISABLE.swwe = rb_is_ext;
-    rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.swwe = rb_is_ext;
+    rb_hwif_in.CALIPTRA_CTRL.OCP_PATH_DISABLE.swwe =
+        cpuif_req && cpuif_req_is_wr;
+    rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.swwe =
+        cpuif_req && cpuif_req_is_wr;
     rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.next = 1'b0;
     rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.we = ocp_claim_abort_clear;
-    rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.swwe = rb_is_ext;
+    rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.swwe =
+        cpuif_req && cpuif_req_is_wr;
     rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.next = 1'b0;
     rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.we =
         protocol_error_general_clear;
@@ -975,42 +869,22 @@ module usb_ocp_recovery_top
   // synopsys translate_off
   always_ff @(posedge clk) begin
     if (rst_ni) begin
-      assert (!(rb_wr && rb_rd))
-        else $error("usb_ocp_recovery_top: rb_wr and rb_rd both asserted");
       assert (!(usb_rb_wr && usb_rb_rd))
         else $error("usb_ocp_recovery_top: usb master asserted wr+rd");
-      assert (!(ext_rb_wr && ext_rb_rd))
-        else $error("usb_ocp_recovery_top: ext master asserted wr+rd");
-      if (rb_ack || rb_err) begin
-        assert (rb_is_ext)
-          else $error("usb_ocp_recovery_top: EXT response outside active request window");
-      end
       if (ahb_dv && ahb_access_invalid_q) begin
-        assert (!(ext_rb_wr || ext_rb_rd))
-          else $error("usb_ocp_recovery_top: invalid AHB access reached the register bus");
-      end
-      if (ext_rb_wr || ext_rb_rd) begin
-        assert (ahb_dv)
-          else $error("usb_ocp_recovery_top: register request without AHB client dv");
+        assert (!cpuif_req)
+          else $error("usb_ocp_recovery_top: invalid AHB access reached CPUif");
       end
       // USB priority blocks a new EXT grant, but it does not cancel an EXT
       // write that already committed. Its registered completion ACK may
       // overlap an independent direct USB hardware/FIFO response.
-      if (usb_req_now && ext_req_now && !ext_in_flight_q) begin
-        assert (!grant_ext && !cpuif_req)
-          else $error("usb_ocp_recovery_top: EXT request fired while USB had priority");
-      end
-      if (usb_rb_ack && ext_rb_ack) begin
-        assert (ext_in_flight_q && !grant_ext && !cpuif_req)
+      if (usb_rb_ack && ahb_dv && !ahb_hld && !ahb_access_invalid_q) begin
+        assert (ext_write_pending && !cpuif_req)
           else $error("usb_ocp_recovery_top: overlapping ACK was not an EXT completion tail");
       end
       if (usb_fifo_req) begin
         assert (usb_rb_ack)
           else $error("usb_ocp_recovery_top: USB FIFO command stalled");
-      end
-      if (cpuif_req_block) begin
-        assert (!cpuif_req)
-          else $error("usb_ocp_recovery_top: blocked EXT fifo access still fired cpuif");
       end
       if ($past(rst_ni) && $past(proto_err_rd_pulse)) begin
         assert (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)
