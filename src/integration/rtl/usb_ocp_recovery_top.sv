@@ -993,8 +993,17 @@ module usb_ocp_recovery_top
         assert (ahb_dv)
           else $error("usb_ocp_recovery_top: register request without AHB client dv");
       end
-      assert (!(usb_rb_ack && ext_rb_ack))
-        else $error("usb_ocp_recovery_top: ack routed to both masters");
+      // USB priority blocks a new EXT grant, but it does not cancel an EXT
+      // write that already committed. Its registered completion ACK may
+      // overlap an independent direct USB hardware/FIFO response.
+      if (usb_req_now && ext_req_now && !ext_in_flight_q) begin
+        assert (!grant_ext && !cpuif_req)
+          else $error("usb_ocp_recovery_top: EXT request fired while USB had priority");
+      end
+      if (usb_rb_ack && ext_rb_ack) begin
+        assert (ext_in_flight_q && !grant_ext && !cpuif_req)
+          else $error("usb_ocp_recovery_top: overlapping ACK was not an EXT completion tail");
+      end
       if (usb_fifo_req) begin
         assert (usb_rb_ack)
           else $error("usb_ocp_recovery_top: USB FIFO command stalled");
