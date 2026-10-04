@@ -97,8 +97,10 @@ module usb_ocp_recovery_ctrl_decode (
   logic [7:0]  bmrt_s;
   logic [7:0]  brq_s;
   logic [15:0] wvalue_s;
+  logic [15:0] windex_s;
   logic [15:0] wlength_s;
   logic        is_class_s;
+  logic        is_interface_s;
   logic        is_in_s;
   logic [7:0]  cmd_code_s;
   logic        cmd_code_valid_s;
@@ -110,16 +112,22 @@ module usb_ocp_recovery_ctrl_decode (
   logic [15:0]        read_length_s;
 
   always_comb begin
-    bmrt_s      = setup_pkt[7:0];
-    brq_s       = setup_pkt[15:8];
-    wvalue_s    = {setup_pkt[31:24], setup_pkt[23:16]};
-    wlength_s   = {setup_pkt[63:56], setup_pkt[55:48]};
+    bmrt_s      = setup_pkt[USB_SETUP_BMREQUESTTYPE_LSB +: 8];
+    brq_s       = setup_pkt[USB_SETUP_BREQUEST_LSB +: 8];
+    wvalue_s    = setup_pkt[USB_SETUP_WVALUE_LSB +: 16];
+    windex_s    = setup_pkt[USB_SETUP_WINDEX_LSB +: 16];
+    wlength_s   = setup_pkt[USB_SETUP_WLENGTH_LSB +: 16];
 
-    is_class_s       = (bmrt_s[6:5] == 2'b01);
-    is_in_s          = bmrt_s[7];
+    is_class_s       = (bmrt_s[BMRT_TYPE_LSB +: 2] == BMRT_TYPE_CLASS);
+    is_interface_s   = (bmrt_s[BMRT_RECIPIENT_LSB +: 5] == BMRT_RECIPIENT_IFACE);
+    is_in_s          = bmrt_s[BMRT_DIRECTION_BIT];
     cmd_code_s       = wvalue_s[7:0];
     cmd_code_valid_s = (cmd_code_s >= OCP_CMD_MIN) && (cmd_code_s <= OCP_CMD_MAX);
-    ocp_req_valid_s  = (brq_s == 8'h00) && (wvalue_s[15:8] == 8'h00)
+    ocp_req_valid_s  =    (brq_s == OCP_BREQUEST_XFER)
+                       && (wvalue_s[15:8] == OCP_SETUP_RESERVED_BYTE)
+                       && is_class_s
+                       && is_interface_s
+                       && (windex_s[15:8] == OCP_SETUP_RESERVED_BYTE)
                        && cmd_code_valid_s;
     response_meta_s  = ocp_response_meta(cmd_code_s);
     read_length_s    = 16'(response_meta_s.bytes);
@@ -361,7 +369,11 @@ module usb_ocp_recovery_ctrl_decode (
           hold_be_d    = '0;
           hold_last_d  = 1'b0;
           hold_vld_d   = 1'b0;
-          if ((brq_s != 8'h00) || (wvalue_s[15:8] != 8'h00)) begin
+          if ((brq_s != OCP_BREQUEST_XFER)
+              || (wvalue_s[15:8] != OCP_SETUP_RESERVED_BYTE)
+              || !is_class_s
+              || !is_interface_s
+              || (windex_s[15:8] != OCP_SETUP_RESERVED_BYTE)) begin
             length_d     = '0;
             resp_bytes_d = '0;
             resp_known_d = 1'b0;
@@ -565,8 +577,8 @@ module usb_ocp_recovery_ctrl_decode (
           else $error("ctrl_decode: completed DEVICE_STATUS response was shorter than the specification minimum");
       end
       if (setup_pkt_vld) begin
-        assert (is_class_s)
-          else $error("ctrl_decode: setup_pkt_vld asserted on non-class SETUP");
+        assert (is_class_s && is_interface_s)
+          else $error("ctrl_decode: setup_pkt_vld asserted on non-OCP class/interface SETUP");
       end
       if (setup_pkt_vld && is_in_s && cmd_supported_s &&
           direction_legal_s && length_legal_s) begin

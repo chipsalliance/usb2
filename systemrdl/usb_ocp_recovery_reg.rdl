@@ -78,15 +78,14 @@ addrmap usb_ocp_recovery_reg {
         //   bit12 FIFO_CMS_SUPPORT       0x1000
         //   ----------------------------- -------
         //   total                        0x1A9A
-        // Each sub-field is firmware-configurable (sw=rw; hw=na) with the
+        // Each sub-field is firmware-configurable (sw=rw; hw=r) with the
         // above values as RESET defaults (OCP Recovery v1.1 Sec 9.2 PROT_CAP
-        // is host-RO: a USB-host write to PROT_CAP is rejected and raises
-        // PROTOCOL_ERROR via source-qualification in
-        // usb_ocp_recovery_rb_adapter.sv / usb_ocp_recovery_top.sv).
+        // is host-RO: the dedicated USB endpoint rejects a USB-host write and
+        // raises PROTOCOL_ERROR. USB commands do not use the firmware CPUif.
         // ----------------------------------------------------------------
         field {
             name = "Identification";
-            desc = "AGENT_CAPS bit 0: Identification (DEVICE_ID structure). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 0 so firmware can initialize DEVICE_ID before advertising it. Firmware-configurable (sw=rw); the USB host is RO -- a host write to PROT_CAP raises PROTOCOL_ERROR (Sec 9.1, source-qualified via rb_is_ext in usb_ocp_recovery_rb_adapter.sv).";
+            desc = "AGENT_CAPS bit 0: Identification (DEVICE_ID structure). OCP Recovery v1.1 Sec 9.2 PROT_CAP. Reset 0 so firmware can initialize DEVICE_ID before advertising it. Firmware-configurable (sw=rw); the USB host is RO because USB commands use the dedicated hardware endpoint, where a host write raises PROTOCOL_ERROR (Sec 9.1).";
             sw = rw;
             hw = r;
             reset = 1'b0;
@@ -894,10 +893,9 @@ addrmap usb_ocp_recovery_reg {
         desc = "Caliptra/vendor-specific control bits outside the OCP Recovery command set. Firmware (EXT/AXI) writable only.";
         field {
             name = "OCP Recovery Path Disable";
-            desc = "Emergency-fallback control bit. When set, forces the VHDL post-synchronizer OCP recovery arbiter (usb_ocp_recovery_post_sync_arb.m.vhdl, ocp_path_disable_i port) to never claim an OCP-class SETUP, so every EP0 transfer falls through to the legacy SIE / MCU EPCS path bit-identically to the un-arbitered IP. Firmware/EXT write-only (swwe gated by rb_is_ext in usb_ocp_recovery_top.sv), so a USB-host write is ignored. Reset default 0 (OCP recovery path active).";
+            desc = "Emergency-fallback control bit. When set, forces the VHDL post-synchronizer OCP recovery arbiter (usb_ocp_recovery_post_sync_arb.m.vhdl, ocp_path_disable_i port) to never claim an OCP-class SETUP, so every EP0 transfer falls through to the legacy SIE / MCU EPCS path bit-identically to the un-arbitered IP. Firmware/EXT writable only because CALIPTRA_CTRL is outside the USB command aperture. Reset default 0 (OCP recovery path active).";
             sw = rw;
             hw = r;
-            swwe = true;
             reset = 1'b0;
         } OCP_PATH_DISABLE[0:0];
         field {
@@ -906,7 +904,6 @@ addrmap usb_ocp_recovery_reg {
             sw = rw;
             hw = rw;
             we = true;
-            swwe = true;
             swmod = true;
             woset = true;
             reset = 1'b0;
@@ -917,7 +914,6 @@ addrmap usb_ocp_recovery_reg {
             sw = rw;
             hw = rw;
             we = true;
-            swwe = true;
             swmod = true;
             woset = true;
             reset = 1'b0;
