@@ -285,23 +285,16 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__VENDOR__in_t;
 
     typedef struct packed{
-        logic swwe;
-    } usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_PATH_DISABLE__in_t;
-
-    typedef struct packed{
         logic next;
         logic we;
-        logic swwe;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_CLAIM_ABORT__in_t;
 
     typedef struct packed{
         logic next;
         logic we;
-        logic swwe;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_PROTOCOL_ERROR_GENERAL__in_t;
 
     typedef struct packed{
-        usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_PATH_DISABLE__in_t OCP_PATH_DISABLE;
         usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_CLAIM_ABORT__in_t OCP_CLAIM_ABORT;
         usb_ocp_recovery_reg__CALIPTRA_CTRL__OCP_PROTOCOL_ERROR_GENERAL__in_t OCP_PROTOCOL_ERROR_GENERAL;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__in_t;

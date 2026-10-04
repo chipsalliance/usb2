@@ -163,7 +163,6 @@ module usb_ocp_recovery_top
   logic [RECOVERY_LOCAL_ADDR_WIDTH-1:0] ahb_addr;
   logic [31:0]                ahb_rdata;
   logic                       ahb_hresp;
-  logic                       ahb_access_invalid_q;
   logic                       ext_write_pending;
 
   // OCP Recovery v1.1 Sec 9.2 defines PROTOCOL_ERROR clear-on-read for the
@@ -258,19 +257,6 @@ module usb_ocp_recovery_top
   );
 
   assign rec_ahb_hresp = {1'b0, ahb_hresp};
-
-  // Aligned-word validation. Register on the address-phase acceptance so the
-  // data-phase err/hld terms observe the qualified transfer. AHB address decode
-  // and combo selection have already filtered non-recovery accesses; the local
-  // check enforces the word-only policy of the shared AHB slave.
-  always_ff @(posedge clk or negedge rst_ni) begin
-    if (!rst_ni) begin
-      ahb_access_invalid_q <= 1'b0;
-    end else if (rec_ahb_hreadyin && rec_ahb_hsel && rec_ahb_htrans[1]) begin
-      ahb_access_invalid_q <= (rec_ahb_hsize != 3'b010) ||
-                              (rec_ahb_haddr[1:0] != 2'b00);
-    end
-  end
 
   assign usb_req_now = usb_rb_wr | usb_rb_rd;
 
@@ -557,7 +543,6 @@ module usb_ocp_recovery_top
     .rst_ni          (rst_ni),
 
     .ext_dv          (ahb_dv),
-    .ext_access_invalid(ahb_access_invalid_q),
     .ext_write       (ahb_write),
     .ext_wdata       (ahb_wdata),
     .ext_addr        (ahb_addr[OCP_RECOVERY_APERTURE_ADDR_W-1:0]),
@@ -707,23 +692,12 @@ module usb_ocp_recovery_top
     // reason are firmware-owned cpuif storage.
     rb_hwif_in.DEVICE_STATUS_0.PROT_ERROR.next = protocol_error_q;
 
-    // CALIPTRA_CTRL.OCP_PATH_DISABLE (emergency-fallback path-disable control):
-    // software write-enable gated by the accepted EXT CPUif write pulse
-    // commit; a USB-host write is silently ignored (swwe=0), matching the
-    // same source-qualification pattern used for PROT_CAP capability writes.
-    // The register itself lives outside the OCP command aperture and is only
-    // reachable via the firmware/AXI sub-decoder.
-    rb_hwif_in.CALIPTRA_CTRL.OCP_PATH_DISABLE.swwe =
-        cpuif_req && cpuif_req_is_wr;
-    rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.swwe =
-        cpuif_req && cpuif_req_is_wr;
+    // CALIPTRA_CTRL is outside the USB command aperture and is reachable only
+    // through the EXT CPUif path.
     rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.next = 1'b0;
     rb_hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.we = ocp_claim_abort_clear;
-    rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.swwe =
-        cpuif_req && cpuif_req_is_wr;
     rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.next = 1'b0;
-    rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.we =
-        protocol_error_general_clear;
+    rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.we = protocol_error_general_clear;
 
     // CALIPTRA_STATUS (read-only, hw=w): Caliptra-specific sticky FIFO status
     // relocated out of the non-spec INDIRECT_FIFO_STATUS byte-0 bits. Driven
@@ -871,14 +845,10 @@ module usb_ocp_recovery_top
     if (rst_ni) begin
       assert (!(usb_rb_wr && usb_rb_rd))
         else $error("usb_ocp_recovery_top: usb master asserted wr+rd");
-      if (ahb_dv && ahb_access_invalid_q) begin
-        assert (!cpuif_req)
-          else $error("usb_ocp_recovery_top: invalid AHB access reached CPUif");
-      end
       // USB priority blocks a new EXT grant, but it does not cancel an EXT
       // write that already committed. Its registered completion ACK may
       // overlap an independent direct USB hardware/FIFO response.
-      if (usb_rb_ack && ahb_dv && !ahb_hld && !ahb_access_invalid_q) begin
+      if (usb_rb_ack && ahb_dv && !ahb_hld) begin
         assert (ext_write_pending && !cpuif_req)
           else $error("usb_ocp_recovery_top: overlapping ACK was not an EXT completion tail");
       end

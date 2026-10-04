@@ -22,7 +22,6 @@ module usb_ocp_recovery_rb_adapter
 
   // Held request from ahb_slv_sif.
   input  logic        ext_dv,
-  input  logic        ext_access_invalid,
   input  logic        ext_write,
   input  logic [31:0] ext_wdata,
   input  logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] ext_addr,
@@ -51,6 +50,7 @@ module usb_ocp_recovery_rb_adapter
 );
 
   logic access;
+  logic [OCP_RECOVERY_APERTURE_ADDR_W-1:0] aligned_ext_addr;
   logic fifo_aperture_access;
   logic fifo_data_aperture_access;
   logic request_blocked;
@@ -62,11 +62,12 @@ module usb_ocp_recovery_rb_adapter
   logic completion;
   logic completion_err;
 
-  assign access = ext_dv && !ext_access_invalid;
-  assign fifo_aperture_access =    (ext_addr >= OCP_ADDR_INDIRECT_FIFO_CTRL[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
-                                && (ext_addr < OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
-  assign fifo_data_aperture_access =    (ext_addr >= OCP_ADDR_INDIRECT_FIFO_DATA[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
-                                     && (ext_addr < OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
+  assign access = ext_dv;
+  assign aligned_ext_addr = { ext_addr[OCP_RECOVERY_APERTURE_ADDR_W-1:2], 2'b00 };
+  assign fifo_aperture_access =    (aligned_ext_addr >= OCP_ADDR_INDIRECT_FIFO_CTRL[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
+                                && (aligned_ext_addr < OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
+  assign fifo_data_aperture_access =    (aligned_ext_addr >= OCP_ADDR_INDIRECT_FIFO_DATA[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
+                                     && (aligned_ext_addr < OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
   assign request_blocked =    usb_req
                            || (fifo_aperture_access && usb_fifo_owned)
                            || (fifo_data_aperture_access && !ext_write && !payload_available);
@@ -75,7 +76,7 @@ module usb_ocp_recovery_rb_adapter
 
   assign cpuif_req       = cpuif_fire;
   assign cpuif_req_is_wr = ext_write;
-  assign cpuif_addr      = ext_addr;
+  assign cpuif_addr      = aligned_ext_addr;
   assign cpuif_wr_data   = ext_wdata;
   assign cpuif_wr_biten  = '1;
 
@@ -101,7 +102,7 @@ module usb_ocp_recovery_rb_adapter
   assign completion     = local_read_fire ? cpuif_rd_ack : write_ack_q;
   assign completion_err = local_read_fire ? cpuif_rd_err : write_err_q;
   assign ext_hld        = access && !completion;
-  assign ext_err        = ext_dv && (ext_access_invalid || (completion && completion_err));
+  assign ext_err        = ext_dv && completion && completion_err;
   assign ext_rdata      = local_read_fire ? cpuif_rd_data : '0;
   assign ext_write_pending = write_pending_q;
 
@@ -112,6 +113,8 @@ module usb_ocp_recovery_rb_adapter
       if (access) begin
         assert (!$isunknown({ext_addr, ext_write}))
           else $error("usb_ocp_recovery_rb_adapter: X on EXT address or direction");
+        assert (ext_addr[1:0] == 2'b00)
+          else $error("usb_ocp_recovery_rb_adapter: ahb_slv_sif emitted a non-word-aligned address");
       end
       if (access && ext_write) begin
         assert (!$isunknown(ext_wdata))
