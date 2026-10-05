@@ -28,7 +28,6 @@ module usb_ocp_recovery_rb_adapter
   output logic [31:0] ext_rdata,
   output logic        ext_hld,
   output logic        ext_err,
-  output logic        ext_write_pending,
 
   // USB/resource ownership used to block before CPUif commit.
   input  logic        usb_req,
@@ -104,7 +103,6 @@ module usb_ocp_recovery_rb_adapter
   assign ext_hld        = access && !completion;
   assign ext_err        = ext_dv && completion && completion_err;
   assign ext_rdata      = local_read_fire ? cpuif_rd_data : '0;
-  assign ext_write_pending = write_pending_q;
 
 `ifndef SYNTHESIS
   // synopsys translate_off

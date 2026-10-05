@@ -163,7 +163,6 @@ module usb_ocp_recovery_top
   logic [RECOVERY_LOCAL_ADDR_WIDTH-1:0] ahb_addr;
   logic [31:0]                ahb_rdata;
   logic                       ahb_hresp;
-  logic                       ext_write_pending;
 
   // OCP Recovery v1.1 Sec 9.2 defines PROTOCOL_ERROR clear-on-read for the
   // Recovery Agent USB command. The control decoder pulses this only after a
@@ -549,7 +548,6 @@ module usb_ocp_recovery_top
     .ext_rdata       (ahb_rdata),
     .ext_hld         (ahb_hld),
     .ext_err         (ahb_err),
-    .ext_write_pending(ext_write_pending),
 
     .usb_req         (usb_req_now),
     .usb_fifo_owned  (usb_fifo_owned),
@@ -845,12 +843,11 @@ module usb_ocp_recovery_top
     if (rst_ni) begin
       assert (!(usb_rb_wr && usb_rb_rd))
         else $error("usb_ocp_recovery_top: usb master asserted wr+rd");
-      // USB priority blocks a new EXT grant, but it does not cancel an EXT
-      // write that already committed. Its registered completion ACK may
-      // overlap an independent direct USB hardware/FIFO response.
+      // An EXT response may overlap an independent direct USB response, but
+      // the overlap must not issue a new register access.
       if (usb_rb_ack && ahb_dv && !ahb_hld) begin
-        assert (ext_write_pending && !cpuif_req)
-          else $error("usb_ocp_recovery_top: overlapping ACK was not an EXT completion tail");
+        assert (!cpuif_req)
+          else $error("usb_ocp_recovery_top: overlapping ACK issued an EXT CPUif request");
       end
       if (usb_fifo_req) begin
         assert (usb_rb_ack)
