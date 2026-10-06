@@ -167,10 +167,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal is_ocp  : std_logic;
   signal incoming_is_ocp_c : std_logic;
   signal ep0_ocp_owner_r : std_logic;
-  signal claim_q : std_logic;
-  signal ocp_ep0_req_c : std_logic;
-  signal ocp_ep0_txn_r : std_logic;
-  signal non_ep0_txn_r : std_logic;
+  signal dev0_ep0_req_c : std_logic;
   signal ocp_resp_sel_c : std_logic;
   signal replacement_stall_r : std_logic;
   signal wire_ocp_r : std_logic;
@@ -187,6 +184,9 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal dma_success_c : std_logic;
   signal dev0_selected_c : std_logic;
   signal dev0_local_reset_c : std_logic;
+  signal ocp_teardown_c : std_logic;
+  signal ocp_stage_accept_c : std_logic;
+  signal dma_txn_done_c : std_logic;
   signal dma_owner_r : std_logic_vector(1 downto 0);
   signal setup_dma_owner_r : std_logic_vector(1 downto 0);
   signal setup_dma_match_c : std_logic;
@@ -312,17 +312,22 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                             and (sync_sieint_epinfo_epnr_i = "0000")
                     else '0';
 
-    claim_q <= ep0_ocp_owner_r;
-    ocp_ep0_req_c <= '1' when (dev0_selected_c = '1')
+    dev0_ep0_req_c <= '1' when (dev0_selected_c = '1')
                                    and (sync_sieint_epinfo_req_i = '1')
                                    and (sync_sieint_epinfo_epnr_i = "0000")
                               else '0';
+    ocp_teardown_c <= dev0_local_reset_c or ocp_claim_abort_i;
+    -- Claimed Device 0 EP0 DATA/STATUS request accepted by the local OCP
+    -- responder. During teardown the stale claim must not answer the request;
+    -- it is also not forwarded to DMA, so the PIE times out on it.
+    ocp_stage_accept_c <= '1' when (dev0_ep0_req_c = '1') and
+                                   (sync_sieint_epinfo_setup_i = '0') and
+                                   (ep0_ocp_owner_r = '1') and
+                                   (ocp_teardown_c = '0') else '0';
     ocp_resp_sel_c <= '0' when (sync_sieint_epinfo_req_i = '1') and
                                    (sync_sieint_epinfo_setup_i = '1') else
-                      '1' when ((wire_ocp_r = '1') or
-                                       ((ocp_ep0_req_c = '1') and
-                                        (sync_sieint_epinfo_setup_i = '0') and
-                                        (claim_q = '1')))
+                      '1' when (wire_ocp_r = '1') or
+                               (ocp_stage_accept_c = '1')
                                 else '0';
 
     -- OCP-recovery class match on the captured SETUP (little-endian, USB 2.0
@@ -362,7 +367,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- Stage-end pulse (hclk endtransfer is already single-cycle; qualify with
     -- success so a NAK/error edge does not advance the claim FSM).
     st_end_c <= sync_sieint_endtransfer_i and sync_sieint_success_i
-                and ocp_ep0_txn_r;
+                and wire_ocp_r;
     setup_complete_c <= end_seen or sync_sieint_endtransfer_i;
     setup_valid_c <= '1' when
         ((cap_done = '1') or (sync_sieint_rxdatavalid_i = '1')) and
@@ -416,7 +421,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     rx_expected_words_c <= resize(shift_right(nbytes_r +
                                to_unsigned(3, nbytes_r'length), 2), 5);
     rx_capture_c <= '1' when (st = T_DATA) and (xfer_dir_in_r = '0')
-                            and (ocp_ep0_txn_r = '1')
+                            and (wire_ocp_r = '1')
                             and (sync_sieint_rxdatavalid_i = '1')
                             and (rx_validated_r = '0')
                        else '0';
@@ -454,14 +459,14 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- ------------------------------------------------------------------
     -- Control-IN cut-through queue combinational (SV 32b words -> SIE beats).
     -- ------------------------------------------------------------------
-    tx_in_data_c <= '1' when (claim_q = '1') and (st = T_DATA)
+    tx_in_data_c <= '1' when (ep0_ocp_owner_r = '1') and (st = T_DATA)
                              and (xfer_dir_in_r = '1') and (zlp_phase_r = '0')
                      else '0';
     tx_remaining_bytes_c <= tx_response_bytes_r - tx_bytes_sent_r
                             when tx_response_bytes_r >= tx_bytes_sent_r
                             else (others => '0');
     tx_shift_c <= '1' when (tx_in_data_c = '1') and (tx_launch_ready_c = '1')
-                           and (ocp_ep0_txn_r = '1')
+                           and (wire_ocp_r = '1')
                            and (sync_sieint_txdatafetched_i = '1')
                            and (tx_remaining_bytes_c >
                                 to_unsigned(BYTES_PER_BEAT, tx_remaining_bytes_c'length))
@@ -470,7 +475,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     tx_slot_free_c <= '1' when (tx_shift_c = '1') or (tx_curr_valid_r = '0')
                                or (tx_next_valid_r = '0')
                       else '0';
-    ctrl_in_rdy_c <= '1' when (claim_q = '1') and (tx_slot_free_c = '1') else '0';
+    ctrl_in_rdy_c <= '1' when (ep0_ocp_owner_r = '1') and (tx_slot_free_c = '1') else '0';
     ctrl_in_rdy   <= ctrl_in_rdy_c;
 
     zlp_owed_c <= '1' when (xfer_dir_in_r = '1') and (tx_response_known_r = '1')
@@ -502,7 +507,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     fifo_out_request_c <= '1' when (st = T_DATA) and (xfer_dir_in_r = '0')
                                   and (cap_rxdata(23 downto 16) =
                                        OCP_INDIRECT_FIFO_DATA)
-                                  and (ocp_ep0_req_c = '1')
+                                  and (dev0_ep0_req_c = '1')
                                   and (sync_sieint_epinfo_setup_i = '0')
                               else '0';
     fifo_reservation_active_o <= fifo_reservation_r or
@@ -562,18 +567,18 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     ctrl_xfer_done <= rx_drain_done_r when (xfer_dir_in_r = '0') else
                        (st_end_c and tx_launch_ready_c)
                          when ((st = T_DATA) or (st = T_STATUS))
-                              and (ocp_ep0_txn_r = '1') else '0';
+                              and (wire_ocp_r = '1') else '0';
     ctrl_xfer_abort <= '1' when (dev0_local_reset_c = '1')
                                  or (ocp_claim_abort_i = '1')
                                  or (rx_length_error_r = '1')
                                  or (setup_length_error_c = '1')
-                                  or ((claim_q = '1') and (new_setup_c = '1'))
+                                  or ((ep0_ocp_owner_r = '1') and (new_setup_c = '1'))
                                   or (((st = T_META_WAIT) or (st = T_DATA)
                                        or (st = T_STATUS)
                                        or (st = T_PROT_STALL))
                                      and (sync_busreset = '1'))
                         else '0';
-    fifo_batch_abort_c <= '1' when (claim_q = '1')
+    fifo_batch_abort_c <= '1' when (ep0_ocp_owner_r = '1')
                                      and (xfer_dir_in_r = '0')
                                      and (cap_rxdata(23 downto 16) =
                                           OCP_INDIRECT_FIFO_DATA)
@@ -596,7 +601,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- is visible from the origin state. Synchronous teardown is applied by the
     -- state register and therefore overrides every combinational transition.
     -- ------------------------------------------------------------------
-    fsm_next_proc : process (st, new_setup_c, fw_protocol_error_req_i, claim_q,
+    fsm_next_proc : process (st, new_setup_c, fw_protocol_error_req_i, ep0_ocp_owner_r,
                              setup_complete_c, setup_valid_c, setup_claim_c,
                              replacement_stall_r, ctrl_set_stall,
                              setup_length_error_c, nbytes_r,
@@ -609,14 +614,14 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         when T_IDLE =>
           if new_setup_c = '1' then
             st_next <= T_MIRROR;
-          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+          elsif (fw_protocol_error_req_i = '1') and (ep0_ocp_owner_r = '1') then
             st_next <= T_PROT_STALL;
           end if;
 
         when T_MIRROR =>
           if new_setup_c = '1' then
             st_next <= T_MIRROR;
-          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+          elsif (fw_protocol_error_req_i = '1') and (ep0_ocp_owner_r = '1') then
             st_next <= T_PROT_STALL;
           elsif setup_complete_c = '1' then
             if (setup_valid_c = '1') and (setup_claim_c = '1') then
@@ -633,7 +638,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         when T_META_WAIT =>
           if new_setup_c = '1' then
             st_next <= T_MIRROR;
-          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+          elsif (fw_protocol_error_req_i = '1') and (ep0_ocp_owner_r = '1') then
             st_next <= T_PROT_STALL;
           elsif (ctrl_set_stall = '1') or
                 (setup_length_error_c = '1') then
@@ -647,7 +652,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         when T_DATA =>
           if new_setup_c = '1' then
             st_next <= T_MIRROR;
-          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+          elsif (fw_protocol_error_req_i = '1') and (ep0_ocp_owner_r = '1') then
             st_next <= T_PROT_STALL;
           elsif (ctrl_set_stall = '1') or (rx_length_error_r = '1') then
             st_next <= T_PROT_STALL;
@@ -666,7 +671,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         when T_STATUS =>
           if new_setup_c = '1' then
             st_next <= T_MIRROR;
-          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+          elsif (fw_protocol_error_req_i = '1') and (ep0_ocp_owner_r = '1') then
             st_next <= T_PROT_STALL;
           elsif ctrl_set_stall = '1' then
             st_next <= T_PROT_STALL;
@@ -677,7 +682,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         when T_PROT_STALL =>
           if new_setup_c = '1' then
             st_next <= T_MIRROR;
-          elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+          elsif (fw_protocol_error_req_i = '1') and (ep0_ocp_owner_r = '1') then
             st_next <= T_PROT_STALL;
           end if;
 
@@ -721,7 +726,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
           cap_done <= '0';
           end_seen <= '0';
           succ_seen <= '0';
-        elsif not ((fw_protocol_error_req_i = '1') and (claim_q = '1')) and
+        elsif not ((fw_protocol_error_req_i = '1') and (ep0_ocp_owner_r = '1')) and
               (st = T_MIRROR) then
           if sync_sieint_rxdatavalid_i = '1' then
             cap_rxdata <= sync_sieint_rxdata_i;
@@ -795,7 +800,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
            (ocp_claim_abort_i = '1') then
           in_data_toggle_r <= '1';
           zlp_phase_r <= '0';
-        elsif claim_q = '0' then
+        elsif ep0_ocp_owner_r = '0' then
           in_data_toggle_r <= '1';
           zlp_phase_r <= '0';
         elsif (st = T_DATA) and (st_end_c = '1') then
@@ -886,7 +891,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
             drop_dma_valid_seen_r <= '0';
           end if;
           if (new_setup_c = '0') and
-             not ((fw_protocol_error_req_i = '1') and (claim_q = '1')) and
+             not ((fw_protocol_error_req_i = '1') and (ep0_ocp_owner_r = '1')) and
              (st = T_MIRROR) and
              (sync_sieint_rxdatavalid_i = '1') and
              (incoming_is_ocp_c = '1') then
@@ -914,7 +919,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
           else
             replacement_stall_r <= '0';
           end if;
-        elsif (fw_protocol_error_req_i = '1') and (claim_q = '1') then
+        elsif (fw_protocol_error_req_i = '1') and (ep0_ocp_owner_r = '1') then
           ep0_ocp_owner_r <= '1';
         elsif (st = T_MIRROR) and (setup_complete_c = '1') then
           if (setup_valid_c = '1') and (setup_claim_c = '1') then
@@ -929,66 +934,56 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     end process claim_clk_proc;
 
     -- ------------------------------------------------------------------
-    -- Per-transaction wire routing.
+    -- Per-transaction wire routing. wire_ocp_r and wire_dma_r select the
+    -- response source; if both low, no response routed.
     -- ------------------------------------------------------------------
-    route_owner_clk_proc : process (hclk, hresetn)
+    -- A DMA transaction completes when the DMA response-valid interval for
+    -- the forwarded request has risen and then fallen.
+    dma_txn_done_c <= '1' when (wire_dma_r = '1') and
+                               (dma_valid_seen_r = '1') and
+                               (epinfo_sync_valid_dma = '0') else '0';
+
+    -- OCP owner. Device 0 teardown clears only this owner.
+    ocp_owner_clk_proc : process (hclk, hresetn)
     begin
       if hresetn = '0' then
-        ocp_ep0_txn_r <= '0';
-        non_ep0_txn_r <= '0';
         wire_ocp_r <= '0';
+      elsif rising_edge(hclk) then
+        if (sync_busreset = '1') or (ocp_teardown_c = '1') then
+          wire_ocp_r <= '0';
+        elsif ocp_stage_accept_c = '1' then
+          wire_ocp_r <= '1';
+        elsif (sync_sieint_epinfo_req_i = '1') or
+              ((sync_sieint_endtransfer_i = '1') and
+               (wire_ocp_r = '1')) then
+          wire_ocp_r <= '0';
+        end if;
+      end if;
+    end process ocp_owner_clk_proc;
+
+    -- DMA owner. Independent of Device 0 teardown so hub and Device 1
+    -- traffic is unaffected. A new request takes priority over completion of
+    -- the previous one in the same cycle.
+    dma_owner_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
         wire_dma_r <= '0';
         dma_valid_seen_r <= '0';
       elsif rising_edge(hclk) then
         if sync_busreset = '1' then
-          ocp_ep0_txn_r <= '0';
-          non_ep0_txn_r <= '0';
-          wire_ocp_r <= '0';
           wire_dma_r <= '0';
           dma_valid_seen_r <= '0';
-        elsif (dev0_local_reset_c = '1') or
-              (ocp_claim_abort_i = '1') then
-          ocp_ep0_txn_r <= '0';
-          wire_ocp_r <= '0';
-        else
-          if (sync_sieint_endtransfer_i = '1') and
-             (ocp_ep0_txn_r = '1') then
-            ocp_ep0_txn_r <= '0';
-            wire_ocp_r <= '0';
-          end if;
-          if (wire_dma_r = '1') and (epinfo_sync_valid_dma = '1') then
-            dma_valid_seen_r <= '1';
-          end if;
-          if (wire_dma_r = '1') and (dma_valid_seen_r = '1') and
-             (epinfo_sync_valid_dma = '0') then
-            non_ep0_txn_r <= '0';
-            wire_dma_r <= '0';
-            dma_valid_seen_r <= '0';
-          end if;
-          if sync_sieint_epinfo_req_i = '1' then
-            if (ocp_ep0_req_c = '1') and
-               (sync_sieint_epinfo_setup_i = '0') and
-               (claim_q = '1') then
-              ocp_ep0_txn_r <= '1';
-              wire_ocp_r <= '1';
-              wire_dma_r <= '0';
-              dma_valid_seen_r <= '0';
-              non_ep0_txn_r <= '0';
-            else
-              ocp_ep0_txn_r <= '0';
-              wire_ocp_r <= '0';
-              wire_dma_r <= '1';
-              dma_valid_seen_r <= '0';
-              if sync_sieint_epinfo_epnr_i /= "0000" then
-                non_ep0_txn_r <= '1';
-              else
-                non_ep0_txn_r <= '0';
-              end if;
-            end if;
-          end if;
+        elsif dma_req_forward_c = '1' then
+          wire_dma_r <= '1';
+          dma_valid_seen_r <= '0';
+        elsif (ocp_stage_accept_c = '1') or (dma_txn_done_c = '1') then
+          wire_dma_r <= '0';
+          dma_valid_seen_r <= '0';
+        elsif (wire_dma_r = '1') and (epinfo_sync_valid_dma = '1') then
+          dma_valid_seen_r <= '1';
         end if;
       end if;
-    end process route_owner_clk_proc;
+    end process dma_owner_clk_proc;
 
     dma_metadata_clk_proc : process (hclk, hresetn)
     begin
@@ -998,12 +993,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         dma_setup_r <= '0';
         dma_owner_r <= (others => '0');
       elsif rising_edge(hclk) then
-        if (sync_busreset = '0') and (dev0_local_reset_c = '0') and
-           (ocp_claim_abort_i = '0') and
-           (sync_sieint_epinfo_req_i = '1') and
-           not ((ocp_ep0_req_c = '1') and
-                (sync_sieint_epinfo_setup_i = '0') and
-                (claim_q = '1')) then
+        if (sync_busreset = '0') and (dma_req_forward_c = '1') then
           dma_epnr_r <= sync_sieint_epinfo_epnr_i;
           dma_epdir_r <= sync_sieint_epinfo_epdir_i;
           dma_setup_r <= sync_sieint_epinfo_setup_i;
@@ -1038,7 +1028,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
           rsp_snap_ratefeedback_r <= '0';
         else
           if (sync_sieint_endtransfer_i = '1') and
-             (ocp_ep0_txn_r = '1') then
+             (wire_ocp_r = '1') then
             rsp_snap_valid_r <= '0';
             rsp_snap_active_r <= '0';
             rsp_snap_stall_r <= '0';
@@ -1050,9 +1040,9 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
             rsp_snap_ratefeedback_r <= '0';
           end if;
           if (sync_sieint_epinfo_req_i = '1') and
-             (ocp_ep0_req_c = '1') and
+             (dev0_ep0_req_c = '1') and
              (sync_sieint_epinfo_setup_i = '0') and
-             (claim_q = '1') then
+             (ep0_ocp_owner_r = '1') then
             rsp_snap_valid_r <= rsp_live_valid_c;
             rsp_snap_active_r <= rsp_live_active_c;
             rsp_snap_stall_r <= rsp_live_stall_c;
@@ -1087,7 +1077,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
       elsif rising_edge(hclk) then
         rx_drain_done_r <= '0';
         rx_length_error_r <= '0';
-        if (claim_q = '0') or (new_setup_c = '1')
+        if (ep0_ocp_owner_r = '0') or (new_setup_c = '1')
            or (ocp_claim_abort_i = '1') or (sync_busreset = '1')
            or (dev0_local_reset_c = '1') then
           rx_captured_beats_r <= (others => '0');
@@ -1114,7 +1104,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
               rx_word_index_r <= rx_word_index_r + 1;
             end if;
           end if;
-          if (sync_sieint_endtransfer_i = '1') and (ocp_ep0_txn_r = '1')
+          if (sync_sieint_endtransfer_i = '1') and (wire_ocp_r = '1')
              and (st = T_DATA) and (xfer_dir_in_r = '0') then
             if sync_sieint_success_i = '1' then
               if (resize(unsigned(sync_sieint_rx_nbytes_i), nbytes_r'length) =
@@ -1168,7 +1158,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         tx_bytes_sent_r      <= (others => '0');
         tx_packet_started_r  <= '0';
       elsif rising_edge(hclk) then
-        if (claim_q = '0') or (new_setup_c = '1')
+        if (ep0_ocp_owner_r = '0') or (new_setup_c = '1')
            or (ocp_claim_abort_i = '1') or (sync_busreset = '1')
            or (dev0_local_reset_c = '1') then
           tx_curr_data_r       <= (others => '0');
@@ -1198,7 +1188,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                             to_unsigned(BYTES_PER_BEAT, tx_bytes_sent_r'length);
           end if;
           if (tx_in_data_c = '1') and (tx_launch_ready_c = '1') and
-             (ocp_ep0_txn_r = '1') and
+             (wire_ocp_r = '1') and
              (sync_sieint_txdatafetched_i = '1') then
             tx_packet_started_r <= '1';
           end if;
@@ -1261,7 +1251,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
       when (dev0_selected_c = '0')
         or (sync_sieint_epinfo_epnr_i /= "0000")
         or (sync_sieint_epinfo_setup_i = '1')
-        or (claim_q = '0')
+        or (ep0_ocp_owner_r = '0')
       else '0';
     sync_sieint_epinfo_req_o <= dma_req_forward_c;
     sync_sieint_epinfo_setup_o <= sync_sieint_epinfo_setup_i
@@ -1308,55 +1298,55 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- ------------------------------------------------------------------
     epinfo_sync_valid_o <=
         rsp_live_valid_c      when (ocp_resp_sel_c = '1')
-                                   and (ocp_ep0_req_c = '1') else
+                                   and (dev0_ep0_req_c = '1') else
         rsp_snap_valid_r      when (ocp_resp_sel_c = '1') else
         epinfo_sync_valid_dma;
 
     epinfo_sync_active_o <=
         rsp_live_active_c       when (ocp_resp_sel_c = '1')
-                                      and (ocp_ep0_req_c = '1') else
+                                      and (dev0_ep0_req_c = '1') else
         rsp_snap_active_r       when (ocp_resp_sel_c = '1') else
         epinfo_sync_active_dma;
 
     epinfo_sync_disabled_o <=
         rsp_live_disabled_c when (ocp_resp_sel_c = '1')
-                                 and (ocp_ep0_req_c = '1') else
+                                 and (dev0_ep0_req_c = '1') else
         rsp_snap_disabled_r when (ocp_resp_sel_c = '1') else
         epinfo_sync_disabled_dma;
 
     epinfo_sync_toggle_o <=
         rsp_live_toggle_c when (ocp_resp_sel_c = '1')
-                              and (ocp_ep0_req_c = '1') else
+                              and (dev0_ep0_req_c = '1') else
         rsp_snap_toggle_r when (ocp_resp_sel_c = '1') else
         epinfo_sync_toggle_dma;
 
     epinfo_sync_stall_o <=
         rsp_live_stall_c when (ocp_resp_sel_c = '1')
-                             and (ocp_ep0_req_c = '1') else
+                             and (dev0_ep0_req_c = '1') else
         rsp_snap_stall_r when (ocp_resp_sel_c = '1') else
         epinfo_sync_stall_dma;
 
     epinfo_sync_iso_o <=
         rsp_live_iso_c when (ocp_resp_sel_c = '1')
-                           and (ocp_ep0_req_c = '1') else
+                           and (dev0_ep0_req_c = '1') else
         rsp_snap_iso_r when (ocp_resp_sel_c = '1') else
         epinfo_sync_iso_dma;
 
     epinfo_sync_ratefeedbackmode_o <=
         rsp_live_ratefeedback_c when (ocp_resp_sel_c = '1')
-                                    and (ocp_ep0_req_c = '1') else
+                                    and (dev0_ep0_req_c = '1') else
         rsp_snap_ratefeedback_r when (ocp_resp_sel_c = '1') else
         epinfo_sync_ratefeedbackmode_dma;
 
     epinfo_sync_nbytes_o <=
         rsp_live_nbytes_c when (ocp_resp_sel_c = '1')
-                              and (ocp_ep0_req_c = '1') else
+                              and (dev0_ep0_req_c = '1') else
         rsp_snap_nbytes_r when (ocp_resp_sel_c = '1') else
         epinfo_sync_nbytes_dma;
 
     epinfo_sync_maxpacket_o <=
         rsp_live_maxpacket_c when (ocp_resp_sel_c = '1')
-                                 and (ocp_ep0_req_c = '1') else
+                                 and (dev0_ep0_req_c = '1') else
         rsp_snap_maxpacket_r when (ocp_resp_sel_c = '1') else
         epinfo_sync_maxpacket_dma;
 
@@ -1397,6 +1387,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
       variable expect_claim_hold_v : boolean;
       variable prev_drop_mask_v : std_logic;
       variable prev_setup_dma_owner_v : std_logic_vector(1 downto 0);
+      variable expect_dma_owner_v : boolean;
     begin
       if hresetn = '0' then
         prev_st_v                    := T_IDLE;
@@ -1423,6 +1414,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         expect_claim_hold_v          := false;
         prev_drop_mask_v             := '0';
         prev_setup_dma_owner_v       := (others => '0');
+        expect_dma_owner_v           := false;
       elsif rising_edge(hclk) then
           if expect_drop_clear_v then
             assert drop_setup_success_r = '0'
@@ -1473,7 +1465,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
           if expect_local_cleanup_v then
             assert (st = T_IDLE) and (ep0_ocp_owner_r = '0') and
                    (fifo_reservation_r = '0') and
-                   (ocp_ep0_txn_r = '0') and (wire_ocp_r = '0')
+                   (wire_ocp_r = '0')
               report "post_sync_arb: local abort cleanup was incomplete"
               severity failure;
           end if;
@@ -1485,7 +1477,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
               severity failure;
           end if;
           if expect_claim_hold_v then
-            assert claim_q = '1'
+            assert ep0_ocp_owner_r = '1'
               report "post_sync_arb: unrelated device traffic cleared Device 0 claim"
               severity failure;
           end if;
@@ -1527,6 +1519,11 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
               severity failure;
             assert dma_req_forward_c = '1'
               report "post_sync_arb: real SETUP request was not forwarded to DMA"
+              severity failure;
+          end if;
+          if expect_dma_owner_v then
+            assert wire_dma_r = '1'
+              report "post_sync_arb: hub/Device 1 request did not arm DMA owner"
               severity failure;
           end if;
           if (unsigned(pie_dev_selected_i) = to_unsigned(C_HUB_SEL, 2)) or
@@ -1614,7 +1611,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
           end if;
           if (st = T_PROT_STALL) and (ocp_resp_sel_c = '1')
              and (sync_sieint_epinfo_setup_i = '0') then
-            if ocp_ep0_req_c = '1' then
+            if dev0_ep0_req_c = '1' then
               assert (rsp_live_valid_c = '1') and
                      (rsp_live_active_c = '0') and
                      (rsp_live_stall_c = '1')
@@ -1631,16 +1628,6 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
           if prev_non_ep0_end_v then
             assert st = prev_st_v
               report "post_sync_arb: non-EP0 completion advanced EP0 FSM"
-              severity failure;
-          end if;
-          if non_ep0_txn_r = '1' then
-            assert (wire_dma_r = '1') and (ocp_resp_sel_c = '0')
-              report "post_sync_arb: non-EP0 transaction left legacy DMA"
-              severity failure;
-          end if;
-          if ocp_ep0_txn_r = '1' then
-            assert wire_dma_r = '0'
-              report "post_sync_arb: OCP EP0 stage reached DMA"
               severity failure;
           end if;
           if prev_snap_hold_v then
@@ -1669,7 +1656,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
               report "post_sync_arb: published FIFO batch admitted a new OUT request"
               severity failure;
           end if;
-          if (claim_q = '1') and (xfer_dir_in_r = '0') and
+          if (ep0_ocp_owner_r = '1') and (xfer_dir_in_r = '0') and
              (cap_rxdata(23 downto 16) = OCP_INDIRECT_FIFO_DATA) and
              ((st = T_META_WAIT) or (st = T_DATA) or (st = T_STATUS)) and
              (rx_drain_done_r = '0') and
@@ -1703,7 +1690,8 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
             severity failure;
 
           prev_non_ep0_end_v := (sync_sieint_endtransfer_i = '1')
-                                and (non_ep0_txn_r = '1')
+                                and (wire_dma_r = '1')
+                                and (dma_epnr_r /= "0000")
                                 and (new_setup_c = '0')
                                 and (ctrl_set_stall = '0')
                                 and (rx_length_error_r = '0');
@@ -1718,7 +1706,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
           prev_snap_iso_v := rsp_snap_iso_r;
           prev_snap_ratefeedback_v := rsp_snap_ratefeedback_r;
           prev_snap_hold_v := (rsp_snap_valid_r = '1') and
-                              (ocp_ep0_txn_r = '1') and
+                              (wire_ocp_r = '1') and
                               (sync_sieint_epinfo_req_i = '0') and
                               (sync_sieint_endtransfer_i = '0');
           expect_drop_clear_v := (drop_setup_success_r = '1') and
@@ -1759,12 +1747,15 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                                     (dev0_local_reset_c = '1') or
                                     (ocp_claim_abort_i = '1');
           expect_bus_reset_cleanup_v := (sync_busreset = '1');
-          expect_claim_hold_v := (claim_q = '1') and
+          expect_claim_hold_v := (ep0_ocp_owner_r = '1') and
             (sync_sieint_epinfo_req_i = '1') and
             (dev0_selected_c = '0') and (sync_busreset = '0') and
             (dev0_local_reset_c = '0') and (ocp_claim_abort_i = '0');
           prev_drop_mask_v := drop_setup_success_r;
           prev_setup_dma_owner_v := setup_dma_owner_r;
+          -- Independent of Device 0 reset/disconnect and OCP abort.
+          expect_dma_owner_v := (sync_sieint_epinfo_req_i = '1') and
+            (sync_busreset = '0') and (dev0_selected_c = '0');
       end if;
     end process assertions_proc;
     -- pragma translate_on

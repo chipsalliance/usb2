@@ -746,12 +746,17 @@ module usb_ocp_recovery_top
   // EXT FIFO CPUif request until that transfer retires so a ctrl_decode skid
   // bubble cannot let firmware interleave FIFO control, status, or data access.
   // DATA reads remain blocking until a full or terminal batch is available.
+  // FIFO command registers span INDIRECT_FIFO_CTRL through INDIRECT_FIFO_DATA;
+  // reserved offsets after FIFO_DATA (up to VENDOR) are not deferred.
   assign ext_fifo_aperture_access = rb_is_ext
-                                  && (ext_aperture_offset >= OCP_ADDR_INDIRECT_FIFO_CTRL[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
-                                  && (ext_aperture_offset <  OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
+                                  && (ext_aperture_offset[OCP_RECOVERY_APERTURE_ADDR_W-1:2]
+                                      >= OCP_ADDR_INDIRECT_FIFO_CTRL[OCP_RECOVERY_APERTURE_ADDR_W-1:2])
+                                  && (ext_aperture_offset[OCP_RECOVERY_APERTURE_ADDR_W-1:2]
+                                      <= OCP_ADDR_INDIRECT_FIFO_DATA[OCP_RECOVERY_APERTURE_ADDR_W-1:2]);
+  // Only the INDIRECT_FIFO_DATA DWORD blocks reads on payload availability.
   assign ext_fifo_data_aperture_access = rb_is_ext
-                                       && (ext_aperture_offset >= OCP_ADDR_INDIRECT_FIFO_DATA[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
-                                       && (ext_aperture_offset <  OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
+                                       && (ext_aperture_offset[OCP_RECOVERY_APERTURE_ADDR_W-1:2]
+                                           == OCP_ADDR_INDIRECT_FIFO_DATA[OCP_RECOVERY_APERTURE_ADDR_W-1:2]);
   assign cpuif_req_block = rb_is_ext
                            && ((ext_fifo_aperture_access
                                  && (usb_fifo_req || usb_fifo_packet_active_q
