@@ -84,17 +84,16 @@ module usb_ocp_recovery_rb_adapter
       write_ack_q     <= 1'b0;
       write_err_q     <= 1'b0;
       write_pending_q <= 1'b0;
-    end else begin
+    end
+    else if (cpuif_fire && ext_write) begin
+      write_pending_q <= 1'b1;
+      write_ack_q     <= 1'b1;
+      write_err_q     <= cpuif_wr_err;
+    end
+    else begin
+      write_pending_q <= 1'b0;
       write_ack_q <= 1'b0;
       write_err_q <= 1'b0;
-
-      if (cpuif_fire && ext_write) begin
-        write_pending_q <= 1'b1;
-        write_ack_q     <= 1'b1;
-        write_err_q     <= cpuif_wr_err;
-      end else if (write_pending_q) begin
-        write_pending_q <= 1'b0;
-      end
     end
   end
 
