@@ -90,14 +90,14 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   parameter int unsigned C_EPUB          = 32,
   parameter int unsigned C_DAUB          = 32,
   parameter int unsigned C_DALB          = 17,
-  // boolean generics: 1 = TRUE, 0 = FALSE
+  // 1'b1 = TRUE, 1'b0 = FALSE
   // Applied to both devices; the IP now takes these per device
-  parameter int unsigned C_SINGLE_BUFFER_SUPPORTED = 1,
-  parameter int unsigned C_DOUBLE_BUFFER_SUPPORTED = 1,
-  parameter int unsigned C_TOGGLE_REG_READABLE     = 1,
+  parameter bit C_SINGLE_BUFFER_SUPPORTED         = 1'b1,
+  parameter bit C_DOUBLE_BUFFER_SUPPORTED         = 1'b1,
+  parameter bit C_TOGGLE_REG_READABLE             = 1'b1,
   parameter logic [31:0] C_EPFIFO_PAGE             = 32'h0008_0000,
   parameter logic [31:0] C_DATAFIFO_PAGE           = 32'h0008_0000,
-  parameter int unsigned G_SIM_CHIRP_TIMERS        = 0
+  parameter bit G_SIM_CHIRP_TIMERS                = 1'b0
 ) (
   input  logic usb_axi_aclk,
   input  logic usb_axi_aresetn,
@@ -613,11 +613,11 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .C_DEV1_SINGLE_BUFFER_SUPPORTED(C_SINGLE_BUFFER_SUPPORTED),
     .C_DEV1_DOUBLE_BUFFER_SUPPORTED(C_DOUBLE_BUFFER_SUPPORTED),
     .C_DEV1_TOGGLE_REG_READABLE(C_TOGGLE_REG_READABLE),
-    .C_PLL_ENABLE(0),      // FALSE: no on-chip PLL
+    .C_PLL_ENABLE(1'b0),   // FALSE: no on-chip PLL
     // C_PLL_DIVIDER left at the IP default: C_PLL_ENABLE is FALSE
-    .C_ULPI_SUPPORT(1),    // TRUE
-    .C_UTMI_SUPPORT(1),    // TRUE
-    .C_EXTEND_TX_DELAY(1), // TRUE
+    .C_ULPI_SUPPORT(1'b1), // TRUE
+    .C_UTMI_SUPPORT(1'b1), // TRUE
+    .C_EXTEND_TX_DELAY(1'b1), // TRUE
     .G_SIM_CHIRP_TIMERS(G_SIM_CHIRP_TIMERS)
   ) u_hub_compound (
     // ---- Clock / Reset ----
