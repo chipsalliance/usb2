@@ -33,118 +33,6 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__DEVICE_STATUS_1__in_t;
 
     typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_2__VENDOR_STATUS_4_1__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_2__VENDOR_STATUS_4_1__in_t VENDOR_STATUS_4_1;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_2__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_3__VENDOR_STATUS_8_5__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_3__VENDOR_STATUS_8_5__in_t VENDOR_STATUS_8_5;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_3__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_4__VENDOR_STATUS_12_9__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_4__VENDOR_STATUS_12_9__in_t VENDOR_STATUS_12_9;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_4__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_5__VENDOR_STATUS_16_13__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_5__VENDOR_STATUS_16_13__in_t VENDOR_STATUS_16_13;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_5__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_6__VENDOR_STATUS_20_17__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_6__VENDOR_STATUS_20_17__in_t VENDOR_STATUS_20_17;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_6__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_7__VENDOR_STATUS_24_21__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_7__VENDOR_STATUS_24_21__in_t VENDOR_STATUS_24_21;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_7__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_8__VENDOR_STATUS_28_25__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_8__VENDOR_STATUS_28_25__in_t VENDOR_STATUS_28_25;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_8__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_9__VENDOR_STATUS_32_29__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_9__VENDOR_STATUS_32_29__in_t VENDOR_STATUS_32_29;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_9__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_10__VENDOR_STATUS_36_33__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_10__VENDOR_STATUS_36_33__in_t VENDOR_STATUS_36_33;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_10__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_11__VENDOR_STATUS_40_37__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_11__VENDOR_STATUS_40_37__in_t VENDOR_STATUS_40_37;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_11__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_12__VENDOR_STATUS_44_41__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_12__VENDOR_STATUS_44_41__in_t VENDOR_STATUS_44_41;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_12__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_13__VENDOR_STATUS_48_45__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_13__VENDOR_STATUS_48_45__in_t VENDOR_STATUS_48_45;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_13__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_14__VENDOR_STATUS_52_49__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_14__VENDOR_STATUS_52_49__in_t VENDOR_STATUS_52_49;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_14__in_t;
-
-    typedef struct packed{
-        logic [31:0] next;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_15__VENDOR_STATUS_56_53__in_t;
-
-    typedef struct packed{
-        usb_ocp_recovery_reg__DEVICE_STATUS_15__VENDOR_STATUS_56_53__in_t VENDOR_STATUS_56_53;
-    } usb_ocp_recovery_reg__DEVICE_STATUS_15__in_t;
-
-    typedef struct packed{
         logic [7:0] next;
         logic we;
     } usb_ocp_recovery_reg__DEVICE_RESET__RESET_CTRL__in_t;
@@ -331,20 +219,6 @@ package usb_ocp_recovery_reg_pkg;
         logic rst_ni;
         usb_ocp_recovery_reg__DEVICE_STATUS_0__in_t DEVICE_STATUS_0;
         usb_ocp_recovery_reg__DEVICE_STATUS_1__in_t DEVICE_STATUS_1;
-        usb_ocp_recovery_reg__DEVICE_STATUS_2__in_t DEVICE_STATUS_2;
-        usb_ocp_recovery_reg__DEVICE_STATUS_3__in_t DEVICE_STATUS_3;
-        usb_ocp_recovery_reg__DEVICE_STATUS_4__in_t DEVICE_STATUS_4;
-        usb_ocp_recovery_reg__DEVICE_STATUS_5__in_t DEVICE_STATUS_5;
-        usb_ocp_recovery_reg__DEVICE_STATUS_6__in_t DEVICE_STATUS_6;
-        usb_ocp_recovery_reg__DEVICE_STATUS_7__in_t DEVICE_STATUS_7;
-        usb_ocp_recovery_reg__DEVICE_STATUS_8__in_t DEVICE_STATUS_8;
-        usb_ocp_recovery_reg__DEVICE_STATUS_9__in_t DEVICE_STATUS_9;
-        usb_ocp_recovery_reg__DEVICE_STATUS_10__in_t DEVICE_STATUS_10;
-        usb_ocp_recovery_reg__DEVICE_STATUS_11__in_t DEVICE_STATUS_11;
-        usb_ocp_recovery_reg__DEVICE_STATUS_12__in_t DEVICE_STATUS_12;
-        usb_ocp_recovery_reg__DEVICE_STATUS_13__in_t DEVICE_STATUS_13;
-        usb_ocp_recovery_reg__DEVICE_STATUS_14__in_t DEVICE_STATUS_14;
-        usb_ocp_recovery_reg__DEVICE_STATUS_15__in_t DEVICE_STATUS_15;
         usb_ocp_recovery_reg__DEVICE_RESET__in_t DEVICE_RESET;
         usb_ocp_recovery_reg__RECOVERY_CTRL__in_t RECOVERY_CTRL;
         usb_ocp_recovery_reg__INDIRECT_FIFO_CTRL_0__in_t INDIRECT_FIFO_CTRL_0;

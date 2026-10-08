@@ -63,10 +63,11 @@ module usb_ocp_recovery_rb_adapter
 
   assign access = ext_dv;
   assign aligned_ext_addr = { ext_addr[OCP_RECOVERY_APERTURE_ADDR_W-1:2], 2'b00 };
-  assign fifo_aperture_access =    (aligned_ext_addr >= OCP_ADDR_INDIRECT_FIFO_CTRL[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
-                                && (aligned_ext_addr < OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
-  assign fifo_data_aperture_access =    (aligned_ext_addr >= OCP_ADDR_INDIRECT_FIFO_DATA[OCP_RECOVERY_APERTURE_ADDR_W-1:0])
-                                     && (aligned_ext_addr < OCP_ADDR_VENDOR[OCP_RECOVERY_APERTURE_ADDR_W-1:0]);
+  // Reserved offsets after FIFO_DATA are outside FIFO ownership gating.
+  assign fifo_aperture_access =    (aligned_ext_addr[OCP_RECOVERY_APERTURE_ADDR_W-1:2] >= OCP_ADDR_INDIRECT_FIFO_CTRL[OCP_RECOVERY_APERTURE_ADDR_W-1:2])
+                                && (aligned_ext_addr[OCP_RECOVERY_APERTURE_ADDR_W-1:2] <= OCP_ADDR_INDIRECT_FIFO_DATA[OCP_RECOVERY_APERTURE_ADDR_W-1:2]);
+  // Only the FIFO_DATA DWORD waits for payload availability.
+  assign fifo_data_aperture_access = (aligned_ext_addr[OCP_RECOVERY_APERTURE_ADDR_W-1:2] == OCP_ADDR_INDIRECT_FIFO_DATA[OCP_RECOVERY_APERTURE_ADDR_W-1:2]);
   assign request_blocked =    usb_req
                            || (fifo_aperture_access && usb_fifo_owned)
                            || (fifo_data_aperture_access && !ext_write && !payload_available);
