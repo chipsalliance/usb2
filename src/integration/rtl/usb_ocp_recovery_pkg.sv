@@ -417,8 +417,19 @@ localparam int OCP_IMG_UNIT_LOG2         = 2;  // 4-byte units
 // wValue[7:0] = OCP command code (0x22..0x2F).
 // wIndex[7:0] = interface number.
 // ----------------------------------------------------------------------------
+localparam int USB_SETUP_BMREQUESTTYPE_LSB = 0;
+localparam int USB_SETUP_BREQUEST_LSB      = 8;
+localparam int USB_SETUP_WVALUE_LSB        = 16;
+localparam int USB_SETUP_WINDEX_LSB        = 32;
+localparam int USB_SETUP_WLENGTH_LSB       = 48;
+
+localparam int BMRT_DIRECTION_BIT = 7;
+localparam int BMRT_TYPE_LSB      = 5;
+localparam int BMRT_RECIPIENT_LSB = 0;
+
 localparam logic [1:0] BMRT_TYPE_CLASS        = 2'b01;
 localparam logic [4:0] BMRT_RECIPIENT_IFACE   = 5'b00001;
 localparam logic [7:0] OCP_BREQUEST_XFER      = 8'h00;
+localparam logic [7:0] OCP_SETUP_RESERVED_BYTE = 8'h00;
 
 endpackage

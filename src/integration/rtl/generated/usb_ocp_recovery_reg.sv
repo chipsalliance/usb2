@@ -1575,7 +1575,7 @@ module usb_ocp_recovery_reg (
         automatic logic load_next_c;
         next_c = field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value;
         load_next_c = '0;
-        if(decoded_reg_strb.CALIPTRA_CTRL && decoded_req_is_wr && hwif_in.CALIPTRA_CTRL.OCP_PATH_DISABLE.swwe) begin // SW write
+        if(decoded_reg_strb.CALIPTRA_CTRL && decoded_req_is_wr) begin // SW write
             next_c = (field_storage.CALIPTRA_CTRL.OCP_PATH_DISABLE.value & ~decoded_wr_biten[0:0]) | (decoded_wr_data[0:0] & decoded_wr_biten[0:0]);
             load_next_c = '1;
         end
@@ -1596,7 +1596,7 @@ module usb_ocp_recovery_reg (
         automatic logic load_next_c;
         next_c = field_storage.CALIPTRA_CTRL.OCP_CLAIM_ABORT.value;
         load_next_c = '0;
-        if(decoded_reg_strb.CALIPTRA_CTRL && decoded_req_is_wr && hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.swwe) begin // SW write 1 set
+        if(decoded_reg_strb.CALIPTRA_CTRL && decoded_req_is_wr) begin // SW write 1 set
             next_c = field_storage.CALIPTRA_CTRL.OCP_CLAIM_ABORT.value | (decoded_wr_data[1:1] & decoded_wr_biten[1:1]);
             load_next_c = '1;
         end else if(hwif_in.CALIPTRA_CTRL.OCP_CLAIM_ABORT.we) begin // HW Write - we
@@ -1621,7 +1621,7 @@ module usb_ocp_recovery_reg (
         automatic logic load_next_c;
         next_c = field_storage.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value;
         load_next_c = '0;
-        if(decoded_reg_strb.CALIPTRA_CTRL && decoded_req_is_wr && hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.swwe) begin // SW write 1 set
+        if(decoded_reg_strb.CALIPTRA_CTRL && decoded_req_is_wr) begin // SW write 1 set
             next_c = field_storage.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value | (decoded_wr_data[2:2] & decoded_wr_biten[2:2]);
             load_next_c = '1;
         end else if(hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.we) begin // HW Write - we

@@ -146,6 +146,11 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   constant TX_MAXBYTES      : integer := 64;
   constant REC_IFACE_SLV    : std_logic_vector(7 downto 0)
            := std_logic_vector(to_unsigned(C_REC_IFACE_NUM, 8));
+  constant OCP_BMRT_TYPE_CLASS : std_logic_vector(1 downto 0) := "01";
+  constant OCP_BMRT_RECIPIENT_IFACE : std_logic_vector(4 downto 0)
+           := "00001";
+  constant OCP_SETUP_RESERVED_BYTE : std_logic_vector(7 downto 0)
+           := x"00";
   -- OCP Recovery v1.1 Sec 8.5: class-specific control transfer bRequest.
   constant OCP_RECOVERY_TRANSFER : std_logic_vector(7 downto 0) := x"00";
   constant OCP_INDIRECT_FIFO_DATA : std_logic_vector(7 downto 0) := x"2F";
@@ -333,20 +338,20 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- OCP-recovery class match on the captured SETUP (little-endian, USB 2.0
     -- Sec 9.3 Tbl 9-2; OCP Recovery v1.1 Sec 8.5).
     is_ocp <= '1' when (cap_done = '1')
-                   and (cap_rxdata( 6 downto  5) = "01")
-                   and (cap_rxdata( 4 downto  0) = "00001")
+                   and (cap_rxdata( 6 downto  5) = OCP_BMRT_TYPE_CLASS)
+                   and (cap_rxdata( 4 downto  0) = OCP_BMRT_RECIPIENT_IFACE)
                    and (cap_rxdata(15 downto  8) = OCP_RECOVERY_TRANSFER)
                    and (cap_rxdata(39 downto 32) = REC_IFACE_SLV)
-                   and (cap_rxdata(47 downto 40) = x"00")
+                   and (cap_rxdata(47 downto 40) = OCP_SETUP_RESERVED_BYTE)
                    and (ocp_path_disable_i = '0')
                else '0';
     incoming_is_ocp_c <= '1' when
-                    (sync_sieint_rxdata_i(6 downto 5) = "01")
+                    (sync_sieint_rxdata_i(6 downto 5) = OCP_BMRT_TYPE_CLASS)
                 and (dev0_selected_c = '1')
-                and (sync_sieint_rxdata_i(4 downto 0) = "00001")
+                and (sync_sieint_rxdata_i(4 downto 0) = OCP_BMRT_RECIPIENT_IFACE)
                 and (sync_sieint_rxdata_i(15 downto 8) = OCP_RECOVERY_TRANSFER)
                 and (sync_sieint_rxdata_i(39 downto 32) = REC_IFACE_SLV)
-                and (sync_sieint_rxdata_i(47 downto 40) = x"00")
+                and (sync_sieint_rxdata_i(47 downto 40) = OCP_SETUP_RESERVED_BYTE)
                 and (ocp_path_disable_i = '0')
               else '0';
     setup_dma_match_c <= '1' when
