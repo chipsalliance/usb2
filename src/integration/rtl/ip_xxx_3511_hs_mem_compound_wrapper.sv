@@ -65,9 +65,9 @@ module ip_xxx_3511_hs_mem_compound_wrapper
 #(
 
   // Number of 32-bit words in the hub descriptor flip-flop array. Must match
-  // the IP default (172) unless the IP is reconfigured; it sets the width of
+  // the IP default (176) unless the IP is reconfigured; it sets the width of
   // hub_ahbs_haddr and therefore the hub register aperture.
-  parameter int unsigned C_HUB_FIFO_SIZE = 172,
+  parameter int unsigned C_HUB_FIFO_SIZE = 176,
 
   // ---- AXI USER ownership policies ----------------------------------------
   parameter int unsigned COMBO_NUM_PRIV_AXI_USERS = 4,
@@ -220,8 +220,8 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   input  logic testmode,
   input  logic async_disable
 );
-  // The fixed high-speed descriptor and setup-request image occupies 172 words.
-  localparam int unsigned HUB_FIFO_SIZE_MIN = 172;
+  // The fixed high-speed descriptor and setup-request image occupies 176 words.
+  localparam int unsigned HUB_FIFO_SIZE_MIN = 176;
   // The EP0 memory path has a fixed 12-bit word address.
   localparam int unsigned HUB_FIFO_SIZE_MAX = 4096;
 
