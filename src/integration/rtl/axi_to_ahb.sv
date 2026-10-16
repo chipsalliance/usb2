@@ -16,14 +16,20 @@
 //   AXI4 to AHB-Lite protocol converter.
 //
 //   The converter accepts FIXED, INCR, and WRAP bursts and queues up to
-//   OSTD_R read and OSTD_W write requests. Burst beats are issued as
-//   individual NONSEQ AHB transfers; the AHB side is single-outstanding,
-//   so requests are serialized.
+//   OSTD_R read and OSTD_W write requests. One granted burst at a time drives
+//   the AHB address phase, one beat per NONSEQ transfer, while a data-phase
+//   register holds the previous beat's response context and staged write
+//   data. Address and data phases overlap, so a zero-wait subordinate
+//   completes one beat per clock; the next burst is granted as the current
+//   burst's final beat is accepted, so bursts chain without idle cycles.
 //
-//   Response backpressure is applied before issue: a read beat, or the
-//   final beat of a write, is issued only when its R or B response FIFO
-//   has a free slot. The bridge never extends an AHB data phase; HREADY
-//   follows the selected subordinate's HREADYOUT.
+//   Response backpressure is applied before issue: a read beat, or the final
+//   beat of a write, is issued only when its R or B response FIFO has a free
+//   slot not already promised to the beat in its data phase. The bridge never
+//   extends an AHB data phase; HREADY follows the selected subordinate's
+//   HREADYOUT. All FIFOs allow empty bypass; WVALID can reach AHB address
+//   control, and AHB responses can reach AXI without a FIFO storage cycle.
+//   The active burst context and AHB write data remain registered.
 //
 //   The AXI subordinate interface uses the Caliptra `axi_if` SystemVerilog
 //   interface.  The AHB master side uses discrete signals.
@@ -34,9 +40,10 @@
 //   AWUSER/ARUSER filtering: each request's USER is compared against an
 //   exact-match allowlist when its address is accepted, and the decision is
 //   stored with the request. A low enable_axi_user_filtering_i allows all
-//   requests. NUM_PRIV_AXI_USERS must be positive and every entry 
-//   participates. Denied bursts complete locally with SLVERR (zero read data) 
-//   and never select AHB.
+//   requests. NUM_PRIV_AXI_USERS must be positive and every entry
+//   participates. Denied bursts issue local beats through the same pipeline:
+//   they never select AHB, consume their W beats, and complete in order with
+//   SLVERR (zero read data).
 //
 
 `include "caliptra_prim_assert.sv"
@@ -93,6 +100,14 @@ module axi_to_ahb
     localparam int unsigned W_FIFO_W = W_CTX_W + 1;
     localparam int unsigned R_RESP_W = DW + 2 + IW + 1;
     localparam int unsigned B_RESP_W = 2 + IW;
+    // Retain response storage for a buffered result, the data-phase
+    // reservation, and the next issue, even when empty bypass is enabled.
+    localparam int unsigned R_RESP_DEPTH   = (OSTD_R < 2) ? 3 : OSTD_R + 1;
+    localparam int unsigned B_RESP_DEPTH   = (OSTD_W < 2) ? 3 : OSTD_W + 1;
+    localparam int unsigned W_FIFO_DEPTH   = OSTD_W + 1;
+    localparam int unsigned R_RESP_DEPTH_W = $clog2(R_RESP_DEPTH + 1);
+    localparam int unsigned B_RESP_DEPTH_W = $clog2(B_RESP_DEPTH + 1);
+    localparam int unsigned W_FIFO_DEPTH_W = $clog2(W_FIFO_DEPTH + 1);
 
     typedef struct packed {
         logic                          reject; // USER authorization failed at address acceptance
@@ -105,16 +120,15 @@ module axi_to_ahb
 
     localparam int unsigned REQ_CTX_W = $bits(req_ctx_t);
 
-    typedef enum logic [2:0] {
-        FSM_IDLE,
-        FSM_RD_ADDR,
-        FSM_RD_DATA,
-        FSM_WR_ADDR,
-        FSM_WR_DATA,
-        FSM_RD_REJECT,
-        FSM_WR_REJECT,
-        FSM_WR_REJECT_RESP
-    } fsm_state_e;
+    // A beat in its data phase. A local beat belongs to a denied burst and
+    // never reaches AHB.
+    typedef struct packed {
+        logic          write;
+        logic          local_beat;
+        logic          last;
+        logic [IW-1:0] id;
+        logic [DW-1:0] wdata;
+    } dp_beat_t;
 
     // Request queues and policy decisions.
     logic                      ar_fifo_wvalid, ar_fifo_wready;
@@ -132,26 +146,42 @@ module axi_to_ahb
     logic [W_FIFO_W-1:0]        w_fifo_wdata_pack, w_fifo_rdata_pack;
     logic                      w_fifo_rvalid_pack, w_fifo_rready_pack;
     logic                      w_fifo_wready_pack;
+    logic [W_FIFO_DEPTH_W-1:0] w_fifo_depth;
     logic                      w_beat_last;
     logic [BC-1:0]             w_beat_strb;
     logic [DW-1:0]             w_beat_data;
 
-    // Serialized transaction control and datapath.
-    fsm_state_e                fsm_q, fsm_d;
-    req_ctx_t                  active_ctx_q, active_ctx_d; // addr tracks the current beat
-    logic [7:0]                beat_cnt_q, beat_cnt_d; // Beats remaining minus one.
-    logic [1:0]                resp_accum_q, resp_accum_d;
+    // Address phase: the active burst presents its current beat.
+    logic                      seq_busy_q, seq_busy_d;   // A granted burst still has beats to issue
+    logic                      seq_write_q, seq_write_d;
+    req_ctx_t                  active_ctx_q, active_ctx_d; // addr tracks the address-phase beat
+    logic [7:0]                beat_cnt_q, beat_cnt_d;   // Beats remaining minus one.
     logic [AW-1:0]             next_addr;
     logic                      rr_last_was_write_q, rr_last_was_write_d;
+    logic                      seq_last;                 // The address-phase beat is the burst's final beat
+    logic                      seq_free;                 // The sequencer can accept a new grant
+    logic                      w_next_avail;             // A W beat remains for a newly granted write
     logic                      grant_rd, grant_wr;
     logic                      ar_fifo_pop, aw_fifo_pop, w_fifo_pop;
-    logic                      last_beat;
-    logic                      wr_issue_rdy; // W beat present and, on the final beat, a free B slot
+    logic                      beat_vld;    // A beat, with its W beat for writes, is presented
+    logic                      beat_ahb;    // The presented beat is authorized and selects AHB
+    logic                      beat_credit; // The beat's response slot is available
+    logic                      beat_take;   // The beat moves to the data-phase register
+    logic                      rd_credit, b_credit;
+
+    // Data phase.
+    logic                      dp_valid_q;
+    dp_beat_t                  dp_q, dp_d;
+    logic                      dp_done;     // The data phase completes this cycle
+    logic                      dp_advance;  // The data-phase register may load or empty
+    logic [1:0]                dp_resp;     // AXI response for the completing beat
+    logic [1:0]                resp_accum_q, resp_accum_d; // Earlier beats' errors in the write burst
 
     // Response queues.
     logic [R_RESP_W-1:0]        r_resp_wdata, r_resp_rdata;
     logic                      r_resp_wvalid, r_resp_wready;
     logic                      r_resp_rvalid, r_resp_rready;
+    logic [R_RESP_DEPTH_W-1:0] r_resp_depth;
     logic                      r_out_rlast;
     logic [IW-1:0]             r_out_rid;
     logic [1:0]                r_out_rresp;
@@ -159,6 +189,7 @@ module axi_to_ahb
     logic [B_RESP_W-1:0]        b_resp_wdata, b_resp_rdata;
     logic                      b_resp_wvalid, b_resp_wready;
     logic                      b_resp_rvalid, b_resp_rready;
+    logic [B_RESP_DEPTH_W-1:0] b_resp_depth;
     logic [IW-1:0]             b_out_bid;
     logic [1:0]                b_out_bresp;
 
@@ -211,7 +242,7 @@ module axi_to_ahb
 
     caliptra_prim_fifo_sync #(
         .Width           (REQ_CTX_W),
-        .Pass            (1'b0),
+        .Pass            (1'b1),
         .Depth           (OSTD_R),
         .OutputZeroIfEmpty(1'b1)
     ) u_ar_fifo (
@@ -244,7 +275,7 @@ module axi_to_ahb
 
     caliptra_prim_fifo_sync #(
         .Width           (REQ_CTX_W),
-        .Pass            (1'b0),
+        .Pass            (1'b1),
         .Depth           (OSTD_W),
         .OutputZeroIfEmpty(1'b1)
     ) u_aw_fifo (
@@ -265,7 +296,8 @@ module axi_to_ahb
     // -----------------------------------------------------------
     // W Data FIFO -- buffers up to OSTD_W + 1 write-data beats so the
     // AW and W channels can decouple. Further beats are back-pressured
-    // on WREADY.
+    // on WREADY. Empty bypass lets an arriving beat issue immediately
+    // within an active burst.
     // -----------------------------------------------------------
     assign w_fifo_wdata_pack = {axi_w.wlast, axi_w.wstrb, axi_w.wdata};
     assign w_fifo_wvalid     = axi_w.wvalid;
@@ -273,8 +305,8 @@ module axi_to_ahb
 
     caliptra_prim_fifo_sync #(
         .Width           (W_FIFO_W),
-        .Pass            (1'b1),       // Allow passthrough for low latency
-        .Depth           (OSTD_W + 1), // +1 to allow AW/W decoupling
+        .Pass            (1'b1),
+        .Depth           (W_FIFO_DEPTH), // OSTD_W + 1 to allow AW/W decoupling
         .OutputZeroIfEmpty(1'b1)
     ) u_w_fifo (
         .clk_i    (clk),
@@ -287,7 +319,7 @@ module axi_to_ahb
         .rready_i (w_fifo_rready_pack),
         .rdata_o  (w_fifo_rdata_pack),
         .full_o   (),
-        .depth_o  (),
+        .depth_o  (w_fifo_depth),
         .err_o    ()
     );
 
@@ -306,14 +338,14 @@ module axi_to_ahb
     );
 
     // -----------------------------------------------------------
-    // Read response FIFO -- holds up to OSTD_R + 1 R beats so AHB
-    // reads can continue while RREADY is low. When it is full, the
-    // FSM holds the next read in RD_ADDR until a slot frees.
+    // Read response FIFO -- empty bypass, at least three R beats so AHB
+    // reads continue while RREADY is low. When its free slots are all
+    // reserved, the next read waits in the active burst.
     // -----------------------------------------------------------
     caliptra_prim_fifo_sync #(
         .Width           (R_RESP_W),
         .Pass            (1'b1),
-        .Depth           (OSTD_R + 1),
+        .Depth           (R_RESP_DEPTH),
         .OutputZeroIfEmpty(1'b1)
     ) u_r_resp_fifo (
         .clk_i    (clk),
@@ -326,7 +358,7 @@ module axi_to_ahb
         .rready_i (r_resp_rready),
         .rdata_o  (r_resp_rdata),
         .full_o   (),
-        .depth_o  (),
+        .depth_o  (r_resp_depth),
         .err_o    ()
     );
 
@@ -342,12 +374,12 @@ module axi_to_ahb
     assign r_resp_rready = axi_r.rready;
 
     // -----------------------------------------------------------
-    // B response FIFO
+    // B response FIFO -- empty bypass, at least three responses.
     // -----------------------------------------------------------
     caliptra_prim_fifo_sync #(
         .Width           (B_RESP_W),
         .Pass            (1'b1),
-        .Depth           (OSTD_W),
+        .Depth           (B_RESP_DEPTH),
         .OutputZeroIfEmpty(1'b1)
     ) u_b_resp_fifo (
         .clk_i    (clk),
@@ -360,7 +392,7 @@ module axi_to_ahb
         .rready_i (b_resp_rready),
         .rdata_o  (b_resp_rdata),
         .full_o   (),
-        .depth_o  (),
+        .depth_o  (b_resp_depth),
         .err_o    ()
     );
 
@@ -373,230 +405,167 @@ module axi_to_ahb
     assign b_resp_rready = axi_w.bready;
 
     // -----------------------------------------------------------
-    // FSM combinational logic
+    // Address phase: active burst
     // -----------------------------------------------------------
     // AxLEN encodes beats minus one, so zero means the final beat, including
-    // the first beat of a single-beat burst. Retire the whole burst before
-    // selecting another request. For writes, WriteLastPlacement_A checks that
-    // the WLAST supplied with the data agrees with this address-derived count.
-    assign last_beat      = (beat_cnt_q == 8'd0);
+    // the first beat of a single-beat burst. For writes, WriteLastPlacement_A
+    // checks that the WLAST supplied with the data agrees with this count.
+    assign seq_last = (beat_cnt_q == 8'd0);
 
-    // Response backpressure is applied before issue. The FSM is the only
-    // producer of the R and B FIFOs and serializes all requests, so a slot that
-    // is free when a response-producing NONSEQ issues stays free until that
-    // data phase completes. The bridge therefore never extends a data phase.
-    assign wr_issue_rdy  = w_fifo_rvalid_pack && (!last_beat || b_resp_wready);
-    assign ahb_hreadymux = ahb_hreadyout;
+    // A write beat, denied or not, is presented only with its W beat, which
+    // moves into the data-phase register with it.
+    assign beat_vld = seq_busy_q && (!seq_write_q || w_fifo_rvalid_pack);
+    assign beat_ahb = beat_vld && !active_ctx_q.reject;
 
-    // Arbitration from IDLE: alternate between read and write when both are
-    // ready; otherwise take the ready one. A write is ready only when its
-    // first W beat is available, so an AW waiting for data does not block reads.
+    // Response backpressure is applied before issue. The bridge is the only
+    // producer of the R and B FIFOs, and a slot promised to the beat in its
+    // data phase counts as used, so a slot free at issue stays free until that
+    // beat completes. These terms only relax while a data phase waits, so a
+    // NONSEQ driven during a wait state stays valid until accepted.
+    assign rd_credit   = (32'(r_resp_depth) + 32'(dp_valid_q && !dp_q.write)) < R_RESP_DEPTH;
+    assign b_credit    = (32'(b_resp_depth) + 32'(dp_valid_q && dp_q.write && dp_q.last)) < B_RESP_DEPTH;
+    assign beat_credit = seq_write_q ? (!seq_last || b_credit) : rd_credit;
+
+    // An AHB beat leaves on its address-phase acceptance, which also completes
+    // any AHB data phase ahead of it. A local beat needs only the data-phase
+    // register to be free, preserving response order.
+    assign dp_done    = dp_valid_q && (dp_q.local_beat || ahb_hreadyout);
+    assign dp_advance = !dp_valid_q || dp_done;
+    assign beat_take  = beat_vld && beat_credit && (active_ctx_q.reject ? dp_advance : ahb_hreadyout);
+    assign seq_free   = !seq_busy_q || (beat_take && seq_last);
+    assign w_fifo_pop = beat_take && seq_write_q;
+
+    // While a write beat is popped, a following write is ready only if another
+    // W beat is stored behind it.
+    assign w_next_avail = w_fifo_depth > W_FIFO_DEPTH_W'(w_fifo_pop);
+
+    // Arbitration when the sequencer is free: alternate between read and
+    // write when both are ready; otherwise take the ready one. A write is ready
+    // only when its first W beat is available, so an AW waiting for data does
+    // not block reads.
     always_comb begin
         grant_rd = 1'b0;
         grant_wr = 1'b0;
-        if (ar_fifo_rvalid && aw_fifo_rvalid && w_fifo_rvalid_pack) begin
-            // Both ready -- use round-robin
-            if (rr_last_was_write_q) grant_rd = 1'b1;
-            else                     grant_wr = 1'b1;
-        end else if (ar_fifo_rvalid) begin
-            grant_rd = 1'b1;
-        end else if (aw_fifo_rvalid && w_fifo_rvalid_pack) begin
-            grant_wr = 1'b1;
+        if (seq_free) begin
+            if (ar_fifo_rvalid && aw_fifo_rvalid && w_next_avail) begin
+                if (rr_last_was_write_q) grant_rd = 1'b1;
+                else                     grant_wr = 1'b1;
+            end else if (ar_fifo_rvalid) begin
+                grant_rd = 1'b1;
+            end else if (aw_fifo_rvalid && w_next_avail) begin
+                grant_wr = 1'b1;
+            end
         end
     end
 
-    // Next state, FIFO controls, register updates, and AHB outputs.
     always_comb begin
-        // Retain the active burst while stalled. States must explicitly enable
-        // FIFO movement or an AHB transfer; reject states leave AHB inactive.
-        fsm_d               = fsm_q;
+        seq_busy_d          = seq_busy_q;
+        seq_write_d         = seq_write_q;
         active_ctx_d        = active_ctx_q;
         beat_cnt_d          = beat_cnt_q;
-        resp_accum_d        = resp_accum_q;
         rr_last_was_write_d = rr_last_was_write_q;
         ar_fifo_pop         = 1'b0;
         aw_fifo_pop         = 1'b0;
-        w_fifo_pop          = 1'b0;
-        r_resp_wvalid       = 1'b0;
-        r_resp_wdata        = '0;
-        b_resp_wvalid       = 1'b0;
-        b_resp_wdata        = '0;
-        ahb_haddr           = '0;
-        ahb_hburst          = 3'b000;     // SINGLE: each AXI beat is a separate AHB transfer
-        ahb_hsize           = 3'b010;     // default 32-bit
-        ahb_htrans          = HTRANS_IDLE;
-        ahb_hwrite          = 1'b0;
-        ahb_hwdata          = '0;
-        ahb_hsel            = 1'b0;
 
-        unique case (fsm_q)
-            // -------------------------------------------------
-            FSM_IDLE: begin
-                resp_accum_d = '0;
-                // A grant owns the bridge for the entire burst. Capture the
-                // queued reject decision rather than rechecking live policy,
-                // which may have changed since the address was accepted.
-                if (grant_rd) begin
-                    ar_fifo_pop         = 1'b1;
-                    active_ctx_d        = ar_head;
-                    beat_cnt_d          = ar_head.len;
-                    rr_last_was_write_d = 1'b0;
-                    fsm_d               = ar_head.reject ? FSM_RD_REJECT : FSM_RD_ADDR;
-                end else if (grant_wr) begin
-                    aw_fifo_pop         = 1'b1;
-                    active_ctx_d        = aw_head;
-                    beat_cnt_d          = aw_head.len;
-                    rr_last_was_write_d = 1'b1;
-                    fsm_d               = aw_head.reject ? FSM_WR_REJECT : FSM_WR_ADDR;
-                end
+        if (beat_take) begin
+            if (seq_last) begin
+                seq_busy_d = 1'b0;
+            end else begin
+                // Even errored or denied bursts issue all AxLEN+1 beats.
+                // Advance using the original FIXED/INCR/WRAP geometry.
+                beat_cnt_d        = beat_cnt_q - 8'd1;
+                active_ctx_d.addr = next_addr;
             end
+        end
 
-            // -------------------------------------------------
-            // Read burst
-            // -------------------------------------------------
-            FSM_RD_ADDR: begin
-                ahb_haddr  = active_ctx_q.addr;
-                // Issue only with a free R slot; otherwise hold IDLE until the
-                // AXI side drains one. The slot then stays reserved.
-                ahb_htrans = r_resp_wready ? HTRANS_NONSEQ : HTRANS_IDLE;
-                ahb_hwrite = 1'b0;
-                ahb_hsel   = 1'b1;
-                ahb_hsize  = active_ctx_q.size;
-                // Wait for address-phase acceptance before sampling read data
-                // in RD_DATA; HREADYOUT here is not this new read's result.
-                if (ahb_hreadyout && r_resp_wready)
-                    fsm_d = FSM_RD_DATA;
-            end
-            FSM_RD_DATA: begin
-                ahb_hsel = 1'b1;
-                // Capture on the subordinate's completion into the reserved slot.
-                if (ahb_hreadyout) begin
-                    // Push this beat's data to R response FIFO
-                    r_resp_wvalid = 1'b1;
-                    r_resp_wdata  = {last_beat, active_ctx_q.id, ahb_resp_to_axi(ahb_hresp), ahb_hrdata};
-                    if (last_beat) begin
-                        // This queued response carries RLAST. Only now may a
-                        // different request replace the active burst context.
-                        fsm_d = FSM_IDLE;
-                    end else begin
-                        // Even an errored read must return all ARLEN+1 beats.
-                        // Advance using the original FIXED/INCR/WRAP geometry.
-                        beat_cnt_d        = beat_cnt_q - 8'd1;
-                        active_ctx_d.addr = next_addr;
-                        fsm_d             = FSM_RD_ADDR;
-                    end
-                end
-            end
-
-            // -------------------------------------------------
-            // Write burst
-            // -------------------------------------------------
-            FSM_WR_ADDR: begin
-                ahb_haddr  = active_ctx_q.addr;
-                // Issue only when the W beat is available and, for the final
-                // beat, a B slot is free; otherwise hold IDLE so no subordinate
-                // latches an address the bridge cannot complete.
-                ahb_htrans = wr_issue_rdy ? HTRANS_NONSEQ : HTRANS_IDLE;
-                ahb_hwrite = 1'b1;
-                ahb_hsel   = 1'b1;
-                ahb_hsize  = active_ctx_q.size;
-                // Both conditions are needed: AHB readiness alone would also
-                // accept the IDLE cycle driven while issue is held.
-                if (ahb_hreadyout && wr_issue_rdy)
-                    fsm_d = FSM_WR_DATA;
-            end
-            FSM_WR_DATA: begin
-                // WR_ADDR required a valid W head and did not pop it. Keep that
-                // same beat available and stable throughout AHB wait states.
-                ahb_hwdata = w_beat_data;
-                ahb_hsel   = 1'b1;
-                ahb_hwrite = 1'b1;
-                if (ahb_hreadyout) begin
-                    // Keep any earlier error sticky; every beat is consumed.
-                    w_fifo_pop   = 1'b1;
-                    resp_accum_d = resp_accum_q | ahb_resp_to_axi(ahb_hresp);
-                    if (last_beat) begin
-                        // AXI requires one B response for the entire burst, and
-                        // WR_ADDR reserved its slot. Include this beat's status
-                        // too; resp_accum_q only holds earlier beats' errors.
-                        b_resp_wvalid = 1'b1;
-                        b_resp_wdata  = {active_ctx_q.id, resp_accum_q | ahb_resp_to_axi(ahb_hresp)};
-                        fsm_d         = FSM_IDLE;
-                    end else begin
-                        beat_cnt_d        = beat_cnt_q - 8'd1;
-                        active_ctx_d.addr = next_addr;
-                        fsm_d             = FSM_WR_ADDR;
-                    end
-                end
-            end
-
-            // -------------------------------------------------
-            // Denied bursts: complete locally, AHB outputs stay at defaults
-            // -------------------------------------------------
-            FSM_RD_REJECT: begin
-                // Rejection cannot shorten an AXI burst: synthesize ARLEN+1
-                // SLVERR beats, with zero data instead of accessing the target.
-                if (r_resp_wready) begin
-                    r_resp_wvalid = 1'b1;
-                    r_resp_wdata  = {last_beat, active_ctx_q.id, AXI_RESP_SLVERR, {DW{1'b0}}};
-                    // Stop only after queuing the RLAST beat; otherwise the
-                    // manager would be left waiting for the rest of the burst.
-                    if (last_beat)
-                        fsm_d = FSM_IDLE;
-                    else
-                        beat_cnt_d = beat_cnt_q - 8'd1;
-                end
-            end
-
-            FSM_WR_REJECT: begin
-                // Discard this denied request's W beats so they cannot become
-                // data for the next AW request. Pop only when a W beat exists.
-                // No B capacity is needed to drain; WR_REJECT_RESP waits for it.
-                if (w_fifo_rvalid_pack) begin
-                    w_fifo_pop = 1'b1;
-                    // AWLEN, not a single discarded beat, defines when draining
-                    // ends. Stop at the boundary without consuming the next burst.
-                    if (last_beat)
-                        fsm_d = FSM_WR_REJECT_RESP;
-                    else
-                        beat_cnt_d = beat_cnt_q - 8'd1;
-                end
-            end
-
-            // W and B FIFOs both allow passthrough. Entering a separate state
-            // puts BVALID after the clock edge accepting the final W beat,
-            // rather than asserting it in that same W-handshake cycle.
-            // Do not pop W here: any remaining data belongs to a later request.
-            FSM_WR_REJECT_RESP: begin
-                if (b_resp_wready) begin
-                    b_resp_wvalid = 1'b1;
-                    b_resp_wdata  = {active_ctx_q.id, AXI_RESP_SLVERR};
-                    fsm_d         = FSM_IDLE;
-                end
-            end
-        endcase
+        // A grant owns the sequencer for the entire burst. Capture the queued
+        // reject decision rather than rechecking live policy, which may have
+        // changed since the address was accepted.
+        if (grant_rd) begin
+            ar_fifo_pop         = 1'b1;
+            active_ctx_d        = ar_head;
+            beat_cnt_d          = ar_head.len;
+            seq_write_d         = 1'b0;
+            seq_busy_d          = 1'b1;
+            rr_last_was_write_d = 1'b0;
+        end else if (grant_wr) begin
+            aw_fifo_pop         = 1'b1;
+            active_ctx_d        = aw_head;
+            beat_cnt_d          = aw_head.len;
+            seq_write_d         = 1'b1;
+            seq_busy_d          = 1'b1;
+            rr_last_was_write_d = 1'b1;
+        end
     end
 
-    assign ar_fifo_rready       = ar_fifo_pop;
-    assign aw_fifo_rready       = aw_fifo_pop;
-    assign w_fifo_rready_pack   = w_fifo_pop;
+    assign ar_fifo_rready     = ar_fifo_pop;
+    assign aw_fifo_rready     = aw_fifo_pop;
+    assign w_fifo_rready_pack = w_fifo_pop;
+
+    // A denied beat never selects AHB and keeps its address off the bus.
+    assign ahb_hsel      = beat_ahb;
+    assign ahb_htrans    = (beat_ahb && beat_credit) ? HTRANS_NONSEQ : HTRANS_IDLE;
+    assign ahb_haddr     = active_ctx_q.reject ? '0 : active_ctx_q.addr;
+    assign ahb_hwrite    = beat_ahb && seq_write_q;
+    assign ahb_hsize     = active_ctx_q.reject ? 3'b010 : active_ctx_q.size;
+    assign ahb_hburst    = 3'b000;     // SINGLE: each AXI beat is a separate AHB transfer
+    assign ahb_hreadymux = ahb_hreadyout;
 
     // -----------------------------------------------------------
-    // FSM registers
+    // Data phase and response generation
+    // -----------------------------------------------------------
+    always_comb begin
+        dp_d.write      = seq_write_q;
+        dp_d.local_beat = active_ctx_q.reject;
+        dp_d.last       = seq_last;
+        dp_d.id         = active_ctx_q.id;
+        dp_d.wdata      = (seq_write_q && !active_ctx_q.reject) ? w_beat_data : '0;
+    end
+
+    // HWDATA is staged when the address phase is accepted and holds through
+    // wait states. It is zero for reads and denied beats.
+    assign ahb_hwdata = dp_q.wdata;
+
+    assign dp_resp = dp_q.local_beat ? AXI_RESP_SLVERR : ahb_resp_to_axi(ahb_hresp);
+
+    // Every beat, AHB or local, returns its own R beat; a denied read returns
+    // zero data. A write burst returns one B with any error from its beats.
+    assign r_resp_wvalid = dp_done && !dp_q.write;
+    assign r_resp_wdata  = {dp_q.last, dp_q.id, dp_resp, (dp_q.local_beat ? {DW{1'b0}} : ahb_hrdata)};
+    assign b_resp_wvalid = dp_done && dp_q.write && dp_q.last;
+    assign b_resp_wdata  = {dp_q.id, resp_accum_q | dp_resp};
+
+    always_comb begin
+        resp_accum_d = resp_accum_q;
+        if (dp_done && dp_q.write)
+            resp_accum_d = dp_q.last ? 2'b00 : (resp_accum_q | dp_resp);
+    end
+
+    // -----------------------------------------------------------
+    // Registers
     // -----------------------------------------------------------
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            fsm_q               <= FSM_IDLE;
+            seq_busy_q          <= 1'b0;
+            seq_write_q         <= 1'b0;
             active_ctx_q        <= '0;
             beat_cnt_q          <= '0;
-            resp_accum_q        <= '0;
             rr_last_was_write_q <= 1'b0;
+            dp_valid_q          <= 1'b0;
+            dp_q                <= '0;
+            resp_accum_q        <= '0;
         end else begin
-            fsm_q               <= fsm_d;
+            seq_busy_q          <= seq_busy_d;
+            seq_write_q         <= seq_write_d;
             active_ctx_q        <= active_ctx_d;
             beat_cnt_q          <= beat_cnt_d;
-            resp_accum_q        <= resp_accum_d;
             rr_last_was_write_q <= rr_last_was_write_d;
+            // A take always finds the data-phase register advancing.
+            if (dp_advance)
+                dp_valid_q <= beat_take;
+            if (beat_take)
+                dp_q       <= dp_d;
+            resp_accum_q        <= resp_accum_d;
         end
     end
 
@@ -638,111 +607,94 @@ module axi_to_ahb
 
     // The stored reject bit of the granted FIFO head must be known at grant.
     `CALIPTRA_ASSERT(RejectKnownAtGrant_A,
-        ((fsm_q == FSM_IDLE) && (grant_rd || grant_wr))
+        (grant_rd || grant_wr)
         |-> !$isunknown(grant_rd ? ar_head.reject : aw_head.reject), clk, !rst_n)
 
-    // Route checks use the reject bit sampled at the grant, not the live head.
-    // A granted read goes to RD_REJECT if denied, otherwise to RD_ADDR.
-    `CALIPTRA_ASSERT(ReadGrantRoutesRequest_A,
-        ((fsm_q == FSM_IDLE) && grant_rd && !$isunknown(ar_head.reject))
-        |=> (fsm_q == ($past(ar_head.reject) ? FSM_RD_REJECT : FSM_RD_ADDR)), clk, !rst_n)
-
-    // A granted write goes to WR_REJECT if denied, otherwise to WR_ADDR.
-    `CALIPTRA_ASSERT(WriteGrantRoutesRequest_A,
-        ((fsm_q == FSM_IDLE) && grant_wr && !$isunknown(aw_head.reject))
-        |=> (fsm_q == ($past(aw_head.reject) ? FSM_WR_REJECT : FSM_WR_ADDR)), clk, !rst_n)
-
-    // In any reject state the AHB side stays idle: no select, IDLE transfer,
-    // and all other AHB outputs at their default values. HREADY is not a
-    // reject-state output: it follows the subordinate's HREADYOUT.
-    `CALIPTRA_ASSERT(DeniedRequestDoesNotSelectAhb_A,
-        (fsm_q inside {FSM_RD_REJECT, FSM_WR_REJECT, FSM_WR_REJECT_RESP})
-        |-> (!ahb_hsel && (ahb_htrans == HTRANS_IDLE)
-             && (ahb_haddr == '0) && (ahb_hwdata == '0) && !ahb_hwrite
-             && (ahb_hsize == 3'b010) && (ahb_hburst == 3'b000)), clk, !rst_n)
-
-    // No B response is pushed while a rejected write is draining its W beats.
-    `CALIPTRA_ASSERT(RejectedWriteDrainHasNoResponse_A,
-        (fsm_q == FSM_WR_REJECT) |-> !b_resp_wvalid, clk, !rst_n)
-
-    // Popping the final W beat of a rejected write moves the FSM to WR_REJECT_RESP.
-    `CALIPTRA_ASSERT(RejectedWriteFinalPop_A,
-        ((fsm_q == FSM_WR_REJECT) && w_fifo_pop && last_beat)
-        |=> (fsm_q == FSM_WR_REJECT_RESP), clk, !rst_n)
-
-    // WR_REJECT_RESP is only entered after the final drain pop (or held there),
-    // and never pops the W FIFO.
-    `CALIPTRA_ASSERT(RejectedWriteResponseAfterDrain_A,
-        (fsm_q == FSM_WR_REJECT_RESP)
-        |-> (!w_fifo_pop
-             && ($past(fsm_q == FSM_WR_REJECT_RESP)
-                 || $past((fsm_q == FSM_WR_REJECT) && w_fifo_pop && last_beat))), clk, !rst_n)
-
-    // In WR_REJECT_RESP, a B response {saved ID, SLVERR} is pushed exactly when
-    // the B FIFO is ready, then the FSM returns to IDLE; otherwise it stays in
-    // WR_REJECT_RESP with the active context held stable.
-    `CALIPTRA_ASSERT(RejectedWriteResponseCompletes_A,
-        (fsm_q == FSM_WR_REJECT_RESP)
-        |-> (!w_fifo_pop && (b_resp_wvalid == b_resp_wready)
-             && (!b_resp_wvalid || (b_resp_wdata == {active_ctx_q.id, AXI_RESP_SLVERR})))
-            ##1 ($past(b_resp_wvalid) ? (fsm_q == FSM_IDLE)
-                                      : ((fsm_q == FSM_WR_REJECT_RESP) && $stable(active_ctx_q))),
+    // A grant captures the head's reject bit for every beat of its burst.
+    `CALIPTRA_ASSERT(GrantCapturesReject_A,
+        (grant_rd || grant_wr)
+        |=> (seq_busy_q && (active_ctx_q.reject == $past(grant_rd ? ar_head.reject : aw_head.reject))),
         clk, !rst_n)
+
+    // A denied beat never selects AHB: no select, IDLE transfer, and all
+    // other address-phase outputs at their default values. HREADY is not an
+    // output here: it follows the subordinate's HREADYOUT.
+    `CALIPTRA_ASSERT(DeniedRequestDoesNotSelectAhb_A,
+        (seq_busy_q && active_ctx_q.reject)
+        |-> (!ahb_hsel && (ahb_htrans == HTRANS_IDLE)
+             && (ahb_haddr == '0) && !ahb_hwrite
+             && (ahb_hsize == 3'b010) && (ahb_hburst == 3'b000)), clk, !rst_n)
+    `CALIPTRA_ASSERT(DeniedBeatDrivesNoWriteData_A,
+        (dp_valid_q && dp_q.local_beat) |-> (ahb_hwdata == '0), clk, !rst_n)
 
     // Every consumed W beat has WLAST set only on the AWLEN-derived last beat.
     `CALIPTRA_ASSERT(WriteLastPlacement_A,
-        (w_fifo_rvalid_pack && w_fifo_rready_pack) |-> (w_beat_last == last_beat),
+        (w_fifo_rvalid_pack && w_fifo_rready_pack) |-> (w_beat_last == seq_last),
         clk, !rst_n)
 
-    // Issue-time response reservation needs real storage: a depth-0 FIFO would
-    // pass BREADY straight through as its write-ready.
+    // Issue-time response reservation needs real storage.
     `CALIPTRA_ASSERT_INIT(ReadQueueDepthPositive_A, OSTD_R > 0)
     `CALIPTRA_ASSERT_INIT(WriteQueueDepthPositive_A, OSTD_W > 0)
 
     // The reservation made at issue must hold for the whole data phase,
     // including subordinate wait states and two-cycle ERROR responses.
     `CALIPTRA_ASSERT(ReadDataHasRSlot_A,
-        (fsm_q == FSM_RD_DATA) |-> r_resp_wready, clk, !rst_n)
+        (dp_valid_q && !dp_q.write) |-> r_resp_wready, clk, !rst_n)
     `CALIPTRA_ASSERT(WriteFinalDataHasBSlot_A,
-        ((fsm_q == FSM_WR_DATA) && last_beat) |-> b_resp_wready, clk, !rst_n)
-    `CALIPTRA_ASSERT(WriteDataHasWBeat_A,
-        (fsm_q == FSM_WR_DATA) |-> w_fifo_rvalid_pack, clk, !rst_n)
+        (dp_valid_q && dp_q.write && dp_q.last) |-> b_resp_wready, clk, !rst_n)
 
-    // An address state held for response or W space presents IDLE and keeps
-    // its burst context.
-    `CALIPTRA_ASSERT(BlockedReadHoldsContext_A,
-        ((fsm_q == FSM_RD_ADDR) && !r_resp_wready)
-        |-> (ahb_htrans == HTRANS_IDLE)
-            ##1 ((fsm_q == FSM_RD_ADDR) && $stable(active_ctx_q) && $stable(beat_cnt_q)), clk, !rst_n)
-    `CALIPTRA_ASSERT(BlockedWriteHoldsContext_A,
-        ((fsm_q == FSM_WR_ADDR) && !wr_issue_rdy)
-        |-> (ahb_htrans == HTRANS_IDLE)
-            ##1 ((fsm_q == FSM_WR_ADDR) && $stable(active_ctx_q) && $stable(beat_cnt_q)), clk, !rst_n)
+    // AHB manager rules: once NONSEQ is driven, the address phase holds
+    // until HREADY, and HWDATA holds through data-phase wait states.
+    `CALIPTRA_ASSERT(AddressPhaseHeldDuringWait_A,
+        ((ahb_htrans == HTRANS_NONSEQ) && !ahb_hreadyout)
+        |=> ((ahb_htrans == HTRANS_NONSEQ) && $stable(ahb_haddr) && $stable(ahb_hwrite)
+             && $stable(ahb_hsize) && $stable(ahb_hburst)), clk, !rst_n)
+    `CALIPTRA_ASSERT(WriteDataHeldDuringWait_A,
+        (dp_valid_q && !dp_done) |=> $stable(ahb_hwdata), clk, !rst_n)
 
-    // A data state is entered only through an accepted NONSEQ.
-    `CALIPTRA_ASSERT(ReadDataFollowsAcceptedIssue_A,
-        ((fsm_q == FSM_RD_ADDR) && (fsm_d == FSM_RD_DATA))
-        |-> ((ahb_htrans == HTRANS_NONSEQ) && ahb_hreadyout), clk, !rst_n)
-    `CALIPTRA_ASSERT(WriteDataFollowsAcceptedIssue_A,
-        ((fsm_q == FSM_WR_ADDR) && (fsm_d == FSM_WR_DATA))
-        |-> ((ahb_htrans == HTRANS_NONSEQ) && ahb_hreadyout), clk, !rst_n)
+    // A blocked beat keeps its burst context.
+    `CALIPTRA_ASSERT(BlockedBeatHolds_A,
+        (beat_vld && !beat_take)
+        |=> (beat_vld && $stable(active_ctx_q) && $stable(beat_cnt_q) && $stable(seq_write_q)),
+        clk, !rst_n)
+
+    // An AHB beat is taken only through an accepted NONSEQ, a take always
+    // finds the data-phase register advancing, and that register is loaded
+    // only by a take.
+    `CALIPTRA_ASSERT(AhbBeatTakenOnAcceptance_A,
+        (beat_take && !active_ctx_q.reject)
+        |-> ((ahb_htrans == HTRANS_NONSEQ) && ahb_hsel && ahb_hreadyout), clk, !rst_n)
+    `CALIPTRA_ASSERT(TakeIntoFreeDataPhase_A,
+        beat_take |-> dp_advance, clk, !rst_n)
+    `CALIPTRA_ASSERT(DataPhaseFollowsTake_A,
+        dp_advance |=> (dp_valid_q == $past(beat_take)), clk, !rst_n)
 
     // Each completing data phase produces exactly one result: one R push per
-    // read beat, one W pop per write beat, and one B push per write burst.
+    // read beat and one B push per write burst; an empty stage pushes none.
     `CALIPTRA_ASSERT(ReadCompletionPushesOnce_A,
-        (fsm_q == FSM_RD_DATA) |-> (r_resp_wvalid == ahb_hreadyout), clk, !rst_n)
-    `CALIPTRA_ASSERT(WriteCompletionPopsOnce_A,
-        (fsm_q == FSM_WR_DATA)
-        |-> ((w_fifo_pop == ahb_hreadyout) && (b_resp_wvalid == (ahb_hreadyout && last_beat))),
+        (dp_valid_q && !dp_q.write) |-> (r_resp_wvalid == dp_done), clk, !rst_n)
+    `CALIPTRA_ASSERT(WriteCompletionPushesOnce_A,
+        (dp_valid_q && dp_q.write) |-> (b_resp_wvalid == (dp_done && dp_q.last)),
         clk, !rst_n)
+    `CALIPTRA_ASSERT(IdleDataPhasePushesNothing_A,
+        !dp_valid_q |-> (!r_resp_wvalid && !b_resp_wvalid), clk, !rst_n)
 
     // Cover the reservation path: a full response FIFO defers issue, then
     // the transfer issues and completes.
     `CALIPTRA_COVER(ReadIssueDeferredThenCompleted_C,
-        ((fsm_q == FSM_RD_ADDR) && !r_resp_wready)
-        ##[1:$] ((fsm_q == FSM_RD_DATA) && ahb_hreadyout), clk, !rst_n)
+        (beat_ahb && !seq_write_q && !beat_credit)
+        ##[1:$] (dp_valid_q && !dp_q.write && !dp_q.local_beat && ahb_hreadyout), clk, !rst_n)
     `CALIPTRA_COVER(WriteFinalIssueDeferredThenCompleted_C,
-        ((fsm_q == FSM_WR_ADDR) && last_beat && w_fifo_rvalid_pack && !b_resp_wready)
-        ##[1:$] ((fsm_q == FSM_WR_DATA) && last_beat && ahb_hreadyout), clk, !rst_n)
+        (beat_ahb && seq_write_q && seq_last && !beat_credit)
+        ##[1:$] (dp_valid_q && dp_q.write && dp_q.last && !dp_q.local_beat && ahb_hreadyout), clk, !rst_n)
+
+    // Cover overlap within a burst, chaining across bursts, and a denied beat
+    // presented directly behind an AHB beat.
+    `CALIPTRA_COVER(AddressOverlapsData_C,
+        beat_take && beat_ahb && dp_done && !dp_q.local_beat, clk, !rst_n)
+    `CALIPTRA_COVER(BurstChainedWithoutBubble_C,
+        beat_take && seq_last && (grant_rd || grant_wr), clk, !rst_n)
+    `CALIPTRA_COVER(DeniedBeatFollowsAhbBeat_C,
+        beat_vld && active_ctx_q.reject && dp_valid_q && !dp_q.local_beat, clk, !rst_n)
 
 endmodule
