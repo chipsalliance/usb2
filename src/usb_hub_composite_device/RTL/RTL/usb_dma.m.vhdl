@@ -498,7 +498,10 @@ begin
             dma_req   <= '1';
             dma_write <= '0';
           elsif endtransfer = '1' then 
-            if sync_sieint_success = '1' then
+--Isochronous endpoint data must always be handled as successful (even if there was an error).
+--Because it cannot be retransmitted.
+            if (sync_sieint_success = '1')                    or
+               (epinfo_periodic = '1' and epinfo_rf_tv = '0') then
               dma_state <= WAIT_ON_GNT_FOR_UPDATE;
               dma_req   <= '1';
               dma_write <= '1';
@@ -663,7 +666,7 @@ begin
                     elsif epinfo_periodic = '1' then
                       if epinfo_rf_tv = '0' then  --HBW ISO 
                         var_maxpacket := to_unsigned(3072,15);
-                      else                        --HBW Interrupt (high bandwith are handled at the software layer) 
+                      else                        --HBW Interrupt (high bandwidth are handled at the software layer) 
                         var_maxpacket := to_unsigned(1024,15);
                       end if;
                     else                         --Gen Ep (Bulk Interrupt ratefeedback mode) 
@@ -1241,5 +1244,3 @@ begin
 
 end RTL;
 
--- LAB epinfo_ratefeedbackmode could be removed
---

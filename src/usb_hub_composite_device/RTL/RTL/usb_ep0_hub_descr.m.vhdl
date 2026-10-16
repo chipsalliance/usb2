@@ -23,7 +23,7 @@ use work.usb_general_subcmp_pkg.all;
 use work.usb_ep_config_pkg.all;
 
 entity usb_ep0_hub_descr is
-generic(C_NWORDS : integer := 172; --Number of 32 bits words in hub descriptor table
+generic(C_NWORDS : integer := 176; --Number of 32 bits words in hub descriptor table
         C_HIGH_SPEED     : boolean := TRUE);
 port (
       -- interface to AHB slave module
@@ -350,7 +350,7 @@ begin
     var_address := var_address + 4;
     var_result(var_address  ) := X"00000323"; --SetHubPortFeature
     var_result(var_address+2) := X"00000000"; --SetHubPortFeature
-    var_result(var_address+1) := X"FFE040C1"; --SETUP_MASK_LSB
+    var_result(var_address+1) := X"FFE04041"; --SETUP_MASK_LSB
     var_result(var_address+3) := X"0000FFFC"; --SETUP_MASK_MSB
 
   else
@@ -370,10 +370,16 @@ begin
     var_address := var_address + 4;
     var_result(var_address  ) := X"07000680"; --GetOtherSpeedConfigurationDescriptor
     var_result(var_address+2) := X"00190000"; --GetOtherSpeedConfigurationDescriptor
-    var_result(var_address+1) := X"FFFF8480"; --SETUP_MASK_LSB
+    var_result(var_address+1) := X"FFFF8400"; --SETUP_MASK_LSB
     var_result(var_address+3) := X"0000FFFF"; --SETUP_MASK_MSB 
 
   end if;
+
+ var_address := var_address + 4;
+ var_result(var_address  ) := X"00000CA3"; --SetandTestHubPortFeature
+ var_result(var_address+2) := X"00000000"; --SetandTestHubPortFeature
+ var_result(var_address+1) := X"FFE040C3"; --SETUP_MASK_LSB
+ var_result(var_address+3) := X"0000FFFC"; --SETUP_MASK_MSB
 
   -- LINK POINTER to start of device list
   var_address := to_integer(unsigned(C_DEV_LINK_START)) - (C_NBDEV-1);

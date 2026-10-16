@@ -23,7 +23,7 @@ USE work.usb_general_subcmp_pkg.all;
 package ip_xxx_3511_hs_mem_compound_cmp_pkg is
 component ip_xxx_3511_hs_mem_compound
     generic(
-        C_HUB_FIFO_SIZE                : integer                       := 172;
+        C_HUB_FIFO_SIZE                : integer                       := 176;
         C_DEV0_RAM_ADDRWIDTH           : integer                       := 15;
         C_DEV1_RAM_ADDRWIDTH           : integer                       := 15;
         C_DEV0_NBPHYSEP                : integer                       := 14;
@@ -39,8 +39,8 @@ component ip_xxx_3511_hs_mem_compound
         C_DEV1_SINGLE_BUFFER_SUPPORTED : boolean                       := TRUE;
         C_DEV1_DOUBLE_BUFFER_SUPPORTED : boolean                       := TRUE;
         C_DEV1_TOGGLE_REG_READABLE     : boolean                       := TRUE;
-        C_PLL_ENABLE                   : boolean                       := FALSE;
-        C_PLL_DIVIDER                  : std_logic_vector(6 downto 0)  := "0010100";
+        --C_PLL_ENABLE                   : boolean                       := FALSE;
+        --C_PLL_DIVIDER                  : std_logic_vector(6 downto 0)  := "0010100";
         C_ULPI_SUPPORT                 : boolean                       := TRUE;
         C_UTMI_SUPPORT                 : boolean                       := TRUE;
         C_EXTEND_TX_DELAY              : boolean                       := TRUE;
