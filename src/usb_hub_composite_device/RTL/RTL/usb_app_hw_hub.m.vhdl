@@ -340,7 +340,8 @@ ep0_class_rdata <= hub_status(data_index);
 
 GEN_HUB_STATUS_EP1 : for i in 0 to C_HUB_NB_PORTS-1 generate
 begin
-  hub_port_status_change(i) <= '1' when hub_port_reset_change(i)   = '1' or
+  hub_port_status_change(i) <= '1' when hub_port_l1_change(i)      = '1' or
+                                        hub_port_reset_change(i)   = '1' or
                                         hub_port_suspend_change(i) = '1' or
                                         hub_port_connect_change(i) = '1'
                                    else '0';
