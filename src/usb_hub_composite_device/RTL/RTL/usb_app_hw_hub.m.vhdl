@@ -85,7 +85,7 @@ begin
       if ep0_setupdone = '1' then
         case ep0_request is
           when C_CLASS_REQ_CLEAR_FEATURE =>
-            if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
+            if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
               ep0_class_stall <= '1';
             elsif to_integer(unsigned(ep0_windex)) /= 0 then  --ClearPortFeature
               case to_integer(unsigned(ep0_wvalue)) is
@@ -120,7 +120,7 @@ begin
              end if;
     
           when C_CLASS_REQ_SET_FEATURE =>
-            if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
+            if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
               ep0_class_stall <= '1';
             elsif to_integer(unsigned(ep0_windex)) /= 0 then --SetPortFeature
               case to_integer(unsigned(ep0_wvalue)) is
@@ -148,8 +148,9 @@ begin
           end if;
           
           when C_CLASS_REQ_SET_AND_TEST =>
-            if (to_integer(unsigned(ep0_windex(3 downto 0))) > C_HUB_NB_PORTS) or
-               (to_integer(unsigned(ep0_wvalue)) /= 10) then --Feature selector is not equal to Port_L!
+            if (to_integer(unsigned(ep0_windex(3 downto 0))) = 0)              or
+               (to_integer(unsigned(ep0_windex(3 downto 0))) > C_HUB_NB_PORTS) or --Port number is located in bits 3..0 of wIndex
+               (to_integer(unsigned(ep0_wvalue)) /= 10) then --Feature selector is not equal to Port_L1
               ep0_class_stall <= '1';
             end if;
           
@@ -190,9 +191,9 @@ begin
       if ep0_setupdone = '1' then
         case ep0_request is
           when C_CLASS_REQ_CLEAR_FEATURE =>
-            if to_integer(unsigned(ep0_windex)) = 0 then  --ClearHubFeature
-              null; -- TODO : complete transfer - anything to set ???
-            elsif to_integer(unsigned(ep0_windex(15 downto 0))) <= C_HUB_NB_PORTS then --ClearPortFeature
+            if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
+              null; -- A stall will be returned upon this request
+            elsif to_integer(unsigned(ep0_windex)) /= 0 then  --ClearPortFeature
               var_port := to_integer(unsigned(ep0_windex)) - 1;
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
@@ -233,9 +234,9 @@ begin
             end if;
     
           when C_CLASS_REQ_SET_FEATURE =>
-            if to_integer(unsigned(ep0_windex)) = 0 then  --SetHubFeature
-              null; -- TODO : complete transfer - anything to set ???
-            elsif to_integer(unsigned(ep0_windex(15 downto 0))) <= C_HUB_NB_PORTS then --SetPortFeature
+            if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
+              null; -- A stall will be returned upon this request
+            elsif to_integer(unsigned(ep0_windex)) /= 0 then --SetPortFeature
               var_port := to_integer(unsigned(ep0_windex)) - 1;
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
@@ -268,7 +269,7 @@ begin
     
           when C_CLASS_REQ_SET_AND_TEST =>
             if to_integer(unsigned(ep0_windex(3 downto 0))) = 0 then
-              null; -- TODO : complete transfer - anything to set ???
+              null; -- A stall will be returned upon this request
             elsif to_integer(unsigned(ep0_windex(15 downto 0))) <= C_HUB_NB_PORTS then --SetandTestPortFeature
               var_port := to_integer(unsigned(ep0_windex(3 downto 0))) - 1;
               if to_integer(unsigned(ep0_wvalue)) = 10 then -- Feature selector = PORT_L1
