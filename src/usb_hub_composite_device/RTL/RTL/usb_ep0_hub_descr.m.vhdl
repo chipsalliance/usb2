@@ -379,7 +379,7 @@ begin
  var_result(var_address  ) := X"00000CA3"; --SetandTestHubPortFeature
  var_result(var_address+2) := X"00000000"; --SetandTestHubPortFeature
  var_result(var_address+1) := X"FFE040C3"; --SETUP_MASK_LSB
- var_result(var_address+3) := X"0000FFFC"; --SETUP_MASK_MSB
+ var_result(var_address+3) := X"00000000"; --SETUP_MASK_MSB
 
   -- LINK POINTER to start of device list
   var_address := to_integer(unsigned(C_DEV_LINK_START)) - (C_NBDEV-1);
