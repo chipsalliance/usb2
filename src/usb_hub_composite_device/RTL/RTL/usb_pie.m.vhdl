@@ -2059,7 +2059,7 @@ begin
             elsif req_handshake_r = '1' then  -- handshake is expected to be received from the host
                if timer_packet_handling_r = 0 then -- TIMEOUT : Start of packet of the Handshake is not received on time
                   --SetError(ERROR_TIMEOUT);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "0110"; --ERROR_TIMEOUT
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -2107,7 +2107,7 @@ begin
                      when PID_PING =>
                         if dev_speed_r = USB_FULL_SPEED then -- FS device does not support PING Protocol and should not answer
                            --SetError(ERROR_PID_UNKNOWN);
-                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           --Removed procedure and moved code explicitly in design to fix lint error
                            errortype                   <= "0010"; --ERROR_PID_UNKNOWN
                            set_pie_error               <= '1';
                            set_pie_endtransfer         <= '1';
@@ -2129,7 +2129,7 @@ begin
                   end case;
                else -- bad PID, Ignore the remainder packet
                   --SetError(ERROR_PID_ENCODING);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "0001"; --ERROR_PID_ENCODING
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -2144,7 +2144,7 @@ begin
                end if;
             elsif rxactive = '0' then -- 1st byte is not sent, wrong start of packet
                --SetError(ERROR_TR_EOP);
-               --Removed procedure and moved code explicitly in desing to fix lint error
+               --Removed procedure and moved code explicitly in design to fix lint error
                errortype                   <= "1000"; --ERROR_TR_EOP
                set_pie_error               <= '1';
                set_pie_endtransfer         <= '1';
@@ -2165,7 +2165,7 @@ begin
                packet_handling_state_nxt <= USB_PROT_WF_TOKEN_BYTE3;
             elsif rxactive = '0' then -- no 2nd byte
                --SetError(ERROR_TR_EOP);
-               --Removed procedure and moved code explicitly in desing to fix lint error
+               --Removed procedure and moved code explicitly in design to fix lint error
                errortype                   <= "1000"; --ERROR_TR_EOP
                set_pie_error               <= '1';
                set_pie_endtransfer         <= '1';
@@ -2191,7 +2191,7 @@ begin
                            new_inoutsetup_vld <= '1';
                         else  -- PID_OUT was expected
                            --SetError(ERROR_PACKET_UNEXPECTED);
-                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           --Removed procedure and moved code explicitly in design to fix lint error
                            errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
                            set_pie_error               <= '1';
                            set_pie_endtransfer         <= '1';
@@ -2210,7 +2210,7 @@ begin
                            new_inoutsetup_vld <= '1';
                         else  -- PID_IN was expected
                            --SetError(ERROR_PACKET_UNEXPECTED);
-                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           --Removed procedure and moved code explicitly in design to fix lint error
                            errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
                            set_pie_error               <= '1';
                            set_pie_endtransfer         <= '1';
@@ -2230,7 +2230,7 @@ begin
                            new_inoutsetup_vld <= '1';
                         else  -- PID_IN/PID_OUT was expected
                            --SetError(ERROR_PACKET_UNEXPECTED);
-                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           --Removed procedure and moved code explicitly in design to fix lint error
                            errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
                            set_pie_error               <= '1';
                            set_pie_endtransfer         <= '1';
@@ -2250,7 +2250,7 @@ begin
                            new_inoutsetup_vld <= '1';
                         else-- PID_IN/PID_OUT was expected
                            --SetError(ERROR_PACKET_UNEXPECTED);
-                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           --Removed procedure and moved code explicitly in design to fix lint error
                            errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
                            set_pie_error               <= '1';
                            set_pie_endtransfer         <= '1';
@@ -2294,7 +2294,7 @@ begin
                         if iso_in_pending_r = '1' or iso_out_pending_r = '1' then
                            --PID_IN/PID_OUT was expected, SOF will clear all pending iso transactions.
                            --SetError(ERROR_PACKET_UNEXPECTED);
-                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           --Removed procedure and moved code explicitly in design to fix lint error
                            errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
                            set_pie_error               <= '1';
                            set_pie_endtransfer         <= '1';
@@ -2305,7 +2305,7 @@ begin
                   end case;
                else  -- CRC5 not valid. Packet is ignore
                   --SetError(ERROR_TOKEN_CRC);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "0100"; --ERROR_TOKEN_CRC
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -2320,7 +2320,7 @@ begin
                end if;
             elsif rxactive = '0' then -- no 3rd byte
                --SetError(ERROR_TR_EOP);
-               --Removed procedure and moved code explicitly in desing to fix lint error
+               --Removed procedure and moved code explicitly in design to fix lint error
                errortype                   <= "1000"; --ERROR_TR_EOP
                set_pie_error               <= '1';
                set_pie_endtransfer         <= '1';
@@ -2350,7 +2350,7 @@ begin
             if bus_event_state_r = BUS_EVENT_TEST_MODE and usbreg_phy_test_mode = "011" then-- -- Test_SE0_NAK
                -- NAK handshake must be returned
                --SetError(ERROR_SENT_RECEIVED_NAK);
-               --Removed procedure and moved code explicitly in desing to fix lint error
+               --Removed procedure and moved code explicitly in design to fix lint error
                errortype                   <= "1001"; --ERROR_SENT_RECEIVED_NAK
                set_pie_error               <= '1';
                set_pie_endtransfer         <= '1';
@@ -2390,7 +2390,7 @@ begin
                   end if;
                elsif epinfo_stall = '1' and epinfo_active = '0' then -- stall handshake must be returned
                   --SetError(ERROR_SENT_STALL);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "1010"; --ERROR_SENT_STALL
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -2404,7 +2404,7 @@ begin
                   packet_handling_state_nxt   <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
                 elsif  epinfo_active = '0' then -- NAK handshake must be returned
                   --SetError(ERROR_SENT_RECEIVED_NAK);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "1001"; --ERROR_SENT_RECEIVED_NAK
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -2441,7 +2441,7 @@ begin
                packet_handling_state_nxt <= USB_PROT_WF_IDLE;
             elsif timer_packet_handling_r = 0 then -- TIMEOUT : Data Packet or epinfo_valid is not received on time
                --SetError(ERROR_TIMEOUT);
-               --Removed procedure and moved code explicitly in desing to fix lint error
+               --Removed procedure and moved code explicitly in design to fix lint error
                errortype                   <= "0110"; --ERROR_TIMEOUT
                set_pie_error               <= '1';
                set_pie_endtransfer         <= '1';
@@ -2467,7 +2467,7 @@ begin
             if rxactive= '1' then -- start of packet is/has been detected
                if rxvalid = '1' then -- 1st byte of the data packet is received before epinfo is valid
                   --SetError(ERROR_OVERRUN);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "1011"; --ERROR_OVERRUN
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -2527,7 +2527,7 @@ begin
                   set_pie_endtransfer      <= '1';
                elsif epinfo_stall = '1' and epinfo_active = '0' then -- stall handshake must be returned
                   --SetError(ERROR_SENT_STALL);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "1010"; --ERROR_SENT_STALL
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -2541,7 +2541,7 @@ begin
                   packet_handling_state_nxt   <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
                elsif  epinfo_active = '0' then -- NAK handshake must be returned
                   --SetError(ERROR_SENT_RECEIVED_NAK);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "1001"; --ERROR_SENT_RECEIVED_NAK
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -2631,7 +2631,7 @@ begin
                               --unexpected PID: ignore the remainder packet,
                               -- all the data transferred during the uframe must be treated as if it had encountered an error
                               --SetError(ERROR_PID_UNKNOWN);
-                              --Removed procedure and moved code explicitly in desing to fix lint error
+                              --Removed procedure and moved code explicitly in design to fix lint error
                               errortype                   <= "0010"; --ERROR_PID_UNKNOWN
                               set_pie_error               <= '1';
                               set_pie_endtransfer         <= '1';
@@ -2654,7 +2654,7 @@ begin
                               --unexpected PID: ignore the remainder packet,
                               -- all the data transferred during the uframe must be treated as if it had encountered an error
                               --SetError(ERROR_PID_UNKNOWN);
-                              --Removed procedure and moved code explicitly in desing to fix lint error
+                              --Removed procedure and moved code explicitly in design to fix lint error
                               errortype                   <= "0010"; --ERROR_PID_UNKNOWN
                               set_pie_error               <= '1';
                               set_pie_endtransfer         <= '1';
@@ -2679,7 +2679,7 @@ begin
                               --unexpected PID: ignore the remainder packet,
                               -- all the data transferred during the uframe must be treated as if it had encountered an error
                               --SetError(ERROR_PID_UNKNOWN);
-                              --Removed procedure and moved code explicitly in desing to fix lint error
+                              --Removed procedure and moved code explicitly in design to fix lint error
                               errortype                   <= "0010"; --ERROR_PID_UNKNOWN
                               set_pie_error               <= '1';
                               set_pie_endtransfer         <= '1';
@@ -2703,7 +2703,7 @@ begin
                               --unexpected PID: ignore the remainder packet,
                               -- all the data transferred during the uframe must be treated as if it had encountered an error
                               --SetError(ERROR_PID_UNKNOWN);
-                              --Removed procedure and moved code explicitly in desing to fix lint error
+                              --Removed procedure and moved code explicitly in design to fix lint error
                               errortype                   <= "0010"; --ERROR_PID_UNKNOWN
                               set_pie_error               <= '1';
                               set_pie_endtransfer         <= '1';
@@ -2723,7 +2723,7 @@ begin
 
                         when others => --unexpected PID
                            --SetError(ERROR_PID_UNKNOWN);
-                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           --Removed procedure and moved code explicitly in design to fix lint error
                            errortype                   <= "0010"; --ERROR_PID_UNKNOWN
                            set_pie_error               <= '1';
                            set_pie_endtransfer         <= '1';
@@ -2760,7 +2760,7 @@ begin
 
                         when others => --unexpected PID, ignore the remainder packet
                            --SetError(ERROR_PID_UNKNOWN);
-                           --Removed procedure and moved code explicitly in desing to fix lint error
+                           --Removed procedure and moved code explicitly in design to fix lint error
                            errortype                   <= "0010"; --ERROR_PID_UNKNOWN
                            set_pie_error               <= '1';
                            set_pie_endtransfer         <= '1';
@@ -2776,7 +2776,7 @@ begin
                   end if;
                else  -- bad PID, Ignore the remainder packet
                   --SetError(ERROR_PID_ENCODING);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "0001"; --ERROR_PID_ENCODING
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -2790,7 +2790,7 @@ begin
                end if;
             elsif rxactive= '0' then  -- Unexpected EOP
                --SetError(ERROR_TR_EOP);
-               --Removed procedure and moved code explicitly in desing to fix lint error
+               --Removed procedure and moved code explicitly in design to fix lint error
                errortype                   <= "1000"; --ERROR_TR_EOP
                set_pie_error               <= '1';
                set_pie_endtransfer         <= '1';
@@ -2815,7 +2815,7 @@ begin
                  -- if rxactive = '0' then -- wait for EOP before starting inter-packet delay timer
                   if iso_out_pending_r = '0' then -- non isochronous ep
                      --SetError(ERROR_SENT_STALL);
-                     --Removed procedure and moved code explicitly in desing to fix lint error
+                     --Removed procedure and moved code explicitly in design to fix lint error
                      errortype                   <= "1010"; --ERROR_SENT_STALL
                      set_pie_error               <= '1';
                      set_pie_endtransfer         <= '1';
@@ -2836,7 +2836,7 @@ begin
                      end if;
                   else -- isochronous ep -- no handshake is returned. Data packet is not treated
                      --SetError(ERROR_PACKET_UNEXPECTED);
-                     --Removed procedure and moved code explicitly in desing to fix lint error
+                     --Removed procedure and moved code explicitly in design to fix lint error
                      errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
                      set_pie_error               <= '1';
                      set_pie_endtransfer         <= '1';
@@ -2856,7 +2856,7 @@ begin
                  -- if rxactive = '0' then -- wait for EOP before starting inter-packet delay timer
                   if iso_out_pending_r = '0' then -- non isochronous ep
                       --SetError(ERROR_SENT_RECEIVED_NAK);
-                     --Removed procedure and moved code explicitly in desing to fix lint error
+                     --Removed procedure and moved code explicitly in design to fix lint error
                      errortype                   <= "1001"; --ERROR_SENT_RECEIVED_NAK
                      set_pie_error               <= '1';
                      set_pie_endtransfer         <= '1';
@@ -2878,7 +2878,7 @@ begin
                      end if;
                   else -- isochronous ep -- no handshake is returned. Data packet is not treated
                      --SetError(ERROR_PACKET_UNEXPECTED);
-                     --Removed procedure and moved code explicitly in desing to fix lint error
+                     --Removed procedure and moved code explicitly in design to fix lint error
                      errortype                   <= "0011"; --ERROR_PACKET_UNEXPECTED
                      set_pie_error               <= '1';
                      set_pie_endtransfer         <= '1';
@@ -2916,7 +2916,7 @@ begin
                         rx_nbytes      <=  std_logic_vector(data_byte_cnt(11 downto 0)-2); -- nr of data bytes = data_byte counter - 2 bytes of CRC16
                      else
                        --SetError(ERROR_DATA_IGNORED_WRONG_DATA01);
-                       --Removed procedure and moved code explicitly in desing to fix lint error
+                       --Removed procedure and moved code explicitly in design to fix lint error
                        errortype                   <= "1111"; --ERROR_DATA_IGNORED_WRONG_DATA01
                        set_pie_error               <= '1';
                        set_pie_endtransfer         <= '1';
@@ -2952,7 +2952,7 @@ begin
 
                else  --  BAD CRC: Data Packet Corrupted , no  hanshake is returned
                   --SetError(ERROR_DATA_CRC);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "0101"; --ERROR_DATA_CRC
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -2972,7 +2972,7 @@ begin
                   data_fifo_fill_rx  <= '1';
                else
                   --SetError(ERROR_OVERRUN);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "1011"; --ERROR_OVERRUN
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -2999,7 +2999,7 @@ begin
                    -- buffer underrun error, PIE will corrupt the CRC
                  packet_handling_state_nxt <= USB_PROT_BAD_IN_TX_CRC16_BYTE1;
                  --SetError(ERROR_TIMEOUT);
-                 --Removed procedure and moved code explicitly in desing to fix lint error
+                 --Removed procedure and moved code explicitly in design to fix lint error
                  errortype                   <= "0110"; --ERROR_TIMEOUT
                  set_pie_error               <= '1';
                  set_pie_endtransfer         <= '1';
@@ -3038,7 +3038,7 @@ begin
                else -- buffer underrun error, PIE will corrupt the CRC
                   packet_handling_state_nxt <= USB_PROT_BAD_IN_TX_CRC16_BYTE1;
                   --SetError(ERROR_TIMEOUT);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "0110"; --ERROR_TIMEOUT
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -3098,7 +3098,7 @@ begin
          when USB_PROT_IN_WF_RX_HANDSHAKE => -- only ACK handshake or No reply (==> detected via timeout) are expected behaviours
             if timer_packet_handling_r = 0 then  -- TIMEOUT : no answer from host means data error
                --SetError(ERROR_TIMEOUT);
-               --Removed procedure and moved code explicitly in desing to fix lint error
+               --Removed procedure and moved code explicitly in design to fix lint error
                errortype                   <= "0110"; --ERROR_TIMEOUT
                set_pie_error               <= '1';
                set_pie_endtransfer         <= '1';
@@ -3122,7 +3122,7 @@ begin
                         set_pie_endtransfer    <= '1';
                      when others => -- unexpected PID
                         --SetError(ERROR_PID_UNKNOWN);
-                        --Removed procedure and moved code explicitly in desing to fix lint error
+                        --Removed procedure and moved code explicitly in design to fix lint error
                         errortype                   <= "0010"; --ERROR_PID_UNKNOWN
                         set_pie_error               <= '1';
                         set_pie_endtransfer         <= '1';
@@ -3137,7 +3137,7 @@ begin
                    end case;
                else -- bad PID, Ignore the remainder packet
                   --SetError(ERROR_PID_ENCODING);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "0001"; --ERROR_PID_ENCODING
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -3189,7 +3189,7 @@ begin
 
                   when others => -- unexpected PID
                       --SetError(ERROR_PID_UNKNOWN);
-                      --Removed procedure and moved code explicitly in desing to fix lint error
+                      --Removed procedure and moved code explicitly in design to fix lint error
                       errortype                   <= "0010"; --ERROR_PID_UNKNOWN
                       set_pie_error               <= '1';
                       set_pie_endtransfer         <= '1';
@@ -3204,7 +3204,7 @@ begin
                   end case;
                else -- bad PID, Ignore the remainder packet
                   --SetError(ERROR_PID_ENCODING);
-                  --Removed procedure and moved code explicitly in desing to fix lint error
+                  --Removed procedure and moved code explicitly in design to fix lint error
                   errortype                   <= "0001"; --ERROR_PID_ENCODING
                   set_pie_error               <= '1';
                   set_pie_endtransfer         <= '1';
@@ -3251,7 +3251,7 @@ begin
                   end if;
                 else  -- CRC5 not valid. Packet is ignore
                    --SetError(ERROR_TOKEN_CRC);
-                   --Removed procedure and moved code explicitly in desing to fix lint error
+                   --Removed procedure and moved code explicitly in design to fix lint error
                    errortype                   <= "0100"; --ERROR_TOKEN_CRC
                    set_pie_error               <= '1';
                    set_pie_endtransfer         <= '1';

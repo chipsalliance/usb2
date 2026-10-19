@@ -378,8 +378,8 @@ component usb_reg_if
           C_SINGLE_BUFFER_SUPPORTED: boolean := TRUE;
           C_DOUBLE_BUFFER_SUPPORTED: boolean := TRUE;
           C_TOGGLE_REG_READABLE    : boolean := TRUE;
-          C_PLL_ENABLE             : boolean := FALSE;
-          C_PLL_DIVIDER            : std_logic_vector(6 downto 0) := "0010100";
+          --C_PLL_ENABLE             : boolean := FALSE;
+          --C_PLL_DIVIDER            : std_logic_vector(6 downto 0) := "0010100";
           C_MINOR_REV              : std_logic_vector(7 downto 0) := X"00";
           C_MAJOR_REV              : std_logic_vector(7 downto 0) := X"00");
   port (
@@ -415,7 +415,7 @@ component usb_reg_if
         usbreg_lpm_nyet          : out std_logic;
         usbreg_ep_skip           : out std_logic_vector(C_NBPHYSEP+1 downto 0);
         usbreg_ep_bufinuse       : out std_logic_vector(C_NBPHYSEP+1 downto 0);
-        usbreg_select_ext_clk    : out std_logic;
+        --usbreg_select_ext_clk    : out std_logic;
         usbreg_epinfo_toggle     : out  std_logic_vector(C_NBPHYSEP+1 downto 0);
         usbreg_port_force_fullspeed : out std_logic;
         dma_clear_toggle         : in  std_logic;
@@ -701,7 +701,7 @@ end component;
 
 component usb_ep0_hub_descr
     generic(
-        C_NWORDS     : integer := 172;
+        C_NWORDS     : integer := 176;
         C_HIGH_SPEED : boolean := TRUE
     );
     port(
@@ -1458,8 +1458,8 @@ usb_reg_if_1 : usb_reg_if
                C_SINGLE_BUFFER_SUPPORTED => C_DEV0_SINGLE_BUFFER_SUPPORTED,
                C_DOUBLE_BUFFER_SUPPORTED => C_DEV0_DOUBLE_BUFFER_SUPPORTED,
                C_TOGGLE_REG_READABLE     => C_DEV0_TOGGLE_REG_READABLE,
-               C_PLL_ENABLE              => C_PLL_ENABLE,
-               C_PLL_DIVIDER             => C_PLL_DIVIDER,
+               --C_PLL_ENABLE              => C_PLL_ENABLE,
+               --C_PLL_DIVIDER             => C_PLL_DIVIDER,
                C_MINOR_REV               => C_MINOR_REV,
                C_MAJOR_REV               => C_MAJOR_REV)
   port map    (
@@ -1491,7 +1491,7 @@ usb_reg_if_1 : usb_reg_if
               usbreg_lpm_nyet            => usbreg_lpm_nyet,
               usbreg_ep_skip             => dev0_usbreg_ep_skip,
               usbreg_ep_bufinuse         => dev0_usbreg_ep_bufinuse,
-              usbreg_select_ext_clk      => open,
+              --usbreg_select_ext_clk      => open,
               usbreg_epinfo_toggle       => dev0_usbreg_epinfo_toggle,
               dma_clear_toggle           => dev0_dma_clear_toggle,
               dma_set_toggle             => dev0_dma_set_toggle,
@@ -1560,8 +1560,8 @@ usb_reg_if_2 : usb_reg_if
     C_SINGLE_BUFFER_SUPPORTED => C_DEV1_SINGLE_BUFFER_SUPPORTED,
     C_DOUBLE_BUFFER_SUPPORTED => C_DEV1_DOUBLE_BUFFER_SUPPORTED,
     C_TOGGLE_REG_READABLE     => C_DEV1_TOGGLE_REG_READABLE,
-    C_PLL_ENABLE              => C_PLL_ENABLE,
-    C_PLL_DIVIDER             => C_PLL_DIVIDER,
+    --C_PLL_ENABLE              => C_PLL_ENABLE,
+    --C_PLL_DIVIDER             => C_PLL_DIVIDER,
     C_MINOR_REV               => C_MINOR_REV,
     C_MAJOR_REV               => C_MAJOR_REV
   )
@@ -1594,7 +1594,7 @@ usb_reg_if_2 : usb_reg_if
     usbreg_lpm_nyet            => open,
     usbreg_ep_skip             => dev1_usbreg_ep_skip,
     usbreg_ep_bufinuse         => dev1_usbreg_ep_bufinuse,
-    usbreg_select_ext_clk      => open,
+    --usbreg_select_ext_clk      => open,
     usbreg_epinfo_toggle       => dev1_usbreg_epinfo_toggle,
     dma_clear_toggle           => dev1_dma_clear_toggle,
     dma_set_toggle             => dev1_dma_set_toggle,

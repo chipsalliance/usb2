@@ -32,8 +32,8 @@ generic(C_ULPI_SUPPORT           : boolean := FALSE;
         C_SINGLE_BUFFER_SUPPORTED: boolean := TRUE;
         C_DOUBLE_BUFFER_SUPPORTED: boolean := TRUE;
         C_TOGGLE_REG_READABLE    : boolean := TRUE;
-        C_PLL_ENABLE             : boolean := FALSE;
-        C_PLL_DIVIDER            : std_logic_vector(6 downto 0) := "0010100";
+        --C_PLL_ENABLE             : boolean := FALSE;
+        --C_PLL_DIVIDER            : std_logic_vector(6 downto 0) := "0010100";
         C_MINOR_REV              : std_logic_vector(7 downto 0) := X"00";
         C_MAJOR_REV              : std_logic_vector(7 downto 0) := X"00"
         );
@@ -70,7 +70,7 @@ port (
       usbreg_lpm_nyet          : out std_logic;
       usbreg_ep_skip           : out std_logic_vector(C_NBPHYSEP+1 downto 0);
       usbreg_ep_bufinuse       : out std_logic_vector(C_NBPHYSEP+1 downto 0);
-      usbreg_select_ext_clk    : out std_logic;
+      --usbreg_select_ext_clk    : out std_logic;
       usbreg_epinfo_toggle     : out std_logic_vector(C_NBPHYSEP+1 downto 0);
       usbreg_port_force_fullspeed : out std_logic;
       dma_clear_toggle         : in  std_logic;
@@ -154,7 +154,7 @@ signal sync_lpm_suspend_z        : std_logic;
 signal irq_int                   : std_logic;
 signal fiq_int                   : std_logic;
 signal sync_sieint_error_z       : std_logic;
-signal reg_ext_clk_enable        : std_logic;
+--signal reg_ext_clk_enable        : std_logic;
 signal bufinuse                  : std_logic_vector(C_NBPHYSEP-1 downto 0);
 signal reg_phy_addr              : std_logic_vector(7 downto 0);
 signal reg_phy_wdata             : std_logic_vector(7 downto 0);
@@ -265,7 +265,7 @@ usbreg_epinfo_toggle <= reg_ep_toggle_value;
    end process proc_toggle;
 
 
-usbreg_select_ext_clk <= reg_ext_clk_enable when C_PLL_ENABLE else '1';
+--usbreg_select_ext_clk <= reg_ext_clk_enable when C_PLL_ENABLE else '1';
 
 reg_phy_addr(3 downto 0) <= reg_phy_addr_lower_nib;
 reg_phy_addr(7 downto 4) <= reg_phy_addr_higher_nib when C_ULPI_SUPPORT else (others => '0');
@@ -324,7 +324,7 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
                              reg_frame_int_route,
                              reg_dev_int_route,
                              reg_ep_toggle_value,
-                             reg_ext_clk_enable,
+                             --reg_ext_clk_enable,
                              reg_phy_addr,
                              reg_phy_wdata,
                              reg_phy_rdata,
@@ -465,9 +465,9 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
          if C_TOGGLE_REG_READABLE then
            reg_rdata( 7)         <= '1';
          end if;
-         if C_PLL_ENABLE then
-           reg_rdata( 8)         <= '1';
-         end if;
+         --if C_PLL_ENABLE then
+         --  reg_rdata( 8)         <= '1';
+         --end if;
          if C_UTMI_SUPPORT then
            reg_rdata( 9)         <= '1';
          end if;
@@ -482,11 +482,12 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
          end if;
 
        when "1110" =>
-         if C_PLL_ENABLE then
-           reg_rdata(0)          <= reg_ext_clk_enable;
-         else
-           reg_rdata(0)          <= '1';
-         end if;
+         --if C_PLL_ENABLE then
+         --  reg_rdata(0)          <= reg_ext_clk_enable;
+         --else
+         --  reg_rdata(0)          <= '1';
+         --end if;
+         null;
 
        when others => --"1111" =>
          if C_UTMI_SUPPORT and C_ULPI_SUPPORT then
@@ -582,9 +583,9 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
        usbreg_remotewakeup       <= '0';
        usbreg_lpmremotewakeup    <= '0';
 
-       if C_PLL_ENABLE then
-         reg_ext_clk_enable      <= '0';
-       end if;
+       --if C_PLL_ENABLE then
+       --  reg_ext_clk_enable      <= '0';
+       --end if;
        if C_ULPI_SUPPORT then
          reg_phy_wdata           <= (others => '0');
          reg_phy_addr_higher_nib <= (others => '0');
@@ -721,9 +722,10 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
              reg_dev_int_route   <= reg_wdata(31);
 
            when "1110" =>
-             if C_PLL_ENABLE then
-               reg_ext_clk_enable  <= reg_wdata(0);
-             end if;
+             --if C_PLL_ENABLE then
+             --  reg_ext_clk_enable  <= reg_wdata(0);
+             --end if;
+             null;
 
            when "1111" =>
              if C_ULPI_SUPPORT then
