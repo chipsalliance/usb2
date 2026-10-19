@@ -44,6 +44,7 @@ constant C_STD_REQ_CLEAR_FEATURE_EP  : std_logic_vector(6 downto 0) := "0001011"
 constant C_CLASS_REQ_CLEAR_FEATURE   : std_logic_vector(6 downto 0) := "1000000";
 constant C_CLASS_REQ_SET_FEATURE     : std_logic_vector(6 downto 0) := "1000001";
 constant C_CLASS_REQ_GET_STATUS      : std_logic_vector(6 downto 0) := "1000010";
+constant C_CLASS_REQ_SET_AND_TEST    : std_logic_vector(6 downto 0) := "1000011";
 
 constant EP_OUT : std_logic := '0';
 constant EP_IN  : std_logic := '1';

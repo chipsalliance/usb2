@@ -64,6 +64,8 @@ constant C_HUB_MAX_NB_PORTS    : integer := 255;
 signal hub_port_enable_int     : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
 signal hub_port_suspend        : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
 signal hub_port_suspend_change : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+signal hub_port_l1             : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+signal hub_port_l1_change      : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
 signal hub_port_reset_int      : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
 signal hub_port_reset_change   : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
 signal hub_port_connect_change : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
@@ -83,9 +85,44 @@ begin
       if ep0_setupdone = '1' then
         case ep0_request is
           when C_CLASS_REQ_CLEAR_FEATURE =>
+            if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
+              ep0_class_stall <= '1';
+            elsif to_integer(unsigned(ep0_windex)) /= 0 then  --ClearPortFeature
+              case to_integer(unsigned(ep0_wvalue)) is
+                when 0  | --Port_Connect
+                     1  | --Port_Enable
+                     2  | --Port_Suspend
+                     3  | --Port_Overcurrent
+                     4  | --Port_Reset
+                     8  | --Port_Power
+                     9  | --Port_Low_speed
+                     10 | --Port_L1
+                     16 | --C_Port_Connection
+                     17 | --C_Port_Enable
+                     18 | --C_Port_Suspend
+                     19 | --C_Port_Overcurrent
+                     20 | --C_Port_Reset
+                     21 | --Port_Test
+                     22 | --Port_Indicator
+                     23   --C_Port_L1
+                      =>
+                  ep0_class_stall <= '0';
+                when others =>
+                  ep0_class_stall <= '1'; --Set STALL as request is not supported
+              end case;
+            else --ClearHubFeature
+              null;
+            end if;
+    
+          when C_CLASS_REQ_GET_STATUS =>
             if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
               ep0_class_stall <= '1';
-            elsif to_integer(unsigned(ep0_windex)) /= 0 then  --ClearHubFeature
+             end if;
+    
+          when C_CLASS_REQ_SET_FEATURE =>
+            if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
+              ep0_class_stall <= '1';
+            elsif to_integer(unsigned(ep0_windex)) /= 0 then --SetPortFeature
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
                      1  | --Port_Enable
@@ -106,37 +143,17 @@ begin
                 when others =>
                   ep0_class_stall <= '1'; --Set STALL as request is not supported
               end case;
-            end if;
-    
-          when C_CLASS_REQ_GET_STATUS =>
-            if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
+            else --SetHubFeature
+              null;
+          end if;
+          
+          when C_CLASS_REQ_SET_AND_TEST =>
+            if (to_integer(unsigned(ep0_windex(3 downto 0))) = 0)              or
+               (to_integer(unsigned(ep0_windex(3 downto 0))) > C_HUB_NB_PORTS) or --Port number is located in bits 3..0 of wIndex
+               (to_integer(unsigned(ep0_wvalue)) /= 10) then --Feature selector is not equal to Port_L1
               ep0_class_stall <= '1';
-             end if;
-    
-          when C_CLASS_REQ_SET_FEATURE =>
-            if to_integer(unsigned(ep0_windex(15 downto 0))) > C_HUB_NB_PORTS then
-              ep0_class_stall <= '1';
-              case to_integer(unsigned(ep0_wvalue)) is
-                when 0  | --Port_Connect
-                     1  | --Port_Enable
-                     2  | --Port_Suspend
-                     3  | --Port_Overcurrent
-                     4  | --Port_Reset
-                     8  | --Port_Power
-                     9  | --Port_Low_speed
-                     16 | --C_Port_Connection
-                     17 | --C_Port_Enable
-                     18 | --C_Port_Suspend
-                     19 | --C_Port_Overcurrent
-                     20 | --C_Port_Reset
-                     21 | --Port_Test
-                     22   --Port_Indicator
-                      =>
-                  ep0_class_stall <= '0';
-                when others =>
-                  null; --Set STALL as request is not supported
-              end case;
             end if;
+          
           when others =>
             null;
 
@@ -152,6 +169,8 @@ begin
       hub_port_enable_int     <= (others => '0');
       hub_port_suspend        <= (others => '0');
       hub_port_suspend_change <= (others => '0');
+      hub_port_l1             <= (others => '0');
+      hub_port_l1_change      <= (others => '0');
       hub_port_reset_int      <= (others => '0');
       hub_port_reset_change   <= (others => '0');
       hub_port_connect_change <= (others => '0');
@@ -172,9 +191,9 @@ begin
       if ep0_setupdone = '1' then
         case ep0_request is
           when C_CLASS_REQ_CLEAR_FEATURE =>
-            if to_integer(unsigned(ep0_windex)) = 0 then  --ClearHubFeature
-              null; -- TODO : complete transfer - anything to set ???
-            elsif to_integer(unsigned(ep0_windex(15 downto 0))) <= C_HUB_NB_PORTS then --ClearPortFeature
+            if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
+              null; -- A stall will be returned upon this request
+            elsif to_integer(unsigned(ep0_windex)) /= 0 then  --ClearPortFeature
               var_port := to_integer(unsigned(ep0_windex)) - 1;
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
@@ -193,12 +212,17 @@ begin
                 when 2 => --Port_Suspend
                   hub_port_suspend(var_port)        <= '0';
                   hub_port_suspend_change(var_port) <= '1';
+                when 10 => --Port_L1
+                  hub_port_l1(var_port)             <= '0';
+                  hub_port_l1_change(var_port)      <= '1';                  
                 when 16 => --C_Port_Connection
                   hub_port_connect_change(var_port) <= '0';
                 when 18 => --C_Port_Suspend
                   hub_port_suspend_change(var_port) <= '0';
                 when 20 => --C_Port_Reset
                   hub_port_reset_change(var_port)   <= '0';
+                when 23 => --C_Port_L1
+                  hub_port_l1_change(var_port)      <= '0';
                 when others =>
                   null;
               end case;
@@ -210,9 +234,9 @@ begin
             end if;
     
           when C_CLASS_REQ_SET_FEATURE =>
-            if to_integer(unsigned(ep0_windex)) = 0 then  --SetHubFeature
-              null; -- TODO : complete transfer - anything to set ???
-            elsif to_integer(unsigned(ep0_windex(15 downto 0))) <= C_HUB_NB_PORTS then --SetPortFeature
+            if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
+              null; -- A stall will be returned upon this request
+            elsif to_integer(unsigned(ep0_windex)) /= 0 then --SetPortFeature
               var_port := to_integer(unsigned(ep0_windex)) - 1;
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
@@ -243,6 +267,17 @@ begin
               end case;
             end if;
     
+          when C_CLASS_REQ_SET_AND_TEST =>
+            if to_integer(unsigned(ep0_windex(3 downto 0))) = 0 then
+              null; -- A stall will be returned upon this request
+            elsif to_integer(unsigned(ep0_windex(15 downto 0))) <= C_HUB_NB_PORTS then --SetandTestPortFeature
+              var_port := to_integer(unsigned(ep0_windex(3 downto 0))) - 1;
+              if to_integer(unsigned(ep0_wvalue)) = 10 then -- Feature selector = PORT_L1
+                hub_port_l1(var_port)        <= '1';
+                hub_port_l1_change(var_port) <= '1';  
+              end if;
+            end if;
+          
           when others =>
            null;
 
@@ -251,8 +286,10 @@ begin
       end if;
       if sync_busreset = '1' then
         hub_port_enable_int     <= (others => '0');
-        hub_port_suspend	<= (others => '0');
+        hub_port_suspend	    <= (others => '0');
         hub_port_suspend_change <= (others => '0');
+        hub_port_l1             <= (others => '0');
+        hub_port_l1_change      <= (others => '0');
         hub_port_reset_int      <= (others => '0');
         hub_port_reset_change   <= (others => '0');
         hub_port_connect_change <= (others => '0');
@@ -273,7 +310,8 @@ hub_status(0)(0)                      <= '0'; --Hub and downstream ports run alw
 
 GEN_HUB_PORT_STATUS : for i in 0 to C_HUB_NB_PORTS-1 generate
 begin
-  hub_status(i+1)(C_DATAWIDTH-1 downto 21) <= (others => '0');
+  hub_status(i+1)(C_DATAWIDTH-1 downto 22) <= (others => '0');
+  hub_status(i+1)(21)           <= hub_port_l1_change(i);
   hub_status(i+1)(20)           <= hub_port_reset_change(i);
   hub_status(i+1)(19)           <= '0'; -- no overcurrent detection
   hub_status(i+1)(18)           <= hub_port_suspend_change(i);
@@ -282,7 +320,8 @@ begin
   hub_status(i+1)(15 downto  11) <= (others => '0');
   hub_status(i+1)(10 downto  9) <= "10" when (pie_speed = HIGH_SPEED) else "00";  -- port_high_speed = 1 &  port_low_speed = 0
   hub_status(i+1)( 8)           <= '1'; --hub_port_power; Can this be fixed to one ?
-  hub_status(i+1)( 7 downto  5) <= (others => '0');
+  hub_status(i+1)( 7 downto  6) <= (others => '0');
+  hub_status(i+1)( 5)           <= hub_port_l1(i);
   hub_status(i+1)( 4)           <= '0'; -- hub_port_reset_int(i); This is only high for one clock. The return value can be forced to zero.
   hub_status(i+1)( 3)           <= '0'; -- no overcurrent detection
   hub_status(i+1)( 2)           <= hub_port_suspend(i);
@@ -301,7 +340,8 @@ ep0_class_rdata <= hub_status(data_index);
 
 GEN_HUB_STATUS_EP1 : for i in 0 to C_HUB_NB_PORTS-1 generate
 begin
-  hub_port_status_change(i) <= '1' when hub_port_reset_change(i)   = '1' or
+  hub_port_status_change(i) <= '1' when hub_port_l1_change(i)      = '1' or
+                                        hub_port_reset_change(i)   = '1' or
                                         hub_port_suspend_change(i) = '1' or
                                         hub_port_connect_change(i) = '1'
                                    else '0';
