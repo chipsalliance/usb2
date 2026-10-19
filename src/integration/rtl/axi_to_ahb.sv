@@ -109,10 +109,10 @@ module axi_to_ahb
     localparam int unsigned REQ_CTX_W = $bits(req_ctx_t);
 
     // Data-phase context (ctx): one beat's direction, final-beat flag, ID, and held write data.
-    // Captured in dp_ctx_q on ap_accept; local_beat denotes a denied beat with no AHB access.
+    // Captured in dp_ctx_q on ap_accept; reject means permission denial, not an AHB response error.
     typedef struct packed {
         logic          write;
-        logic          local_beat;
+        logic          reject;
         logic          last;
         logic [IW-1:0] id;
         logic [DW-1:0] wdata;
@@ -200,10 +200,12 @@ module axi_to_ahb
                 aw_reject = 1'b0;
             end
             1'b1: begin
-                if (|ar_user_match)
+                if (|ar_user_match) begin
                     ar_reject = 1'b0;
-                if (|aw_user_match)
+                end
+                if (|aw_user_match) begin
                     aw_reject = 1'b0;
+                end
             end
             default: begin end
         endcase
@@ -350,8 +352,11 @@ module axi_to_ahb
         ap_aw_grant = 1'b0;
         if (ap_can_grant) begin
             if (ar_fifo_rvalid && aw_fifo_rvalid && ap_wdata_available) begin
-                if (ap_last_grant_write_q) ap_ar_grant = 1'b1;
-                else                       ap_aw_grant = 1'b1;
+                if (ap_last_grant_write_q) begin
+                    ap_ar_grant = 1'b1;
+                end else begin
+                    ap_aw_grant = 1'b1;
+                end
             end else if (ar_fifo_rvalid) begin
                 ap_ar_grant = 1'b1;
             end else if (aw_fifo_rvalid && ap_wdata_available) begin
@@ -434,14 +439,14 @@ module axi_to_ahb
 
     // The valid beat finishes its data phase on this edge: HREADYOUT ends an AHB transfer;
     // a denied/local beat finishes without AHB. This does not mean AXI accepted the response.
-    assign dp_complete = dp_valid_q && (dp_ctx_q.local_beat || ahb_hreadyout);
+    assign dp_complete = dp_valid_q && (dp_ctx_q.reject || ahb_hreadyout);
     // DP can be replaced because it is empty or its current beat is completing.
     // This is readiness, not a transfer; ap_accept determines whether a new beat fills the slot.
     assign dp_advance  = !dp_valid_q || dp_complete;
 
     always_comb begin
         dp_ctx_d.write      = ap_write_q;
-        dp_ctx_d.local_beat = ap_ctx_q.reject;
+        dp_ctx_d.reject     = ap_ctx_q.reject;
         dp_ctx_d.last       = ap_last;
         dp_ctx_d.id         = ap_ctx_q.id;
         dp_ctx_d.wdata      = (ap_write_q && !ap_ctx_q.reject) ? w_beat_data : '0;
@@ -451,14 +456,15 @@ module axi_to_ahb
     assign ahb_hwdata = dp_ctx_q.wdata;
 
     // Denied beats synthesize SLVERR; other beats translate the AHB data-phase response.
-    assign dp_resp = dp_ctx_q.local_beat ? AXI_RESP_SLVERR : ahb_resp_to_axi(ahb_hresp);
+    assign dp_resp = dp_ctx_q.reject ? AXI_RESP_SLVERR : ahb_resp_to_axi(ahb_hresp);
 
     // The accumulator follows write data phases, not sequencer grants.
     // On the final beat, B captures the accumulated/final status while this register clears.
     always_comb begin
         dp_resp_accum_d = dp_resp_accum_q;
-        if (dp_complete && dp_ctx_q.write)
+        if (dp_complete && dp_ctx_q.write) begin
             dp_resp_accum_d = dp_ctx_q.last ? 2'b00 : (dp_resp_accum_q | dp_resp);
+        end
     end
 
     always_ff @(posedge clk or negedge rst_n) begin
@@ -468,11 +474,13 @@ module axi_to_ahb
             dp_resp_accum_q <= '0;
         end else begin
             // An available slot takes a new beat or becomes empty; a stalled beat remains valid.
-            if (dp_advance)
+            if (dp_advance) begin
                 dp_valid_q <= ap_accept;
+            end
             // Capture metadata and W data together at the address-phase handoff.
-            if (ap_accept)
+            if (ap_accept) begin
                 dp_ctx_q <= dp_ctx_d;
+            end
             dp_resp_accum_q <= dp_resp_accum_d;
         end
     end
@@ -483,7 +491,7 @@ module axi_to_ahb
     // R response FIFO.
     // Each completed read beat produces one R response, independently of AXI RREADY.
     assign r_fifo_wvalid = dp_complete && !dp_ctx_q.write;
-    assign r_fifo_wdata  = {dp_ctx_q.last, dp_ctx_q.id, dp_resp, (dp_ctx_q.local_beat ? {DW{1'b0}} : ahb_hrdata)};
+    assign r_fifo_wdata  = {dp_ctx_q.last, dp_ctx_q.id, dp_resp, (dp_ctx_q.reject ? {DW{1'b0}} : ahb_hrdata)};
 
     caliptra_prim_fifo_sync #(
         .Width             (R_FIFO_W),
@@ -611,7 +619,7 @@ module axi_to_ahb
              && (ahb_hsize == 3'b010) && (ahb_hburst == 3'b000)), clk, !rst_n)
     // A denied data phase drives zero HWDATA.
     `CALIPTRA_ASSERT(DeniedBeatDrivesNoWriteData_A,
-        (dp_valid_q && dp_ctx_q.local_beat) |-> (ahb_hwdata == '0), clk, !rst_n)
+        (dp_valid_q && dp_ctx_q.reject) |-> (ahb_hwdata == '0), clk, !rst_n)
 
     // Each consumed W beat's WLAST must match the AWLEN-derived final-beat flag.
     `CALIPTRA_ASSERT(WriteLastPlacement_A,
@@ -668,20 +676,20 @@ module axi_to_ahb
     // Observe credit-blocked read issue followed by a later AHB read completion.
     `CALIPTRA_COVER(ReadIssueDeferredThenCompleted_C,
         (ap_ahb && !ap_write_q && !ap_credit)
-        ##[1:$] (dp_valid_q && !dp_ctx_q.write && !dp_ctx_q.local_beat && ahb_hreadyout), clk, !rst_n)
+        ##[1:$] (dp_valid_q && !dp_ctx_q.write && !dp_ctx_q.reject && ahb_hreadyout), clk, !rst_n)
     // Observe credit-blocked final-write issue followed by a later final AHB write completion.
     `CALIPTRA_COVER(WriteFinalIssueDeferredThenCompleted_C,
         (ap_ahb && ap_write_q && ap_last && !ap_credit)
-        ##[1:$] (dp_valid_q && dp_ctx_q.write && dp_ctx_q.last && !dp_ctx_q.local_beat && ahb_hreadyout), clk, !rst_n)
+        ##[1:$] (dp_valid_q && dp_ctx_q.write && dp_ctx_q.last && !dp_ctx_q.reject && ahb_hreadyout), clk, !rst_n)
 
     // Observe AHB address acceptance and preceding AHB data completion together.
     `CALIPTRA_COVER(AddressOverlapsData_C,
-        ap_accept && ap_ahb && dp_complete && !dp_ctx_q.local_beat, clk, !rst_n)
+        ap_accept && ap_ahb && dp_complete && !dp_ctx_q.reject, clk, !rst_n)
     // Observe a grant on final-beat issue; this does not require next-cycle AHB acceptance.
     `CALIPTRA_COVER(BurstChainedWithoutBubble_C,
         ap_accept && ap_last && (ap_ar_grant || ap_aw_grant), clk, !rst_n)
     // Observe a denied beat presented while an AHB data phase remains active.
     `CALIPTRA_COVER(DeniedBeatFollowsAhbBeat_C,
-        ap_valid && ap_ctx_q.reject && dp_valid_q && !dp_ctx_q.local_beat, clk, !rst_n)
+        ap_valid && ap_ctx_q.reject && dp_valid_q && !dp_ctx_q.reject, clk, !rst_n)
 
 endmodule
