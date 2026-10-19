@@ -617,9 +617,7 @@ module ip_xxx_3516_hs_mem_wrapper
        .AW       (AXI_DMA_ADDR_WIDTH),
        .DW       (AXI_DATA_WIDTH),
        .IW       (AXI_ID_WIDTH),
-       .UW       (AXI_USER_WIDTH),
-       .OSTD_R   (2),
-       .OSTD_W   (2)
+       .UW       (AXI_USER_WIDTH)
    ) u_dma_axi2ahb (
        .clk           (dma_axi_aclk),
        .rst_n         (dma_axi_aresetn),
