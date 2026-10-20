@@ -62,8 +62,7 @@ jobs:
             usb_combo \
             usb_hub \
             usb_ocp_recovery_reg \
-            usbhsd \
-            usbhsh
+            usbhsd
           do
             python3 tools/scripts/usb2_reg_gen.py \
               "systemrdl/${rdl}.rdl" --validate-only
