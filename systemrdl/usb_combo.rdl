@@ -31,8 +31,8 @@ addrmap usb_combo #(
     longint unsigned TOGGLE_REG_READABLE = 1,
     longint unsigned DEV0_MINOR_REV = 0,
     longint unsigned DEV0_MAJOR_REV = 2,
-    // Must match C_HUB_FIFO_SIZE (172..4096 words).
-    longint unsigned HUB_FIFO_WORDS = 172
+    // Must match C_HUB_FIFO_SIZE (176..4096 words).
+    longint unsigned HUB_FIFO_WORDS = 176
 ) {
     name = "USB Combo AXI Port";
     desc = "USB-local map for the Combo AXI subordinate port. DEV0 control/status begins at 0x0000, the 2 KiB Recovery block is at 0x0800, and the rounded HUB aperture begins at 0x1000. Offsets outside these target windows are unmapped and return a bus error.";
