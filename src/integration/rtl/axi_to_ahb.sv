@@ -599,6 +599,9 @@ module axi_to_ahb
             |-> !$isunknown(priv_axi_users_i[user_idx]), clk, !rst_n)
     end
 
+    // Only one grant allowed at a time.
+    `CALIPTRA_ASSERT(ReadWriteGrantsExclusive_A, !(ap_ar_grant && ap_aw_grant), clk, !rst_n)
+
     // The granted FIFO head must have a known reject decision.
     `CALIPTRA_ASSERT(RejectKnownAtGrant_A,
         (ap_ar_grant || ap_aw_grant)
