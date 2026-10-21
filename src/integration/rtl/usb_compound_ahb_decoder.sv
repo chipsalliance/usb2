@@ -17,7 +17,7 @@
 module usb_compound_ahb_decoder
   import usb_compound_pkg::*;
 #(
-  parameter int unsigned C_HUB_FIFO_SIZE = 172,
+  parameter int unsigned C_HUB_FIFO_SIZE = 196,
   localparam int unsigned HUB_WORD_ADDR_WIDTH = $clog2(C_HUB_FIFO_SIZE),
   localparam logic [32:0] HUB_APERTURE_BYTES =
       33'd1 << ($clog2(C_HUB_FIFO_SIZE) + 2),
