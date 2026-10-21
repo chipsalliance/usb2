@@ -492,9 +492,12 @@ begin
           end if;
         end if;
       end if;
-      if (reg_write = '1')                                                  and
-         (hub_write_lock = '0' or to_integer(unsigned(reg_waddr))=C_HUB_CS) and --Hub Control and Status register is always writeable
-         (to_integer(unsigned(reg_waddr)) < C_NWORDS)                       then
+      if (reg_write = '1')                                and
+         (hub_write_lock = '0'                        or 
+          to_integer(unsigned(reg_waddr)) = C_HUB_CS  or      --Hub Control and Status register is always writeable
+          to_integer(unsigned(reg_waddr)) = C_HUB_LPM or      --Hub LPM register is always writeable
+          to_integer(unsigned(reg_waddr)) = C_HUB_PHY   ) and --Hub PHY register is always writeable
+         (to_integer(unsigned(reg_waddr)) < C_NWORDS)     then
         ep0_mem(to_integer(unsigned(reg_waddr))) <= reg_wdata;
       end if;
       if USB_EnableHub = '1' then --If the input signal USB_EnableHub is set to 1b, it overrules the hub register bits.
