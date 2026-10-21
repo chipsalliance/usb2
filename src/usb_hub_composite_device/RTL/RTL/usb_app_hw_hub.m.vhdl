@@ -293,8 +293,12 @@ begin
               var_port := to_integer(unsigned(ep0_windex(3 downto 0))) - 1;
               if to_integer(unsigned(ep0_wvalue)) = 10 and   -- Feature selector = PORT_L1
                  hub_port_enable_int(var_port)    = '1' then -- Downstream port is enabled
-                hub_port_l1_int(var_port)        <= hub_lpm_sup(var_port) and not(hub_lpm_data_pending(var_port));
-                hub_port_l1_change(var_port)     <= hub_lpm_sup(var_port) and not(hub_lpm_data_pending(var_port));  
+                if hub_lpm_sup(var_port) = '1' and
+                   hub_lpm_data_pending(var_port) = '0' and
+                   ep0_windex(7 downto 4) >= hub_port_lpm_hird_sw(var_port*4+3 downto var_port*4) then
+                  hub_port_l1_int(var_port)    <= '1';
+                  hub_port_l1_change(var_port) <= '1';
+                end if;
                 hub_port_lpm_rw_enable(var_port) <= ep0_windex(15);
                 hub_port_lpm_hird_hw_int(var_port*4+3 downto var_port*4) <= ep0_windex(7 downto 4);
               end if;
