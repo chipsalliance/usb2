@@ -524,7 +524,7 @@ begin
   hub_force_fs     <= ep0_mem(C_HUB_CS)(21);
   hub_write_lock   <= ep0_mem(C_HUB_CS)(0) and ep0_mem(C_HUB_CS)(16);
   
-  hub_lpm_hird_sw  <= ep0_mem(C_HUB_CS)(7 downto 4);
+  hub_lpm_hird_sw  <= ep0_mem(C_HUB_LPM)(7 downto 4);
   
   hub_phy_addr     <= ep0_mem(C_HUB_PHY)( 7 downto 0); -- : out std_logic_vector(7 downto 0);
   hub_phy_wdata    <= ep0_mem(C_HUB_PHY)(15 downto 8); -- : out std_logic_vector(7 downto 0);
