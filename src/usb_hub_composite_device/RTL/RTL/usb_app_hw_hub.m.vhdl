@@ -289,7 +289,7 @@ begin
             if to_integer(unsigned(ep0_windex(3 downto 0))) = 0 then
               null; -- A stall will be returned upon this request
             elsif to_integer(unsigned(ep0_windex(3 downto 0))) <= C_HUB_NB_PORTS then --SetandTestPortFeature
-              data_index <= to_integer(unsigned(ep0_windex));
+              data_index <= to_integer(unsigned(ep0_windex(3 downto 0)));
               var_port := to_integer(unsigned(ep0_windex(3 downto 0))) - 1;
               if to_integer(unsigned(ep0_wvalue)) = 10 and   -- Feature selector = PORT_L1
                  hub_port_enable_int(var_port)    = '1' then -- Downstream port is enabled
