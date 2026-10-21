@@ -23,7 +23,7 @@ USE work.usb_general_subcmp_pkg.all;
 package ip_xxx_3511_hs_mem_compound_cmp_pkg is
 component ip_xxx_3511_hs_mem_compound
     generic(
-        C_HUB_FIFO_SIZE                : integer                       := 176;
+        C_HUB_FIFO_SIZE                : integer                       := 196;
         C_DEV0_RAM_ADDRWIDTH           : integer                       := 15;
         C_DEV1_RAM_ADDRWIDTH           : integer                       := 15;
         C_DEV0_NBPHYSEP                : integer                       := 14;
@@ -141,11 +141,6 @@ component ip_xxx_3511_hs_mem_compound
         rec_fifo_payload_available : in  std_logic;
         rec_fifo_reservation_active : out std_logic;
         USB_VBus                : in  std_logic;
-        vbuscomp_on             : out std_logic;
-        chrg_vbus               : out std_logic;
-        dischrg_vbus            : out std_logic;
-        avalid                  : in  std_logic;
-        sessend                 : in  std_logic;
         utmi_clk                : in  std_logic;
         utmi_rxdata             : in  std_logic_vector(7 downto 0);
         utmi_rxvalid            : in  std_logic;

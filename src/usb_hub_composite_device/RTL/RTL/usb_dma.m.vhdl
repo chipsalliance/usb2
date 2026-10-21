@@ -85,9 +85,7 @@ port (
       dma_set_int:                out std_logic;
       dma_physepnr:               out integer range 0 to C_NBPHYSEP+1;
       dma_clear_skip:             out std_logic;
-      dma_skip_ep:                out integer range 0 to C_NBPHYSEP+1;
-      usb_dma_fpga:               out std_logic_vector(63 downto 0)
-
+      dma_skip_ep:                out integer range 0 to C_NBPHYSEP+1
      );
 end usb_dma; 
       
@@ -1217,30 +1215,6 @@ begin
   dma_sent_NAK      <= sync_sieint_sentNAK;
   dma_physepnr      <= endpoint_nr_dir;
   dma_skip_ep       <= skip_ep;
-
-  usb_dma_fpga(3 downto 0) <= "0000" when dma_state = IDLE else
-                              "0001" when dma_state = READ_EPINFO_SKIP else
-                              "0010" when dma_state = READ_EPINFO else
-                              "0011" when dma_state = CHECK_EPINFO else
-                              "0100" when dma_state = FETCH_INEP_DATA else
-                              "0101" when dma_state = WAIT_ON_OUTEP_DATA else
-                              "0110" when dma_state = WAIT_ON_GNT_FOR_SKIP_UPDATE else
-                              "0111" when dma_state = WAIT_ON_GNT_FOR_UPDATE else
-                              "1000";-- when dma_state = WAIT_ON_ENDTRANSFER_NO_UPDATE else
-
-  usb_dma_fpga(4) <= epinfo_req;
-  usb_dma_fpga(5) <= epinfo_valid;
-  usb_dma_fpga(6) <= epinfo_active;
-  usb_dma_fpga(7) <= epinfo_disabled;
-  usb_dma_fpga(8) <= epinfo_stall;
-  usb_dma_fpga(9) <= epinfo_req;
-  usb_dma_fpga(19 downto 10) <= epinfo_nbytes(9 downto 0);
-  usb_dma_fpga(20) <= setup_not_cleared;
-  usb_dma_fpga(24 downto 21) <= sync_sieint_epinfo_epnr;
-  usb_dma_fpga(25) <= epinfo_addr(2);
-  usb_dma_fpga(26) <= dma_rdata(31);
-  usb_dma_fpga(27) <= dma_rdata(63);
-  usb_dma_fpga(63 downto 28) <= (others => '0');
 
 end RTL;
 

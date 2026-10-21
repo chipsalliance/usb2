@@ -27,8 +27,7 @@ generic(
         RAM_ADDR_WIDTH : integer := 15 --256 KBytes max = 2**16 (if RAM_DATAWIDTH = 32 bits)
                                        --               = 2**15 (if RAM_DATAWIDTH = 64 bits)
        );
-port (ahb_dma_slave_fpga : out std_logic_vector(63 downto 0); 
-      --system input
+port (--system input
       ads_hclk          : in  std_logic; 
       ads_hresetn       : in  std_logic; 
       --"dma" internal ip_3511 interface
@@ -343,8 +342,5 @@ begin
      end if;
    end if;
 end process proc_read_data_available;
-
-
-ahb_dma_slave_fpga <= (others => '0');
 
 end RTL;

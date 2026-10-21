@@ -52,19 +52,31 @@ port (
       -- DOWNSTREAM PORTS
       hub_port_connect       : in  std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
       hub_port_enable        : out std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
-      hub_port_reset         : out std_logic_vector(C_HUB_NB_PORTS-1 downto 0)
-
+      hub_port_suspend       : out std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+      hub_port_l1            : out std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+      hub_port_reset         : out std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+      hub_port_remotewakeup    : in  std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+      hub_port_lpmremotewakeup : in  std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+      hub_lpm_sup            : in  std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+      hub_lpm_data_pending   : in  std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+      hub_port_lpm_rw_enable : out std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+      hub_port_lpm_hird_sw   : in  std_logic_vector(C_HUB_NB_PORTS*4-1 downto 0);
+      hub_port_lpm_hird_hw   : out std_logic_vector(C_HUB_NB_PORTS*4-1 downto 0)
      );
 end usb_app_hw_hub;
 
 architecture RTL of usb_app_hw_hub is
 
 constant C_HUB_MAX_NB_PORTS    : integer := 255;
+constant C_LPM_SUCCESS         : std_logic_vector(7 downto 0) := X"00";
+constant C_LPM_NYET            : std_logic_vector(7 downto 0) := X"10"; --Status is NYET when datapending bit is set.
+constant C_LPM_TIMEOUT         : std_logic_vector(7 downto 0) := X"11"; --Note : this is not used with embedded ports.
+constant C_LPM_STALL           : std_logic_vector(7 downto 0) := X"30"; --Return a STALL if LPM_SUP for this port is not set.
 
 signal hub_port_enable_int     : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
-signal hub_port_suspend        : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+signal hub_port_suspend_int    : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
 signal hub_port_suspend_change : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
-signal hub_port_l1             : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
+signal hub_port_l1_int         : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
 signal hub_port_l1_change      : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
 signal hub_port_reset_int      : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
 signal hub_port_reset_change   : std_logic_vector(C_HUB_NB_PORTS-1 downto 0);
@@ -76,6 +88,8 @@ signal hub_epin_rdata_buffer   : std_logic_vector(C_HUB_MAX_NB_PORTS downto 0);
 signal data_index              : integer range 0 to C_HUB_NB_PORTS;
 type t_hub_status is array (0 to C_HUB_NB_PORTS) of std_logic_vector(C_DATAWIDTH-1 downto 0);
 signal hub_status              : t_hub_status;
+signal hub_l1_status           : t_hub_status;
+signal hub_port_lpm_hird_hw_int : std_logic_vector(C_HUB_NB_PORTS*4-1  downto 0);
 
 begin
 
@@ -167,14 +181,16 @@ begin
   begin
     if sys_rst_n = '0' then
       hub_port_enable_int     <= (others => '0');
-      hub_port_suspend        <= (others => '0');
+      hub_port_suspend_int    <= (others => '0');
       hub_port_suspend_change <= (others => '0');
-      hub_port_l1             <= (others => '0');
+      hub_port_l1_int         <= (others => '0');
       hub_port_l1_change      <= (others => '0');
       hub_port_reset_int      <= (others => '0');
       hub_port_reset_change   <= (others => '0');
       hub_port_connect_change <= (others => '0');
       hub_port_connect_d      <= (others => '0');
+      hub_port_lpm_rw_enable  <= (others => '0');
+      hub_port_lpm_hird_hw_int<= (others => '0');
       data_index              <= 0;
     
     elsif rising_edge(sys_clk) then
@@ -186,6 +202,9 @@ begin
         if hub_port_connect(i) /= hub_port_connect_d(i) then
           hub_port_connect_change(i) <= '1';
         end if;
+        if hub_port_enable_int(i) = '1' and hub_port_reset_int(i) = '1' then
+            hub_port_reset_change(i)   <= '1';
+        end if;    
       end loop;
     
       if ep0_setupdone = '1' then
@@ -210,11 +229,11 @@ begin
                 when 1 => --Port_Enable
                   hub_port_enable_int(var_port)     <= '0';
                 when 2 => --Port_Suspend
-                  hub_port_suspend(var_port)        <= '0';
+                  hub_port_suspend_int(var_port)    <= '0';
                   hub_port_suspend_change(var_port) <= '1';
                 when 10 => --Port_L1
-                  hub_port_l1(var_port)             <= '0';
-                  hub_port_l1_change(var_port)      <= '1';                  
+                  hub_port_l1_int(var_port)         <= '0';
+                  hub_port_l1_change(var_port)      <= hub_port_l1_int(var_port); --If Port is in L1 set change bit, otherwise not.                 
                 when 16 => --C_Port_Connection
                   hub_port_connect_change(var_port) <= '0';
                 when 18 => --C_Port_Suspend
@@ -255,12 +274,11 @@ begin
                 when 1 => --Port_Enable
                         hub_port_enable_int(var_port)     <= '1';
                 when 2 => --Port_Suspend
-                        hub_port_suspend(var_port)        <= '1'; 
+                        hub_port_suspend_int(var_port)    <= '1'; 
                 when 4 => --Port_Reset
                         hub_port_reset_int(var_port)      <= '1';
-                        hub_port_reset_change(var_port)   <= '1';
                         hub_port_enable_int(var_port)     <= '1';
-                        hub_port_suspend(var_port)        <= '0';
+                        hub_port_suspend_int(var_port)    <= '0';
                         hub_port_suspend_change(var_port) <= '0';
                 when others =>
                   null;
@@ -270,11 +288,15 @@ begin
           when C_CLASS_REQ_SET_AND_TEST =>
             if to_integer(unsigned(ep0_windex(3 downto 0))) = 0 then
               null; -- A stall will be returned upon this request
-            elsif to_integer(unsigned(ep0_windex(15 downto 0))) <= C_HUB_NB_PORTS then --SetandTestPortFeature
+            elsif to_integer(unsigned(ep0_windex(3 downto 0))) <= C_HUB_NB_PORTS then --SetandTestPortFeature
+              data_index <= to_integer(unsigned(ep0_windex));
               var_port := to_integer(unsigned(ep0_windex(3 downto 0))) - 1;
-              if to_integer(unsigned(ep0_wvalue)) = 10 then -- Feature selector = PORT_L1
-                hub_port_l1(var_port)        <= '1';
-                hub_port_l1_change(var_port) <= '1';  
+              if to_integer(unsigned(ep0_wvalue)) = 10 and   -- Feature selector = PORT_L1
+                 hub_port_enable_int(var_port)    = '1' then -- Downstream port is enabled
+                hub_port_l1_int(var_port)        <= hub_lpm_sup(var_port) and not(hub_lpm_data_pending(var_port));
+                hub_port_l1_change(var_port)     <= hub_lpm_sup(var_port) and not(hub_lpm_data_pending(var_port));  
+                hub_port_lpm_rw_enable(var_port) <= ep0_windex(15);
+                hub_port_lpm_hird_hw_int(var_port*4+3 downto var_port*4) <= ep0_windex(7 downto 4);
               end if;
             end if;
           
@@ -286,9 +308,9 @@ begin
       end if;
       if sync_busreset = '1' then
         hub_port_enable_int     <= (others => '0');
-        hub_port_suspend	    <= (others => '0');
+        hub_port_suspend_int	<= (others => '0');
         hub_port_suspend_change <= (others => '0');
-        hub_port_l1             <= (others => '0');
+        hub_port_l1_int         <= (others => '0');
         hub_port_l1_change      <= (others => '0');
         hub_port_reset_int      <= (others => '0');
         hub_port_reset_change   <= (others => '0');
@@ -296,9 +318,33 @@ begin
         hub_port_connect_d      <= (others => '0');
         data_index              <= 0;
       end if;
+    
+      for i in 0 to C_HUB_NB_PORTS-1 loop
+        if hub_port_connect(i) = '0' then
+          hub_port_enable_int(i)     <= '0';
+          hub_port_suspend_int(i)    <= '0';
+          hub_port_suspend_change(i) <= '0';
+          hub_port_l1_int(i)         <= '0';
+          hub_port_l1_change(i)      <= '0';
+          hub_port_reset_change(i)   <= '0';
+        elsif hub_port_enable_int(i) = '0' then
+          hub_port_suspend_int(i)    <= '0';
+          hub_port_suspend_change(i) <= '0';
+          hub_port_l1_int(i)         <= '0';
+          hub_port_l1_change(i)      <= '0';          
+          hub_port_reset_change(i)   <= '0';
+        end if;
+        if hub_port_remotewakeup(i) = '1' then
+          hub_port_suspend_int(i)    <= '0';
+        end if;
+        if hub_port_lpmremotewakeup(i) = '1' then
+          hub_port_l1_int(i)         <= '0';
+        end if;
+      end loop;
     end if;
   end process PROC_REQUEST_HANDLING;
 
+hub_port_lpm_hird_hw <= hub_port_lpm_hird_hw_int;
 
 ----------------------------------
 -- HUB status
@@ -319,20 +365,31 @@ begin
   hub_status(i+1)(16)           <= hub_port_connect_change(i);
   hub_status(i+1)(15 downto  11) <= (others => '0');
   hub_status(i+1)(10 downto  9) <= "10" when (pie_speed = HIGH_SPEED) else "00";  -- port_high_speed = 1 &  port_low_speed = 0
-  hub_status(i+1)( 8)           <= '1'; --hub_port_power; Can this be fixed to one ?
+  hub_status(i+1)( 8)           <= '1'; --hub_port_power;
   hub_status(i+1)( 7 downto  6) <= (others => '0');
-  hub_status(i+1)( 5)           <= hub_port_l1(i);
+  hub_status(i+1)( 5)           <= hub_port_l1_int(i);
   hub_status(i+1)( 4)           <= '0'; -- hub_port_reset_int(i); This is only high for one clock. The return value can be forced to zero.
   hub_status(i+1)( 3)           <= '0'; -- no overcurrent detection
-  hub_status(i+1)( 2)           <= hub_port_suspend(i);
+  hub_status(i+1)( 2)           <= hub_port_suspend_int(i);
   hub_status(i+1)( 1)           <= hub_port_enable_int(i);
   hub_status(i+1)( 0)           <= hub_port_connect(i); --embedded device is always connected.
                                                         --This is equal to connect bit, set by ARM SW.
 end generate GEN_HUB_PORT_STATUS;
 
-hub_port_enable <= hub_port_enable_int;
-hub_port_reset  <= hub_port_reset_int;
-ep0_class_rdata <= hub_status(data_index);
+hub_l1_status(0) <= (others => '0');
+GEN_HUB_L1_STATUS : for i in 0 to C_HUB_NB_PORTS-1 generate
+begin
+  hub_l1_status(i+1)(C_DATAWIDTH-1 downto 8)   <= (others => '0');
+  hub_l1_status(i+1)(7 downto 0) <= C_LPM_STALL when hub_lpm_sup(i)          = '0' else
+                                    C_LPM_NYET  when (hub_port_lpm_hird_sw(4*i+3 downto 4*i) > hub_port_lpm_hird_hw_int(4*i+3 downto 4*i)) or hub_lpm_data_pending(i) = '1' else
+                                    C_LPM_SUCCESS;
+end generate GEN_HUB_L1_STATUS;
+
+hub_port_enable  <= hub_port_enable_int;
+hub_port_reset   <= hub_port_reset_int;
+hub_port_suspend <= hub_port_suspend_int;
+hub_port_l1      <= hub_port_l1_int;
+ep0_class_rdata  <= hub_l1_status(data_index) when (ep0_request = C_CLASS_REQ_SET_FEATURE) else hub_status(data_index);
 
 ----------------------------------
 -- HUB EP1 IN status
