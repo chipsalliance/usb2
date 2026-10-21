@@ -45,7 +45,7 @@ module usb_top_tb;
   // --------------------------------------------------------------------------
   // DUT instance
   // --------------------------------------------------------------------------
-  ip_xxx_3516_hs_mem_wrapper u_dut (
+  ip_xxx_3511_hs_mem_compound_wrapper u_dut (
     // ----- Device AXI subordinate -----
     .dev_axi_aclk        (clk),
     .dev_axi_aresetn     (rst_n),
@@ -202,11 +202,6 @@ module usb_top_tb;
     .dev_usbframetoggle       (),
     .host_usb_int_req_irq     (),
     .USB_VBus                 ('0),
-    .vbuscomp_on              (),
-    .chrgvbus                 (),
-    .dischrgvbus              (),
-    .avalid                   ('0),
-    .sessend                  ('0),
     .utmi_clk                 (clk),
     .utmi_rxdata              ('0),
     .utmi_rxvalid             ('0),
