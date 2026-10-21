@@ -233,7 +233,9 @@ begin
                   hub_port_suspend_change(var_port) <= '1';
                 when 10 => --Port_L1
                   hub_port_l1_int(var_port)         <= '0';
-                  hub_port_l1_change(var_port)      <= hub_port_l1_int(var_port); --If Port is in L1 set change bit, otherwise not.                 
+                  if hub_port_l1_int(var_port) = '1' then
+                    hub_port_l1_change(var_port) <= '1';
+                  end if;
                 when 16 => --C_Port_Connection
                   hub_port_connect_change(var_port) <= '0';
                 when 18 => --C_Port_Suspend
