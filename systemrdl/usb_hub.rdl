@@ -21,8 +21,8 @@ addrmap usb_hub #(
     desc = "Bus-visible HUB descriptor and SETUP-response table initialized from C_EP0_ROM. The live EP0 lookup path reads this software-accessible storage, so descriptor and SETUP-table writes affect subsequent USB responses. Word 15 controls HUB selection, connection, and self-powered reporting. While CONTROL.ENABLE and CONTROL.DCON are both one, descriptor and SETUP-table words are write-locked, but CONTROL remains writable so software can disconnect or disable the HUB and release the lock. The synchronized USB_EnableHub input continuously forces ENABLE and DCON to one while asserted. Word addresses at or above FIFO_WORDS within the rounded power-of-two bus aperture read zero and ignore writes while returning an OKAY bus response.";
 
     external mem {
-        desc = "Software-readable and writable live table words 0 through 14. Reset restores the corresponding C_EP0_ROM words. Writes affect subsequent EP0 descriptor or SETUP responses and are ignored while CONTROL.ENABLE and CONTROL.DCON are both set.";
-        mementries = 15;
+        desc = "Software-readable and writable live table words 0 through 11. Reset restores the corresponding C_EP0_ROM words. Writes affect subsequent EP0 descriptor or SETUP responses and are ignored while CONTROL.ENABLE and CONTROL.DCON are both set.";
+        mementries = 12;
         memwidth = 32;
         sw = rw;
     } DESCRIPTOR_LOW @ 0x00;
