@@ -341,10 +341,20 @@ begin
           hub_port_reset_change(i)   <= '0';
         end if;
         if hub_port_remotewakeup(i) = '1' then
-          hub_port_suspend_int(i)    <= '0';
+          hub_port_suspend_int(i) <= '0';
+          if hub_port_suspend_int(i) = '1' and
+             hub_port_connect(i) = '1' and hub_port_enable_int(i) = '1' and
+             sync_busreset = '0' then
+            hub_port_suspend_change(i) <= '1';
+          end if;
         end if;
         if hub_port_lpmremotewakeup(i) = '1' then
-          hub_port_l1_int(i)         <= '0';
+          hub_port_l1_int(i) <= '0';
+          if hub_port_l1_int(i) = '1' and
+             hub_port_connect(i) = '1' and hub_port_enable_int(i) = '1' and
+             sync_busreset = '0' then
+            hub_port_l1_change(i) <= '1';
+          end if;
         end if;
       end loop;
     end if;
