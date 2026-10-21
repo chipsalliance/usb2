@@ -393,7 +393,7 @@ hub_port_enable  <= hub_port_enable_int;
 hub_port_reset   <= hub_port_reset_int;
 hub_port_suspend <= hub_port_suspend_int;
 hub_port_l1      <= hub_port_l1_int;
-ep0_class_rdata  <= hub_l1_status(data_index) when (ep0_request = C_CLASS_REQ_SET_FEATURE) else hub_status(data_index);
+ep0_class_rdata  <= hub_l1_status(data_index) when (ep0_request = C_CLASS_REQ_SET_AND_TEST) else hub_status(data_index);
 
 ----------------------------------
 -- HUB EP1 IN status
