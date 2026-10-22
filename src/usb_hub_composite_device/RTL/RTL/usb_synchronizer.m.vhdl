@@ -196,6 +196,7 @@ signal sync_suspend_s,sync_suspend_ss                              : std_logic;
 signal sync_lpm_suspend_s,sync_lpm_suspend_ss                      : std_logic;
 signal sync_lpm_rw_s,sync_lpm_rw_ss                                : std_logic;
 signal sync_phy_start_s, sync_phy_start_ss, sync_phy_start_sss     : std_logic;
+signal sync_phy_mode_s, sync_phy_mode_ss                           : std_logic;                  
 signal sync_phy_endtoggle_s, sync_phy_endtoggle_ss, sync_phy_endtoggle_sss : std_logic;
 signal sync_VBusDebounced_s, sync_VBusDebounced_ss      : std_logic;
 signal sync_avalid_s, sync_avalid_ss      : std_logic;
@@ -236,6 +237,8 @@ begin
         sync_phy_start_s     <= '0';
         sync_phy_start_ss    <= '0';
         sync_phy_start_sss   <= '0';
+        sync_phy_mode_s      <= '0';
+        sync_phy_mode_ss     <= '0';
       end if;
 
       usbreg_dev_connect_s <= '0';
@@ -281,7 +284,9 @@ begin
         sync_phy_start_s     <= usbreg_phy_start;
         sync_phy_start_ss    <= sync_phy_start_s;
         sync_phy_start_sss   <= sync_phy_start_ss;
-      end if;
+        sync_phy_mode_s      <= usbreg_phy_mode;
+        sync_phy_mode_ss     <= sync_phy_mode_s;       
+     end if;
 
       usbreg_dev_connect_s <= usbreg_dev_connect;
       usbreg_dev_connect_ss <= usbreg_dev_connect_s;
@@ -536,7 +541,7 @@ begin
                                     (sync_phy_start_ss  = '1')         and
                                        (sync_phy_start_sss = '0') else
                            '0';
-  phy_mode              <= usbreg_phy_mode;
+  phy_mode              <= sync_phy_mode_ss;
   sync_phy_endtoggle    <= '1' when (C_ULPI_SUPPORT or C_UTMI_SUPPORT) and
                                        (sync_phy_endtoggle_ss  /=
                                         sync_phy_endtoggle_sss) else
