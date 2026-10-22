@@ -2,7 +2,7 @@
 
 ## Architecture, Integration, and Operational Guide
 
-The USB 2.0 compound device composed of one hub with 2 embedded downstream ports.
+The USB 2.0 compound device is composed of one hub with 2 embedded downstream ports.
 Each downstream port contains a software-controlled downstream device, called DEV0 and DEV1.
 
 The three USB functions share one USB Protocol and Interface Engine and one
