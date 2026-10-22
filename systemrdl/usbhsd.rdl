@@ -26,7 +26,6 @@ addrmap usbhsd #(
     longint unsigned SINGLE_BUFFER_SUPPORTED = 1,
     longint unsigned DOUBLE_BUFFER_SUPPORTED = 1,
     longint unsigned TOGGLE_REG_READABLE = 1,
-    longint unsigned PLL_ENABLE = 0,
     longint unsigned UTMI_SUPPORT = 1,
     longint unsigned ULPI_SUPPORT = 1,
     longint unsigned MINOR_REV = 0,
@@ -115,10 +114,6 @@ addrmap usbhsd #(
             desc = "Device status - reset change.";
         } DRES_C[26:26] = 1'h0;
         field {
-            sw = rw; hw = rw; onwrite = woclr; precedence = hw;
-            desc = "Hardware sets this field when AVALID or session-end status changes. Software writes one to clear it.";
-        } OTG_C[27:27] = 1'h0;
-        field {
             sw = r; hw = w;
             desc = "This bit indicates if VBUS is detected or not.";
         } VBUS_DEBOUNCED[28:28];
@@ -194,26 +189,6 @@ addrmap usbhsd #(
             sw = rw; hw = r;
             desc = "As long as this bit is set to one and LPM supported bit is set to one, HW will return a NYET handshake on every LPM token it receives.";
         } DATA_PENDING[8:8] = 1'h0;
-        field {
-            sw = rw; hw = r;
-            desc = "Set to one to disable the external VBUS comparator.";
-        } VBUSCOMP_OFF[16:16] = 1'h0;
-        field {
-            sw = rw; hw = r;
-            desc = "Controls the PHY VBUS-charge output.";
-        } CHRG_VBUS[17:17] = 1'h0;
-        field {
-            sw = rw; hw = r;
-            desc = "Controls the PHY VBUS-discharge output.";
-        } DISCHRG_VBUS[18:18] = 1'h0;
-        field {
-            sw = r; hw = w;
-            desc = "Reports the synchronized PHY AVALID indication.";
-        } AVALID[20:20];
-        field {
-            sw = r; hw = w;
-            desc = "Reports the synchronized PHY session-end indication.";
-        } SESSEND[21:21];
     };
     lpm_t LPM @ 0x10;
 
@@ -407,10 +382,6 @@ addrmap usbhsd #(
         } TOGGLE_READABLE[7:7] = TOGGLE_REG_READABLE;
         field {
             sw = r; hw = na;
-            desc = "Reports whether the controller includes programmable PLL clock control.";
-        } PLL[8:8] = PLL_ENABLE;
-        field {
-            sw = r; hw = na;
             desc = "Reports whether the UTMI+ PHY interface is implemented.";
         } UTMI[9:9] = UTMI_SUPPORT;
         field {
@@ -435,48 +406,4 @@ addrmap usbhsd #(
     };
     eptoggle_t EPTOGGLE @ 0x34;
 
-    reg clkctrl_t {
-        desc = "Controls selection of the external USB clock when programmable PLL support is present.";
-        field {
-            sw = PLL_ENABLE ? rw : r; hw = r;
-            desc = "Set to one to select the external USB clock. When PLL support is absent, this field reads one and ignores writes.";
-        } EXT_CLK_ENABLE[0:0] = PLL_ENABLE ? 0 : 1;
-    };
-    clkctrl_t CLKCTRL @ 0x38;
-
-    reg ulpidebug_t {
-        desc = "Provides software access to UTMI+ vendor signals or ULPI PHY registers.";
-        field {
-            sw = rw; hw = r;
-            desc = "In ULPI mode, the low nibble of the PHY register address. In UTMI+ mode, drives VControl.";
-        } PHY_ADDR[3:0] = 4'h0;
-        field {
-            sw = ULPI_SUPPORT ? rw : r;
-            hw = ULPI_SUPPORT ? r : na;
-            desc = "Upper nibble of the ULPI PHY register address. Without ULPI support, reads zero and ignores writes.";
-        } PHY_ADDR_HIGH[7:4] = 4'h0;
-        field {
-            sw = ULPI_SUPPORT ? rw : r;
-            hw = ULPI_SUPPORT ? r : na;
-            desc = "Provides write data for a ULPI PHY-register transaction. Without ULPI support, reads zero and ignores writes.";
-        } PHY_WDATA[15:8] = 8'h0;
-        field {
-            sw = rw; hw = w; precedence = hw;
-            desc = "Reports ULPI PHY-register read data or the UTMI+ VStatus value.";
-        } PHY_RDATA[23:16] = 8'h0;
-        field {
-            sw = ULPI_SUPPORT ? rw : r;
-            hw = ULPI_SUPPORT ? r : na;
-            desc = "Selects a ULPI write when set and a ULPI read when clear. Without ULPI support, reads zero and ignores writes.";
-        } PHY_RW[24:24] = 1'h0;
-        field {
-            sw = rw; hw = rw; precedence = hw;
-            desc = "Software writes this bit to one to start a read or write operation. Hardware clears it when the PHY transaction completes.";
-        } PHY_ACCESS[25:25] = 1'h0;
-        field {
-            sw = (ULPI_SUPPORT && UTMI_SUPPORT) ? rw : r; hw = r;
-            desc = "Selects the PHY interface when both UTMI+ and ULPI are supported. With only one interface, this field reports the fixed mode and ignores writes.";
-        } PHY_MODE[31:31] = (ULPI_SUPPORT && !UTMI_SUPPORT) ? 1 : 0;
-    };
-    ulpidebug_t ULPIDEBUG @ 0x3c;
 };

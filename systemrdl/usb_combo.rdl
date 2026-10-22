@@ -32,7 +32,7 @@ addrmap usb_combo #(
     longint unsigned DEV0_MINOR_REV = 0,
     longint unsigned DEV0_MAJOR_REV = 2,
     // Must match C_HUB_FIFO_SIZE (176..4096 words).
-    longint unsigned HUB_FIFO_WORDS = 176
+    longint unsigned HUB_FIFO_WORDS = 196
 ) {
     name = "USB Combo AXI Port";
     desc = "USB-local map for the Combo AXI subordinate port. DEV0 control/status begins at 0x0000, the 2 KiB Recovery block is at 0x0800, and the rounded HUB aperture begins at 0x1000. Offsets outside these target windows are unmapped and return a bus error.";
@@ -47,7 +47,6 @@ addrmap usb_combo #(
         .SINGLE_BUFFER_SUPPORTED(SINGLE_BUFFER_SUPPORTED),
         .DOUBLE_BUFFER_SUPPORTED(DOUBLE_BUFFER_SUPPORTED),
         .TOGGLE_REG_READABLE(TOGGLE_REG_READABLE),
-        .PLL_ENABLE(0),    // FALSE: no on-chip PLL
         .UTMI_SUPPORT(1),    // TRUE
         .ULPI_SUPPORT(1),    // TRUE
         .MINOR_REV(DEV0_MINOR_REV),

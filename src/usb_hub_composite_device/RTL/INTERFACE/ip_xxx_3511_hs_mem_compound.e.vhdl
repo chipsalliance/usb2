@@ -22,7 +22,7 @@ USE work.usb_general_subcmp_pkg.all;
 
 entity ip_xxx_3511_hs_mem_compound is
   generic(
-          C_HUB_FIFO_SIZE           : integer := 176; --Number of 32-bit words in HUB DESCRIPTOR FIFO. 
+          C_HUB_FIFO_SIZE           : integer := 196; --Number of 32-bit words in HUB DESCRIPTOR FIFO. 
                                                       --Maximum value allowed is 4096. This is 16kBytes for hub descriptor FIFO.
           C_DEV0_RAM_ADDRWIDTH      : integer := 15;
           C_DEV1_RAM_ADDRWIDTH      : integer := 15;
@@ -53,13 +53,7 @@ entity ip_xxx_3511_hs_mem_compound is
 	      G_SIM_CHIRP_TIMERS        : boolean := FALSE
           );
 
-  port(
-       -- synthesis read_comments_as_HDL on
-       --debug_fpga_3511   : out std_logic_vector(255 downto 0);
-       --phy_interface     : in  std_logic;
-       --fpga_pll_on       : in  std_logic;
-       -- synthesis read_comments_as_HDL off
-       -- AHB bus signals
+  port(-- AHB bus signals
        hclk                 : in  std_logic;
        hresetn              : in  std_logic;  -- IP resetn
 
@@ -171,11 +165,6 @@ entity ip_xxx_3511_hs_mem_compound is
 
        --Configuration status indicator
        USB_VBus             : in    std_logic; -- Bus power is present
-       vbuscomp_on          : out   std_logic; -- Enable Analog Vbus comparators
-       chrg_vbus            : out   std_logic;
-       dischrg_vbus         : out   std_logic;
-       avalid               : in    std_logic; -- ADPPROBE
-       sessend              : in    std_logic; -- ADPSENSE
 
        -- UTMI interface
        -- These signals are only to be used when the generic

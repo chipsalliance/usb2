@@ -35,7 +35,8 @@ generic(C_ULPI_SUPPORT           : boolean := FALSE;
         --C_PLL_ENABLE             : boolean := FALSE;
         --C_PLL_DIVIDER            : std_logic_vector(6 downto 0) := "0010100";
         C_MINOR_REV              : std_logic_vector(7 downto 0) := X"00";
-        C_MAJOR_REV              : std_logic_vector(7 downto 0) := X"00"
+        C_MAJOR_REV              : std_logic_vector(7 downto 0) := X"00";
+        C_USB_HUB                : boolean := FALSE
         );
 port (
       hclk                     : in  std_logic;
@@ -101,8 +102,7 @@ port (
       usbreg_phy_write         : out std_logic;
       usbreg_phy_start         : out std_logic;
       usbreg_phy_mode          : out std_logic;
-      sync_phy_endtoggle       : in  std_logic;
-      usb_reg_if_fpga          : out std_logic_vector(63 downto 0)
+      sync_phy_endtoggle       : in  std_logic
       );
 end usb_reg_if;
 
@@ -219,11 +219,11 @@ begin
   usbreg_data_buffer_start(C_DALB-1 downto      0) <= (others => '0');
 end process proc_addr_gen;
 
-usbreg_lpm_hird_sw <= reg_lpm_hird_sw;
-reg_lpm_hird_hw    <= sieint_lpm_hird_hw;
-usbreg_lpm_nyet    <= reg_lpm_nyet;
-usbreg_chrg_vbus <= reg_chrg_vbus;
-usbreg_dischrg_vbus <= reg_dischrg_vbus;
+usbreg_lpm_hird_sw  <= reg_lpm_hird_sw;
+reg_lpm_hird_hw     <= sieint_lpm_hird_hw;
+usbreg_lpm_nyet     <= reg_lpm_nyet;
+usbreg_chrg_vbus    <= reg_chrg_vbus    when not(C_USB_HUB) else '0';
+usbreg_dischrg_vbus <= reg_dischrg_vbus when not(C_USB_HUB) else '0';
 
 usbreg_ep_skip <= reg_ep_skip;
 
@@ -264,20 +264,19 @@ usbreg_epinfo_toggle <= reg_ep_toggle_value;
      end if;
    end process proc_toggle;
 
-
 --usbreg_select_ext_clk <= reg_ext_clk_enable when C_PLL_ENABLE else '1';
 
-reg_phy_addr(3 downto 0) <= reg_phy_addr_lower_nib;
-reg_phy_addr(7 downto 4) <= reg_phy_addr_higher_nib when C_ULPI_SUPPORT else (others => '0');
-usbreg_phy_addr  <= reg_phy_addr;
-usbreg_phy_wdata <= reg_phy_wdata when C_ULPI_SUPPORT else (others => '0');
-usbreg_phy_write <= reg_phy_write when C_ULPI_SUPPORT else '0';
-usbreg_phy_start <= reg_phy_start;
-usbreg_phy_mode  <= reg_phy_mode when C_ULPI_SUPPORT and C_UTMI_SUPPORT else
-                    '1'          when C_ULPI_SUPPORT                    else
+reg_phy_addr(3 downto 0) <= reg_phy_addr_lower_nib  when not(C_USB_HUB) else (others => '0');
+reg_phy_addr(7 downto 4) <= reg_phy_addr_higher_nib when not(C_USB_HUB) and C_ULPI_SUPPORT else (others => '0');
+usbreg_phy_addr  <= reg_phy_addr  when not(C_USB_HUB) else (others => '0');
+usbreg_phy_wdata <= reg_phy_wdata when not(C_USB_HUB) else (others => '0');
+usbreg_phy_write <= reg_phy_write when not(C_USB_HUB) else '0';
+usbreg_phy_start <= reg_phy_start when not(C_USB_HUB) else '0';
+usbreg_phy_mode  <= reg_phy_mode  when not(C_USB_HUB) and C_ULPI_SUPPORT and C_UTMI_SUPPORT else
+                    '1'           when not(C_USB_HUB) and C_ULPI_SUPPORT                    else
                     '0';
 
-usbreg_vbuscomp_on <= not reg_vbuscomp_off;
+usbreg_vbuscomp_on <= not reg_vbuscomp_off when not(C_USB_HUB) else '0';
 
 -- -----------------------------------------------------------------------
 -- Register read
@@ -365,7 +364,9 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
          reg_rdata(24)           <= reg_dev_connect_change;
          reg_rdata(25)           <= reg_dev_suspend_change;
          reg_rdata(26)           <= reg_dev_reset_change;
-         reg_rdata(27)           <= reg_dev_otg_change;
+         if not(C_USB_HUB) then
+           reg_rdata(27)           <= reg_dev_otg_change;
+         end if;
 
          if sync_VBusDebounced = '1' then
            reg_rdata(28)         <= '1';
@@ -405,11 +406,13 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
          reg_rdata( 3 downto  0) <= reg_lpm_hird_hw;
          reg_rdata( 7 downto  4) <= reg_lpm_hird_sw;
          reg_rdata(           8) <= reg_lpm_nyet;
-         reg_rdata(16) <= reg_vbuscomp_off;
-         reg_rdata(17) <= reg_chrg_vbus;
-         reg_rdata(18) <= reg_dischrg_vbus;
-         reg_rdata(20) <= sync_avalid;-- ADPPROBE
-         reg_rdata(21) <=  sync_sessend;-- ADPSENSE
+         if not(C_USB_HUB) then
+           reg_rdata(16) <= reg_vbuscomp_off;
+           reg_rdata(17) <= reg_chrg_vbus;
+           reg_rdata(18) <= reg_dischrg_vbus;
+           reg_rdata(20) <= sync_avalid;-- ADPPROBE
+           reg_rdata(21) <=  sync_sessend;-- ADPSENSE
+         end if;
 
        when "0101" =>
          reg_rdata(C_NBPHYSEP+1 downto 0)
@@ -490,26 +493,27 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
          null;
 
        when others => --"1111" =>
-         if C_UTMI_SUPPORT and C_ULPI_SUPPORT then
-           reg_rdata( 7 downto  0)<= reg_phy_addr;
-           reg_rdata(15 downto  8)<= reg_phy_wdata;
-           reg_rdata(23 downto 16)<= reg_phy_rdata;
-           reg_rdata(24)          <= reg_phy_write;
-           reg_rdata(25)          <= reg_phy_start;
-           reg_rdata(31)          <= reg_phy_mode;
-         elsif C_UTMI_SUPPORT then
-           reg_rdata( 3 downto  0)<= reg_phy_addr_lower_nib;
-           reg_rdata(23 downto 16)<= reg_phy_rdata;
-           reg_rdata(25)          <= reg_phy_start;
-           reg_rdata(31)          <= '0';
-         elsif C_ULPI_SUPPORT then
-           reg_rdata( 7 downto  0)<= reg_phy_addr;
-           reg_rdata(15 downto  8)<= reg_phy_wdata;
-           reg_rdata(23 downto 16)<= reg_phy_rdata;
-           reg_rdata(24)          <= reg_phy_write;
-           reg_rdata(25)          <= reg_phy_start;
-           reg_rdata(31)          <= '1';
-
+         if not(C_USB_HUB) then
+           if C_UTMI_SUPPORT and C_ULPI_SUPPORT then
+             reg_rdata( 7 downto  0)<= reg_phy_addr;
+             reg_rdata(15 downto  8)<= reg_phy_wdata;
+             reg_rdata(23 downto 16)<= reg_phy_rdata;
+             reg_rdata(24)          <= reg_phy_write;
+             reg_rdata(25)          <= reg_phy_start;
+             reg_rdata(31)          <= reg_phy_mode;
+           elsif C_UTMI_SUPPORT then
+             reg_rdata( 3 downto  0)<= reg_phy_addr_lower_nib;
+             reg_rdata(23 downto 16)<= reg_phy_rdata;
+             reg_rdata(25)          <= reg_phy_start;
+             reg_rdata(31)          <= '0';
+           elsif C_ULPI_SUPPORT then
+             reg_rdata( 7 downto  0)<= reg_phy_addr;
+             reg_rdata(15 downto  8)<= reg_phy_wdata;
+             reg_rdata(23 downto 16)<= reg_phy_rdata;
+             reg_rdata(24)          <= reg_phy_write;
+             reg_rdata(25)          <= reg_phy_start;
+             reg_rdata(31)          <= '1';
+           end if;
          end if;
 
      end case;
@@ -536,12 +540,14 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
        reg_dev_connect_change    <= '0';
        reg_dev_suspend_change    <= '0';
        reg_dev_reset_change      <= '0';
-       reg_dev_otg_change        <= '0';
        reg_dev_phy_test_mode     <= (others => '0');
        reg_info_err_code         <= (others => '0');
        reg_dev_force_fullspeed   <= '0';
-       sync_avalid_z             <= '0';
-       sync_sessend_z            <= '0';
+       if not(C_USB_HUB) then
+         reg_dev_otg_change        <= '0';
+         sync_avalid_z             <= '0';
+         sync_sessend_z            <= '0';
+       end if;
        if C_EPUB > 8 then
          reg_ep_fifo_addr_offset <= (others => '0');
        end if;
@@ -568,9 +574,11 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
        reg_dev_int_status        <= '0';
        reg_dev_int_enable        <= '0';
        reg_dev_int_route         <= '0';
-       reg_vbuscomp_off          <= '0';
-       reg_chrg_vbus             <= '0';
-       reg_dischrg_vbus          <= '0';
+       if not(C_USB_HUB) then
+         reg_vbuscomp_off          <= '0';
+         reg_chrg_vbus             <= '0';
+         reg_dischrg_vbus          <= '0';
+       end if;
 
        sync_suspend_z            <= '0';
        sync_lpm_suspend_z        <= '0';
@@ -586,23 +594,27 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
        --if C_PLL_ENABLE then
        --  reg_ext_clk_enable      <= '0';
        --end if;
-       if C_ULPI_SUPPORT then
-         reg_phy_wdata           <= (others => '0');
-         reg_phy_addr_higher_nib <= (others => '0');
-         reg_phy_write           <= '0';
-       end if;
-       reg_phy_rdata             <= (others => '0');
-       reg_phy_start             <= '0';
-       reg_phy_addr_lower_nib    <= (others => '0');
-       if C_ULPI_SUPPORT and C_UTMI_SUPPORT then
-         reg_phy_mode            <= '0';
+       if not(C_USB_HUB) then
+         if C_ULPI_SUPPORT then
+           reg_phy_wdata           <= (others => '0');
+           reg_phy_addr_higher_nib <= (others => '0');
+           reg_phy_write           <= '0';
+         end if;
+         reg_phy_rdata             <= (others => '0');
+         reg_phy_start             <= '0';
+         reg_phy_addr_lower_nib    <= (others => '0');
+         if C_ULPI_SUPPORT and C_UTMI_SUPPORT then
+           reg_phy_mode            <= '0';
+         end if;
        end if;
 
      elsif (hclk'event and hclk='1') then
        sync_sieint_error_z       <= sync_sieint_error;
        usbreg_dev_connect_int_z  <= usbreg_dev_connect_int;
-       sync_avalid_z             <= sync_avalid;
-       sync_sessend_z            <= sync_sessend;
+       if not(C_USB_HUB) then
+         sync_avalid_z             <= sync_avalid;
+         sync_sessend_z            <= sync_sessend;
+       end if;
 
        if reg_dev_suspend = '0' then
          usbreg_remotewakeup <= '0';
@@ -644,8 +656,10 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
              if reg_wdata(26) = '1' then
                reg_dev_reset_change  <= '0';
              end if;
-             if reg_wdata(27) = '1' then
-               reg_dev_otg_change  <= '0';
+             if not(C_USB_HUB) then
+               if reg_wdata(27) = '1' then
+                 reg_dev_otg_change  <= '0';
+               end if;
              end if;
              reg_dev_phy_test_mode   <= reg_wdata(31 downto 29);
 
@@ -665,9 +679,11 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
            when "0100" =>
              reg_lpm_hird_sw          <= reg_wdata(7 downto 4);
              reg_lpm_nyet             <= reg_wdata(8);
-             reg_vbuscomp_off         <= reg_wdata(16);
-             reg_chrg_vbus            <= reg_wdata(17);
-             reg_dischrg_vbus         <= reg_wdata(18);
+             if not(C_USB_HUB) then
+               reg_vbuscomp_off         <= reg_wdata(16);
+               reg_chrg_vbus            <= reg_wdata(17);
+               reg_dischrg_vbus         <= reg_wdata(18);
+             end if;
 
            when "0101" =>
              reg_ep_skip              <= reg_wdata(C_NBPHYSEP+1 downto 0);
@@ -728,19 +744,19 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
              null;
 
            when "1111" =>
-             if C_ULPI_SUPPORT then
-               reg_phy_wdata           <= reg_wdata(15 downto 8);
-               reg_phy_addr_higher_nib <= reg_wdata( 7 downto 4);
-               reg_phy_write           <= reg_wdata(24);
+             if not(C_USB_HUB) then
+               if C_ULPI_SUPPORT then
+                 reg_phy_wdata           <= reg_wdata(15 downto 8);
+                 reg_phy_addr_higher_nib <= reg_wdata( 7 downto 4);
+                 reg_phy_write           <= reg_wdata(24);
+               end if;
+               reg_phy_rdata             <= reg_wdata(23 downto 16);
+               reg_phy_start             <= reg_wdata(25);
+               reg_phy_addr_lower_nib    <= reg_wdata(3 downto 0);
+               if C_ULPI_SUPPORT and C_UTMI_SUPPORT then
+                 reg_phy_mode            <= reg_wdata(31);
+               end if;
              end if;
-             reg_phy_rdata             <= reg_wdata(23 downto 16);
-             reg_phy_start             <= reg_wdata(25);
-             reg_phy_addr_lower_nib    <= reg_wdata(3 downto 0);
-             --altera translate_off
-             if C_ULPI_SUPPORT and C_UTMI_SUPPORT then
-               reg_phy_mode            <= reg_wdata(31);
-             end if;
-             --altera translate_on
            when others => --"1100" | "1101" =>
              null;
          end case;
@@ -788,9 +804,11 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
          reg_dev_int_status     <= '1';
        end if;
 
-       if (sync_avalid /= sync_avalid_z) or (sync_sessend /= sync_sessend_z) then
-          reg_dev_otg_change <= '1';
-          reg_dev_int_status <= '1';
+       if not(C_USB_HUB) then
+         if (sync_avalid /= sync_avalid_z) or (sync_sessend /= sync_sessend_z) then
+            reg_dev_otg_change <= '1';
+            reg_dev_int_status <= '1';
+         end if;
        end if;
 
        if sync_set_frameint = '1' and usbreg_dev_connect_int = '1' then
@@ -858,7 +876,7 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
          reg_info_err_code <= sync_sieint_errortype;
        end if;
 
-       if sync_phy_endtoggle = '1' then
+       if not(C_USB_HUB) and sync_phy_endtoggle = '1' then
          reg_phy_rdata <= sync_phy_rdata;
          reg_phy_start <= '0';
        end if;
@@ -910,17 +928,5 @@ usbreg_vbuscomp_on <= not reg_vbuscomp_off;
        fiq_int <= '0';
      end if;
    end process proc_hw_int_generation;
-
-
- --fpga
-
- usb_reg_if_fpga(63 downto 6) <= (others => '0');
- usb_reg_if_fpga(0) <= reg_ep_int_status(0);
- usb_reg_if_fpga(1) <= reg_ep_int_status(1);
- usb_reg_if_fpga(2) <= reg_ep_int_status(2);
- usb_reg_if_fpga(3) <= reg_ep_int_status(3);
- usb_reg_if_fpga(4) <= reg_frame_int_status;
- usb_reg_if_fpga(5) <= reg_dev_int_status;
-
 
 end RTL; --usb_reg_if

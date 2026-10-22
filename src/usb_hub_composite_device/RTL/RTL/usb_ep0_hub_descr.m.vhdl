@@ -23,7 +23,7 @@ use work.usb_general_subcmp_pkg.all;
 use work.usb_ep_config_pkg.all;
 
 entity usb_ep0_hub_descr is
-generic(C_NWORDS : integer := 176; --Number of 32 bits words in hub descriptor table
+generic(C_NWORDS : integer := 196; --Number of 32 bits words in hub descriptor table
         C_HIGH_SPEED     : boolean := TRUE);
 port (
       -- interface to AHB slave module
@@ -46,7 +46,24 @@ port (
       
       USB_EnableHub     : in  std_logic;
       hub_enable        : out std_logic;
-      hub_dcon          : out std_logic
+      hub_dcon          : out std_logic;
+      hub_vbusdebounced : in  std_logic;
+      hub_force_vbus    : out std_logic;
+      hub_lpm_sup       : out std_logic;
+      hub_force_fs      : out std_logic;
+      hub_pll_on        : out std_logic;
+      hub_lpm_hird_hw   : in  std_logic_vector(3 downto 0);
+      hub_lpm_hird_sw   : out std_logic_vector(3 downto 0);
+      pie_speed         : in  std_logic_vector(1 downto 0);
+
+      hub_phy_addr      : out std_logic_vector(7 downto 0);
+      hub_phy_wdata     : out std_logic_vector(7 downto 0);
+      hub_phy_rdata     : in  std_logic_vector(7 downto 0);
+      hub_phy_write     : out std_logic;
+      hub_phy_start     : out std_logic;
+      hub_phy_mode      : out std_logic;
+      hub_phy_endtoggle : in  std_logic
+      
      );
 end usb_ep0_hub_descr;
 
@@ -62,7 +79,9 @@ signal usb_self_powered_edge      : std_logic;
 signal usb_self_powered_lock      : std_logic;
 signal hub_self_powered           : std_logic;
 
-constant C_HUB_CS : integer := 15; --Register address for HUB Control and Status register (Hub enable and Hub DCON bits)
+constant C_HUB_CS  : integer := 12; --Register address for HUB Control and Status register (Hub enable and Hub DCON bits)
+constant C_HUB_LPM : integer := 13; --Register address for HUB LPM L1
+constant C_HUB_PHY : integer := 15; --Register address for ULPI PHY access
 
 function func_ep0_rom(constant HIGH_SPEED: boolean) return t_ep0_mem is
 variable var_address     : integer range 0 to C_NWORDS-1;
@@ -86,7 +105,7 @@ begin
   var_address    := 0;
   var_result(var_address)( 7 downto  0) := X"12"; --bLength
   var_result(var_address)(15 downto  8) := X"01"; --bDescriptorType = DEVICE
-  var_result(var_address)(23 downto 16) := X"00"; --bcdUSB: LPM supported = X"02",X"10"
+  var_result(var_address)(23 downto 16) := X"10"; --bcdUSB: LPM supported = X"02",X"10"
   var_result(var_address)(31 downto 24) := X"02";
   var_address := var_address+1;
   var_result(var_address)( 7 downto  0) := X"09"; --bDeviceClass
@@ -214,6 +233,24 @@ begin
     var_result(var_address)( 7 downto  0) := X"0C"; --bInterval
 
   end if;
+
+  -- BOS DESCRIPTOR (Hub)
+  var_desc_start := var_desc_start + 16;
+  var_address    := var_desc_start;
+  var_result(var_address)( 7 downto  0) := X"05"; --bDescLength
+  var_result(var_address)(15 downto  8) := X"0F"; --bDescriptorType = BOS
+  var_result(var_address)(23 downto 16) := X"0C"; --wTotalLength
+  var_result(var_address)(31 downto 24) := X"00"; --
+  var_address := var_address+1;
+  var_result(var_address)( 7 downto  0) := X"01"; --bNumDeviceCaps
+  var_result(var_address)(15 downto  8) := X"07"; --bLength
+  var_result(var_address)(23 downto 16) := X"10"; --bDescriptorType = DEVICE_CAPABILITY
+  var_result(var_address)(31 downto 24) := X"02"; --bDevCapabilityType = USB2.0 Extension
+  var_address := var_address+1;
+  var_result(var_address)( 7 downto  0) := X"02"; --bmAttributes
+  var_result(var_address)(15 downto  8) := X"00"; --bmAttributes
+  var_result(var_address)(23 downto 16) := X"00"; --bmAttributes
+  var_result(var_address)(31 downto 24) := X"00"; --bmAttributes
 
   -- LINK POINTER to start of device list
   -- This is defined at the end of the process (after all setup commands have been defined)
@@ -375,17 +412,29 @@ begin
 
   end if;
 
- var_address := var_address + 4;
- var_result(var_address  ) := X"00000CA3"; --SetandTestHubPortFeature
- var_result(var_address+2) := X"00010000"; --SetandTestHubPortFeature
- var_result(var_address+1) := X"FFE040C3"; --SETUP_MASK_LSB
- var_result(var_address+3) := X"00000000"; --SETUP_MASK_MSB
+  var_address := var_address + 4;
+  var_result(var_address  ) := X"0F000680"; --GetBOSDescriptor
+  var_result(var_address+2) := X"000C0000"; --GetBOSDescriptor
+  var_result(var_address+1) := X"FFFF8500"; --SETUP_MASK_LSB
+  var_result(var_address+3) := X"0000FFFF"; --SETUP_MASK_MSB
+
+  var_address := var_address + 4;
+  var_result(var_address  ) := X"00000CA3"; --SetandTestHubPortFeature
+  var_result(var_address+2) := X"00010000"; --SetandTestHubPortFeature
+  var_result(var_address+1) := X"FFE040C3"; --SETUP_MASK_LSB
+  var_result(var_address+3) := X"00000000"; --SETUP_MASK_MSB
 
   -- LINK POINTER to start of device list
   var_address := to_integer(unsigned(C_DEV_LINK_START)) - (C_NBDEV-1);
   for i in 0 to C_NBDEV-1 loop
     var_result(var_address+i) := var_setup_start(i);
   end loop;
+
+  -- Default reset value for hub register
+  var_result(C_HUB_CS)( 0) := '0'; --Hub disabled at reset
+  var_result(C_HUB_CS)(11) := '1'; --LPM supported by default
+  var_result(C_HUB_CS)(16) := '0'; --Hub disconnected at reset
+  var_result(C_HUB_CS)(18) := '0'; --Self-powered off at reset
 
   return var_result;
 end;
@@ -443,15 +492,25 @@ begin
           end if;
         end if;
       end if;
-      if (reg_write = '1')                                                  and
-         (hub_write_lock = '0' or to_integer(unsigned(reg_waddr))=C_HUB_CS) and --Hub Control and Status register is always writeable
-         (to_integer(unsigned(reg_waddr)) < C_NWORDS)                       then
+      if (reg_write = '1')                                and
+         (hub_write_lock = '0'                        or 
+          to_integer(unsigned(reg_waddr)) = C_HUB_CS  or      --Hub Control and Status register is always writeable
+          to_integer(unsigned(reg_waddr)) = C_HUB_LPM or      --Hub LPM register is always writeable
+          to_integer(unsigned(reg_waddr)) = C_HUB_PHY   ) and --Hub PHY register is always writeable
+         (to_integer(unsigned(reg_waddr)) < C_NWORDS)     then
         ep0_mem(to_integer(unsigned(reg_waddr))) <= reg_wdata;
       end if;
       if USB_EnableHub = '1' then --If the input signal USB_EnableHub is set to 1b, it overrules the hub register bits.
         ep0_mem(C_HUB_CS)(0) <= '1';
         ep0_mem(C_HUB_CS)(16) <= '1';
       end if;
+      if hub_phy_endtoggle = '1' then
+         ep0_mem(C_HUB_PHY)(23 downto 16) <= hub_phy_rdata;
+         ep0_mem(C_HUB_PHY)(25)           <= '0';
+      end if;
+      ep0_mem(C_HUB_CS)(23 downto 22) <= pie_speed;
+      ep0_mem(C_HUB_CS)(28)           <= hub_vbusdebounced;
+      ep0_mem(C_HUB_LPM)(3 downto 0)  <= hub_lpm_hird_hw;
     end if;
   end process PROC_REG_WRITE;
 
@@ -460,10 +519,21 @@ begin
   usb_self_powered_ff   <= usb_self_powered_lock;
 
   hub_enable       <= ep0_mem(C_HUB_CS)(0);
+  hub_pll_on       <= ep0_mem(C_HUB_CS)(9);
+  hub_force_vbus   <= ep0_mem(C_HUB_CS)(10);
+  hub_lpm_sup      <= ep0_mem(C_HUB_CS)(11);
   hub_dcon         <= ep0_mem(C_HUB_CS)(16);
   hub_self_powered <= ep0_mem(C_HUB_CS)(18);
+  hub_force_fs     <= ep0_mem(C_HUB_CS)(21);
   hub_write_lock   <= ep0_mem(C_HUB_CS)(0) and ep0_mem(C_HUB_CS)(16);
-
+  
+  hub_lpm_hird_sw  <= ep0_mem(C_HUB_LPM)(7 downto 4);
+  
+  hub_phy_addr     <= ep0_mem(C_HUB_PHY)( 7 downto 0); -- : out std_logic_vector(7 downto 0);
+  hub_phy_wdata    <= ep0_mem(C_HUB_PHY)(15 downto 8); -- : out std_logic_vector(7 downto 0);
+  hub_phy_write    <= ep0_mem(C_HUB_PHY)(24);
+  hub_phy_start    <= ep0_mem(C_HUB_PHY)(25);
+  hub_phy_mode     <= ep0_mem(C_HUB_PHY)(31);  
 
 end RTL; --usb_ep0_hub_descr
 

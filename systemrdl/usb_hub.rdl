@@ -15,14 +15,16 @@
 
 // Address documentation for the externally implemented usb_ep0_hub_descr block.
 addrmap usb_hub #(
-    longint unsigned FIFO_WORDS = 176
+    longint unsigned FIFO_WORDS = 196,
+    longint unsigned UTMI_SUPPORT = 1,
+    longint unsigned ULPI_SUPPORT = 1
 ) {
     name = "USB HUB Descriptor and SETUP Table Storage";
     desc = "Bus-visible HUB descriptor and SETUP-response table initialized from C_EP0_ROM. The live EP0 lookup path reads this software-accessible storage, so descriptor and SETUP-table writes affect subsequent USB responses. Word 15 controls HUB selection, connection, and self-powered reporting. While CONTROL.ENABLE and CONTROL.DCON are both one, descriptor and SETUP-table words are write-locked, but CONTROL remains writable so software can disconnect or disable the HUB and release the lock. The synchronized USB_EnableHub input continuously forces ENABLE and DCON to one while asserted. Word addresses at or above FIFO_WORDS within the rounded power-of-two bus aperture read zero and ignore writes while returning an OKAY bus response.";
 
     external mem {
-        desc = "Software-readable and writable live table words 0 through 14. Reset restores the corresponding C_EP0_ROM words. Writes affect subsequent EP0 descriptor or SETUP responses and are ignored while CONTROL.ENABLE and CONTROL.DCON are both set.";
-        mementries = 15;
+        desc = "Software-readable and writable live table words 0 through 11. Reset restores the corresponding C_EP0_ROM words. Writes affect subsequent EP0 descriptor or SETUP responses and are ignored while CONTROL.ENABLE and CONTROL.DCON are both set.";
+        mementries = 12;
         memwidth = 32;
         sw = rw;
     } DESCRIPTOR_LOW @ 0x00;
@@ -40,7 +42,24 @@ addrmap usb_hub #(
             sw = rw;
             hw = na;
             desc = "Stored and read back by the register interface but unused by HUB logic. Software should write zero.";
-        } RESERVED_LOW[15:1] = 0;
+        } RESERVED_LOW[8:1] = 0;
+        field {
+            sw = rw; hw = r;
+            desc = "Set to one to force the NEEDCLK indication active.";
+        } FORCE_NEEDCLK[9:9] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "If this bit is set to 1, the VBUS voltage indicators from the PHY are overruled.";
+        } FORCE_VBUS[10:10] = 1'h0;
+        field {
+            sw = rw; hw = r;
+            desc = "Set to one to advertise and enable USB Link Power Management support on USB Hub.";
+        } LPM_SUP[11:11] = 1'h1;
+        field {
+            sw = rw;
+            hw = na;
+            desc = "Stored and read back by the register interface but unused by HUB logic. Software should write zero.";
+        } RESERVED_MID[15:12] = 0;
         field {
             sw = rw;
             hw = rw;
@@ -58,12 +77,93 @@ addrmap usb_hub #(
             hw = r;
             desc = "Selects self-powered reporting when set. The effective self-powered state is this field OR the synchronized USB_self_powered pin. A change in the effective state overwrites the bmAttributes byte in table word 17 with 0xC0 for self-powered or 0x80 for bus-powered and, for the high-speed configuration, applies the same overwrite to table word 65. Other software-programmed bits in those bytes are not preserved across the update. The output consumed by HUB request handling is the registered effective state.";
         } SELF_POWERED[18:18] = 0;
+         field {
+            sw = rw;
+            hw = na;
+            desc = "Stored and read back by the register interface but unused by HUB logic. Software should write zero.";
+        } RESERVED_MID2[20:19] = 0;
+        field {
+            sw = rw; 
+            hw = r;
+            desc = "Set to one to suppress high-speed chirp negotiation and force full-speed operation.";
+        } FORCE_FULLSPEED[21:21] = 1'h0;
+        field {
+            sw = r; 
+            hw = w;
+            desc = "This field indicates the speed at which the device operates: 00b: reserved 01b: full-speed 10b: high-speed 11b: super-speed (reserved for future use).";
+        } Speed[23:22];
         field {
             sw = rw;
             hw = na;
             desc = "Stored and read back by the register interface but unused by HUB logic. Software should write zero.";
-        } RESERVED_HIGH[31:19] = 0;
-    } CONTROL @ 0x3c;
+        } RESERVED_MID3[27:24] = 0;
+        field {
+            sw = r; hw = w;
+            desc = "This bit indicates if VBUS is detected or not.";
+        } VBUS_DEBOUNCED[28:28];
+        field {
+            sw = rw;
+            hw = na;
+            desc = "Stored and read back by the register interface but unused by HUB logic. Software should write zero.";
+        } RESERVED_HIGH[31:29] = 0;
+    } CONTROL @ 0x30;
+
+    reg {
+        desc = "Controls the response to the LPM L1 token when received by the hub. The BESL_SW value is the time it takes for the system to wakeup. The BESL value received in the LPM token is stored in the BESL_HW field. If the BESL_HW value is smaller than the BESL_SW value, a NYET is returned as response to an LPM L1 token";
+        field {
+            sw = rw;
+            hw = rw;
+            hwset = true;
+            precedence = hw;
+            desc = "Set to one to select the HUB as the upstream USB device and enable HUB-specific device and port routing. When zero, the upstream connection path uses Device 0 instead. The synchronized USB_EnableHub input continuously forces this field and DCON to one while asserted. This field remains software-writable while the table lock is active.";
+        } BESL_HW[3:0] = 0;
+        field {
+            sw = rw;
+            hw = na;
+            desc = "The hub logic uses the value programmed in this field to check if the LPM L1 token can be acknowledged (BESL_HW > BESL_SW), or if a NYET response needs to be sent (BESL_HW < BESL_SW)";
+        } BESL_SW[7:4] = 0;
+        field {
+            sw = rw;
+            hw = na;
+            desc = "Stored and read back by the register interface but unused by HUB logic. Software should write zero.";
+        } RESERVED_HIGH[31:8] = 0;
+    } LPM @ 0x34;
+
+    reg ulpidebug_t {
+        desc = "Provides software access to UTMI+ vendor signals or ULPI PHY registers.";
+        field {
+            sw = rw; hw = r;
+            desc = "In ULPI mode, the low nibble of the PHY register address. In UTMI+ mode, drives VControl.";
+        } PHY_ADDR[3:0] = 4'h0;
+        field {
+            sw = ULPI_SUPPORT ? rw : r;
+            hw = ULPI_SUPPORT ? r : na;
+            desc = "Upper nibble of the ULPI PHY register address. Without ULPI support, reads zero and ignores writes.";
+        } PHY_ADDR_HIGH[7:4] = 4'h0;
+        field {
+            sw = ULPI_SUPPORT ? rw : r;
+            hw = ULPI_SUPPORT ? r : na;
+            desc = "Provides write data for a ULPI PHY-register transaction. Without ULPI support, reads zero and ignores writes.";
+        } PHY_WDATA[15:8] = 8'h0;
+        field {
+            sw = rw; hw = w; precedence = hw;
+            desc = "Reports ULPI PHY-register read data or the UTMI+ VStatus value.";
+        } PHY_RDATA[23:16] = 8'h0;
+        field {
+            sw = ULPI_SUPPORT ? rw : r;
+            hw = ULPI_SUPPORT ? r : na;
+            desc = "Selects a ULPI write when set and a ULPI read when clear. Without ULPI support, reads zero and ignores writes.";
+        } PHY_RW[24:24] = 1'h0;
+        field {
+            sw = rw; hw = rw; precedence = hw;
+            desc = "Software writes this bit to one to start a read or write operation. Hardware clears it when the PHY transaction completes.";
+        } PHY_ACCESS[25:25] = 1'h0;
+        field {
+            sw = (ULPI_SUPPORT && UTMI_SUPPORT) ? rw : r; hw = r;
+            desc = "Selects the PHY interface when both UTMI+ and ULPI are supported. With only one interface, this field reports the fixed mode and ignores writes.";
+        } PHY_MODE[31:31] = (ULPI_SUPPORT && !UTMI_SUPPORT) ? 1 : 0;
+    };
+    ulpidebug_t ULPIDEBUG @ 0x3c;
 
     external mem {
         desc = "Software-readable and writable live table words 16 through FIFO_WORDS minus one, including descriptor data, SETUP match entries, and table link words. Reset restores the corresponding C_EP0_ROM words. Writes affect subsequent EP0 descriptor or SETUP responses and are ignored while CONTROL.ENABLE and CONTROL.DCON are both set. Changes in effective self-powered state overwrite the bmAttributes byte in word 17 and, for high-speed configuration, word 65.";
