@@ -768,8 +768,8 @@ signal sys_nbphysep    : std_logic_vector((C_NBDEV+2)*5-1 downto 0);
 
 signal RG_BUSReset     : boolean;
 signal reset_n         : std_logic;
-signal reset_awake_n   : std_logic;
-signal hreset_awake_n  : std_logic;
+signal reset_ulpi_awake_n   : std_logic;
+signal hreset_ulpi_awake_n  : std_logic;
 signal utmiclk_reset_n : std_logic;
 
 signal TM_Suspend: boolean;
@@ -1010,7 +1010,8 @@ signal pie_isotoggle_r : std_logic;
 signal sync_VBusDebounced : std_logic;
 signal pie_vbusvalid: std_logic;
 signal pie_vbusvalid_r: std_logic;
-signal usb_needclk_int : std_logic;
+signal usb_needclk_int_utmi : std_logic;
+signal usb_needclk_int_ulpi : std_logic;
 signal dp, dm: std_logic;
 signal ulpi_pwrctrl_wakeup: std_logic;
 signal ulpi_dir_s: std_logic;
@@ -1025,9 +1026,13 @@ constant CLOCK_COUNTER_USB_MAX         : integer := 15;
 signal clock_counter_usb : integer range 0 to CLOCK_COUNTER_USB_MAX;
 signal clock_counter_usb_msb,clock_counter_usb_msb_z,clock_counter_usb_msb_zz : std_logic;
 
-signal pwrctrl_wakeup_int : std_logic;
-signal awake: std_logic;
-signal set_pwrctrl_wakeup : std_logic;
+signal utmi_pwrctrl_wakeup_int : std_logic;
+signal utmi_awake: std_logic;
+signal set_utmi_pwrctrl_wakeup : std_logic;
+signal ulpi_pwrctrl_wakeup_int : std_logic;
+signal ulpi_awake: std_logic;
+signal set_ulpi_pwrctrl_wakeup : std_logic;
+
 
 signal sync_usbreg_phy_test_mode_change: std_logic;
 signal sync_usbreg_dev_connect : std_logic;
@@ -2467,8 +2472,8 @@ usb_app_hw_hub_1 : usb_app_hw_hub
 
   reset_n <= sync_ss_reset_n or async_disable;
 
-  hreset_awake_n <= (hresetn and not awake) or async_disable;
-  reset_awake_n <= (sync_ss_reset_n and not awake) or async_disable;
+  hreset_ulpi_awake_n <= hresetn and (not ulpi_awake or async_disable);
+  reset_ulpi_awake_n  <= reset_n and (not ulpi_awake or async_disable);
   utmiclk_reset_n  <= (sys_utmi_clkin_lock and (clock_on or to_std_logic(clk_off_counter /= 0))) or async_disable;
 
 -- DOC_BEGIN: Vbus Debouncing
@@ -2531,7 +2536,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
       clk_off_counter <= 0;
     elsif pie_clk'event and pie_clk = '1' then
       if phy_mode = '0' then -- UTMI only
-        if clock_on = '1' or  pwrctrl_wakeup_int = '1' then
+        if clock_on = '1' or  utmi_pwrctrl_wakeup_int = '1' then
           clk_off_counter <= CLOCKOFF_CYCLE;
         elsif clk_off_counter > 0 then
           clk_off_counter <= clk_off_counter -1;
@@ -2572,8 +2577,8 @@ usb_app_hw_hub_1 : usb_app_hw_hub
                ulpi_rxdata(7) when ulpi_ddr_sel = '1' and dataline_low_power_en = '1' and ulpi_dir = '1' and ulpi_dir_s = '1' and ulpi_dir_ss = '1' else
                '0';
 
-  awake <= pie_lowpower_n when phy_mode = '1' -- In ULPI mode, pie_low_power_n is de-asserted when device is detached from USB
-          else pie_lowpower_n or utmi_clk_ok; -- In UTMI mode,signal is needed to detect when device is detached from USB (awake de-asserted)
+  ulpi_awake <= pie_lowpower_n;                -- In ULPI mode, pie_low_power_n is de-asserted when device is detached from USB
+  utmi_awake <= pie_lowpower_n or utmi_clk_ok; -- In UTMI mode,signal is needed to detect when device is detached from USB (awake de-asserted)
 
   -- ULPI only DATA LOW POWER ENABLE
   -- Once the PHY is placed in Low Power Mode( Via a TX Command sent by the 3511_hs), Linestate and active high interrupt indication
@@ -2584,9 +2589,9 @@ usb_app_hw_hub_1 : usb_app_hw_hub
   -- USB need clock (that allows to switch off AHB clock) can only be de-asserted when data_line_low_power_en = '1'
    dataline_low_power_en <= '1' when clock_counter_ahb = 0 else '0';
 
-  dataline_low_power_pie_clk_proc : process(pie_clk, reset_awake_n)
+  dataline_low_power_pie_clk_proc : process(pie_clk, reset_ulpi_awake_n)
   begin
-    if (reset_awake_n = '0') then
+    if (reset_ulpi_awake_n = '0') then
       clock_counter_usb <= 0 ;
     elsif  (pie_clk'event and pie_clk='1') then
       if clock_counter_usb = 0 then
@@ -2597,9 +2602,9 @@ usb_app_hw_hub_1 : usb_app_hw_hub
     end if;
   end process dataline_low_power_pie_clk_proc;
 
-  dataline_low_power_ahb_clk_proc: process (hclk, hreset_awake_n)
+  dataline_low_power_ahb_clk_proc: process (hclk, hreset_ulpi_awake_n)
   begin
-    if (hreset_awake_n = '0') then
+    if (hreset_ulpi_awake_n = '0') then
       clock_counter_ahb <= CLOCK_COUNTER_AHB_MAX;
       clock_counter_usb_msb    <= '0';
       clock_counter_usb_msb_z  <= '0';
@@ -2636,46 +2641,51 @@ usb_app_hw_hub_1 : usb_app_hw_hub
     end if;
   end process WAKEUP_DETECTION;
 
-  usb_needclk_int      <= '0' when sys_donotwakeup_n = '0' else
-                          '1' when  ((clock_on = '1' or clk_off_counter /= 0 or dataline_low_power_en = '0' or pwrctrl_wakeup_int = '1') and phy_mode = '0') else
-                          '1' when  ((clock_on = '1'or dataline_low_power_en = '0' or pwrctrl_wakeup_int = '1') and phy_mode = '1') else
-                          '0';
+  usb_needclk_utmi     <= '1' when ((clock_on = '1' or clk_off_counter /= 0        or dataline_low_power_en = '0' or utmi_pwrctrl_wakeup_int = '1') and phy_mode = '0') else '0';
+  usb_needclk_ulpi     <= '1' when ((clock_on = '1' or dataline_low_power_en = '0' or ulpi_pwrctrl_wakeup_int = '1')                                and phy_mode = '1') else '0';
 
-  usb_needclk <= usb_needclk_int;
+  usb_needclk <= (usb_needclk_utmi or usb_needclk_ulpi) and sys_donotwakeup_n;
 
-  -- LAB : this has been rewritten because the process commented below did not pass spyglass compliance test
-  -- reset_n is gated with async_disable, the set condition is also gated with async_disable.
-  -- What is not clear is why pwrctrl_wakeup_int needs to be connected to async_disable 
-  -- This has to be checked during DFT especially ATPG simulation. 
-
-  set_pwrctrl_wakeup <= ((clock_on and to_std_logic(clk_off_counter = 0) and dataline_low_power_en and not(phy_mode)) or
-                          (clock_on and dataline_low_power_en and ulpi_dir_sss and phy_mode))
-                          and not async_disable;
+  ------------------------------------------
+  -- UTMI wakeup logic
+  ------------------------------------------
+  set_utmi_pwrctrl_wakeup <= clock_on and to_std_logic(clk_off_counter = 0) and dataline_low_power_en and not(phy_mode);
   
-  --ULPI OR UTMI
-  WAKEUP_STAGE : Process (set_pwrctrl_wakeup,pie_clk)
+  UTMI_WAKEUP_STAGE : Process (set_utmi_pwrctrl_wakeup,pie_clk, async_disable, reset_n)
   -- wake up is set asynchronously, and synchronously if suspend_set is cleared
   begin
-    if (set_pwrctrl_wakeup = '1') then
-       pwrctrl_wakeup_int <= '1'; -- asynch wake up is only allowed when a wake up event occurs once usb clock is OFF
+    if (reset_n = '0') or (set_utmi_pwrctrl_wakeup = '1' and async_disable = '0') then
+       utmi_pwrctrl_wakeup_int <= '1'; -- asynch wake up is only allowed when a wake up event occurs once usb clock is OFF
     elsif pie_clk'event and pie_clk ='1' then
-    -- wake up must be hold asserted until clock is running again and lowpower is de-asserted
-      if async_disable = '1' then 
-        pwrctrl_wakeup_int <= async_disable;
-      else
-        pwrctrl_wakeup_int <= pwrctrl_wakeup_int and not awake;
-      end if;
+      -- wake up must be hold asserted until clock is running again and lowpower is de-asserted
+      utmi_pwrctrl_wakeup_int <= utmi_pwrctrl_wakeup_int and not utmi_awake;
     end if;
-  end process  WAKEUP_STAGE;
+  end process UTMI_WAKEUP_STAGE;
   
-  -- Only relevant for ULPI:
-  ulpi_pwrctrl_wakeup <= pwrctrl_wakeup_int when sys_donotwakeup_n = '1' else '0';
-
-
   -- Only relevant for UTMI:
-  utmi_suspendm     <= '1' when ((clock_on = '1') or (clk_off_counter /= 0) or pwrctrl_wakeup_int = '1') and sys_donotwakeup_n = '1'
-                           else '0';
+  utmi_suspendm <= '1' when ((clock_on = '1') or (clk_off_counter /= 0) or utmi_pwrctrl_wakeup_int = '1') and sys_donotwakeup_n = '1'
+                       else '0';
 
+  ------------------------------------------
+  -- ULPI wakeup logic
+  ------------------------------------------
+  set_ulpi_pwrctrl_wakeup <= clock_on and dataline_low_power_en and ulpi_dir_sss and phy_mode;
+  
+  --ULPI OR UTMI
+  ULPI_WAKEUP_STAGE : Process (set_ulpi_pwrctrl_wakeup,pie_clk, async_disable, reset_n)
+  -- wake up is set asynchronously, and synchronously if suspend_set is cleared
+  begin
+    if (reset_n = '0') or (set_ulpi_pwrctrl_wakeup = '1' and async_disable = '0') then
+      ulpi_pwrctrl_wakeup_int <= '1'; -- asynch wake up is only allowed when a wake up event occurs once usb clock is OFF
+    elsif pie_clk'event and pie_clk ='1' then
+      -- wake up must be hold asserted until clock is running again and lowpower is de-asserted
+      ulpi_pwrctrl_wakeup_int <= ulpi_pwrctrl_wakeup_int and not ulpi_awake;
+    end if;
+  end process ULPI_WAKEUP_STAGE;
+
+  -- This signal must be set asynchronously to wakeup the ULPI clock. It can be cleared asynchronously.
+  ulpi_pwrctrl_wakeup <= ulpi_pwrctrl_wakeup_int when sys_donotwakeup_n = '1' else '0';
+  
   --ULPI OR UTMI
   clock_on <= '1' when (reset_needed_zz  = '1' and phy_mode = '0')   or
                        (usbreg_pll_on = '1')                         or
@@ -2683,6 +2693,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
                        (dp_s         /= dp and sync_usbreg_dev_connect = '1') or
                        (dm_s         /= dm and sync_usbreg_dev_connect = '1') or
                        (sync_usbreg_dev_connect /= usb_dev_connect)      or
+                       (usbreg_phy_mode /= phy_mode)                     or
                        pie_lowpower_n = '1'                              or
                        sys_dev_wakeup_n = '0'                            or
                        (ulpi_int_lp = '1' and phy_mode = '1')            or
