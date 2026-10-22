@@ -116,13 +116,13 @@ corresponding implementation-level references.
 
 The IP implements a USB 2.0 compound device composed of:
 
-- one embedded two-port USB Hub;
+- one USB Hub with 2 embedded ports;
 - two software-controlled downstream USB devices, DEV0 and DEV1;
 - one shared USB Protocol and Interface Engine;
 - one shared endpoint data manager;
 - independent control interfaces and Endpoint RAMs for DEV0 and DEV1.
 
-The embedded Hub is assigned function index `0`, DEV0 is assigned index `1`,
+The USB Hub is assigned function index `0`, DEV0 is assigned index `1`,
 and DEV1 is assigned index `2`.
 
 The shared USB Protocol and Interface Engine receives the enable state,
@@ -139,21 +139,22 @@ The selected-function index controls:
 - DMA endpoint-state update routing;
 - grant and read-data response selection.
 
-The embedded Hub uses a register-based implementation. Its EP0 and EP1 IN
-runtime contexts are maintained by dedicated hardware, while Hub control,
-descriptors, stored responses, and SETUP request decode information are
-maintained in an internal register file.
+The Hub with 2 embedded devices uses a register-based implementation. Its 
+EP0 and EP1 IN runtime contexts are maintained by dedicated hardware, 
+while Hub control, descriptors, stored responses, and SETUP request decode 
+information are maintained in an internal register file.
 
 DEV0 and DEV1 use independent Endpoint RAMs containing their Endpoint Lists,
 endpoint contexts, and TX/RX payload buffers. Each RAM can be accessed both
 by the internal USB data path and through the corresponding external AXI interface.
 
-The USB protocol logic operates in the pie_clk domain. The AXI interfaces,
-endpoint processing, register interfaces, Hub control, and DMA operation
-share the usb_axi_aclk system-side clock domain. Within the Compound core,
-usb_axi_aclk is connected to hclk. A dedicated clock-domain bridge transfers
-control, status, event, context, and payload information between the
-system-side and USB protocol domains..
+The USB protocol logic operates in the pie_clk domain. The pie_clk is either the 
+60MHz UTMI clock or the 60MHz ULPI clock (dependent on which PHY interface is 
+selected). The AXI interfaces, endpoint processing, register interfaces, 
+Hub control, and DMA operation share the usb_axi_aclk system-side clock domain.
+Within the Compound core, usb_axi_aclk is connected to hclk. A dedicated 
+clock-domain bridge transfers control, status, event, context, and payload 
+information between the system-side and USB protocol domains.
 
 ### Functional Architecture
 
@@ -272,7 +273,7 @@ reset_n = sync_ss_reset_n OR async_disable
 During normal functional operation, `async_disable` must remain low.
 
 In normal mode, `pie_clk` is selected by the synchronized PHY mode supplied
-by the DEV0 register-control path:
+by the HUB register-control path:
 
 ```text
 phy_mode = 0 -> pie_clk = utmi_clk
@@ -326,7 +327,7 @@ and pending internal wake-up requests.
 
 | Signal | Direction | Width | Active Level | Description |
 |---|---:|---:|---|---|
-| `usb_needclk` | Output | 1 | Active high | Requests that the USB clock remain available or be restarted. |
+| `usb_needclk` | Output | 1 | Active high | Requests that the USB reference clock to the UTMI PHY remains available or be restarted. |
 | `sys_donotwakeup_n` | Input | 1 | Active low | When low, inhibits USB clock and PHY wake-up requests, forces `usb_needclk` low, and requests UTMI suspend. |
 | `sys_dev_wakeup_n` | Input | 1 | Active low | External system wake-up request. A low value contributes directly to the internal `clock_on` request. |
 | `sys_utmi_clkin_lock` | Input | 1 | Active high | Qualifies UTMI clock availability and the associated low-power control logic. |
@@ -370,26 +371,9 @@ USB_VBus
   -> sync_VBusDebounced
 ```
 
-`avalid` and `sessend` provide additional analog and session-status inputs
-inherited from the original USB IP. They are synchronized before being used
-by the DEV0 and DEV1 register and interrupt logic.
-
 | Signal | Direction | Width | Active Level | Description |
 |---|---:|---:|---|---|
 | `USB_VBus` | Input | 1 | Active high | External VBUS-present indication supplied to the shared USB PIE. |
-| `vbuscomp_on` | Output | 1 | Active high | Enables the external analog VBUS comparator function. |
-| `chrg_vbus` | Output | 1 | Active high | Requests charging of VBUS through the external PHY or analog subsystem. |
-| `dischrg_vbus` | Output | 1 | Active high | Requests discharging of VBUS through the external PHY or analog subsystem. |
-| `avalid` | Input | 1 | Active high | Analog A-valid status input, identified in the RTL as `ADPPROBE`. |
-| `sessend` | Input | 1 | Active high | Session-end status input, identified in the RTL as `ADPSENSE`. |
-
-The `vbuscomp_on`, `chrg_vbus`, and `dischrg_vbus` controls originate from
-the DEV0 USB Register Controller. `vbuscomp_on` also qualifies the VBUS-valid
-sampling used by the debounce logic.
-
-The presence of `avalid`, `sessend`, `chrg_vbus`, and `dischrg_vbus`
-reflects capabilities inherited from the original USB IP. Their active use
-depends on the selected PHY and the system-level power architecture.
 
 ---
 
@@ -485,6 +469,8 @@ control.
 | `ulpi_stp` | Output | 1 | Active high | ULPI stop and control output. |
 | `ulpi_nxt` | Input | 1 | Active high | ULPI handshake input used to qualify transmitted or received information. |
 | `ulpi_ddr_sel` | Input | 1 | Encoded | Selects the low-power indication mapping on `ulpi_rxdata[7:0]`. It does not select the normal ULPI packet-transfer mode. |
+
+If the ULPI interface is not used, all the ulpi input signals can be tied low, and all output signals can remain open.
 
 During ULPI low-power operation, asynchronous line-state and wake-up
 information is interpreted according to the following mapping:
@@ -718,7 +704,6 @@ integration input or held stable while the request is processed.
 |---|---:|---:|---|---|
 | `async_disable` | Input | 1 | Active high | DFT control that modifies selected asynchronous reset and wake-up paths. It must remain low during normal functional operation. |
 | `testmode` | Input | 1 | Active high | Selects test-mode PIE clock behavior. Clock selection is based on the enabled PHY-support generics rather than the runtime PHY mode. |
-| `tcb_clkgate_se` | Input | 1 | Active high | Test-infrastructure clock-gating placeholder. The signal is exposed at the top-level boundary but is not consumed by the current RTL. |
 
 When `testmode` is high:
 
@@ -729,9 +714,6 @@ UTMI has priority when both PHY interfaces are enabled.
 
 `async_disable` affects selected reset and low-power control paths and should
 be driven only by the intended DFT infrastructure.
-
-`tcb_clkgate_se` may be tied to its inactive value in the current
-implementation.
 
 ---
 
@@ -756,7 +738,6 @@ The following requirements apply at the current IP top-level boundary:
 - Internal USB memory requests have priority over system accesses through
   the corresponding AXI interface.
 - `async_disable` is test-only and must remain low during normal operation.
-- `tcb_clkgate_se` is unused by the current RTL.
 - Configurations differing from the documented default configuration require
   dedicated elaboration and functional validation.
 
@@ -768,7 +749,7 @@ The following requirements apply at the current IP top-level boundary:
 |---|---|---|
 | `usb_axi_aclk`, `usb_axi_aresetn` | System integration | AXI Clock and Reset |
 | `usb_needclk`, `sys_donotwakeup_n`, `sys_dev_wakeup_n`, `sys_utmi_clkin_lock` | System integration | Clock Request and Wake-Up |
-| `USB_VBus`, `vbuscomp_on`, `chrg_vbus`, `dischrg_vbus`, `avalid`, `sessend` | System integration | VBUS and Analog Control |
+| `USB_VBus` | System integration | VBUS and Analog Control |
 | `utmi_*` | USB PHY | UTMI |
 | `ulpi_*` | USB PHY | ULPI |
 | `combo_axi_if_*` | System access | Combo Control AXI |
@@ -780,7 +761,7 @@ The following requirements apply at the current IP top-level boundary:
 | `USB_FrameToggle` | Observation | Frame Timing |
 | `usb_dma_dword_selection`, `usb_dma_write_access` | Observation | USB DMA Write Access |
 | `USB_EnableHub`, `USB_self_powered` | Static configuration | Hub and Device Configuration |
-| `async_disable`, `testmode`, `tcb_clkgate_se` | Test | Testability |
+| `async_disable`, `testmode` | Test | Testability |
 
 ## Main RTL Blocks
 
@@ -945,16 +926,16 @@ buffer selection, and skip state.
 
 ---
 
-### `usb_fs_mux_1` - USB DMA Path Mux
+### `usb_mux_1` - USB DMA Path Mux
 
-**Entity:** `usb_fs_mux`  
-**Source:** `RTL/usb_fs_mux.m.vhdl`  
+**Entity:** `usb_mux`  
+**Source:** `RTL/usb_mux.m.vhdl`  
 **Implementation:** combinational
 
-`usb_fs_mux_1` routes each shared endpoint access generated by `usb_dma_1`
+`usb_mux_1` routes each shared endpoint access generated by `usb_dma_1`
 toward one of two mutually exclusive paths:
 
-- the embedded Hub function path;
+- the Hub function path;
 - the DEV0/DEV1 Endpoint RAM path.
 
 The path is selected using `dma_ahb_selected`, which is derived from the
@@ -1045,7 +1026,8 @@ After the Hub SETUP-decode trigger is received, the handler:
 4. obtains the internal request code and response-buffer selection;
 5. prepares the context for the subsequent EP0 DATA or STATUS stage.
 
-The handler directly processes supported USB standard requests, including:
+The handler directly processes supported USB standard requests and 
+USB Hub class requests, including:
 
 - `SET_ADDRESS`;
 - `SET_CONFIGURATION`;
@@ -1409,15 +1391,16 @@ implemented by top-level sequential and combinational logic.
 
 ### Hub Control Register
 
-**Implementation:** top-level logic  
+**Entity:** `usb_ep0_hub_descr`  
+**Source:** `RTL/usb_ep0_hub_descr.m.vhdl`  
 **Clock domain:** `hclk`
 
-The Hub Control Register contains two software-controlled fields:
-
-```text
-Hub Function Enable
-Hub Upstream Soft Connect
-```
+The Hub contains 3 register to control the operation of the hub and the UTMI/ULPI PHY
+It can control the following functions :
+- Enable or bypass the hub function
+- Control connect/disconnect of the hub
+- Program the LPM L1 support on the hub
+- Control the PHY mode and access the registers inside the ULPI or UTMI PHY
 
 The register is accessed through `hub_usb_ahb_slave_1` and the internal
 `hub_reg_*` interface.
