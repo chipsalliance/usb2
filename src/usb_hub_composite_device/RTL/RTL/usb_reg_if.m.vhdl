@@ -219,11 +219,11 @@ begin
   usbreg_data_buffer_start(C_DALB-1 downto      0) <= (others => '0');
 end process proc_addr_gen;
 
-usbreg_lpm_hird_sw <= reg_lpm_hird_sw;
-reg_lpm_hird_hw    <= sieint_lpm_hird_hw;
-usbreg_lpm_nyet    <= reg_lpm_nyet;
-usbreg_chrg_vbus <= reg_chrg_vbus;
-usbreg_dischrg_vbus <= reg_dischrg_vbus;
+usbreg_lpm_hird_sw  <= reg_lpm_hird_sw;
+reg_lpm_hird_hw     <= sieint_lpm_hird_hw;
+usbreg_lpm_nyet     <= reg_lpm_nyet;
+usbreg_chrg_vbus    <= reg_chrg_vbus    when not(C_USB_HUB) else '0';
+usbreg_dischrg_vbus <= reg_dischrg_vbus when not(C_USB_HUB) else '0';
 
 usbreg_ep_skip <= reg_ep_skip;
 
