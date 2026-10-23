@@ -11,7 +11,7 @@
 
 This document defines the software programming requirements for a USB 2.0 compound device containing:
 
-- one embedded USB 2.0 hub controller with hub register interface and one dedicated HUB RAM;
+- one USB 2.0 hub controller with hub register interface and one dedicated HUB RAM;
 - USBD0, a USB device-controller instance owned by the Caliptra Subsystem MCU, featuring a dedicated register interface and dedicated RAM for the Endpoint Control List (ECL) and associated endpoint data buffers;
 - USBD1, a USB device-controller instance owned by the SoC-uC controller, featuring a dedicated register interface and dedicated RAM for the Endpoint Control List (ECL) and associated endpoint data buffers;
 
@@ -22,6 +22,7 @@ The requirements cover cold boot, hub and device enumeration, endpoint-list init
 
 | Date            |   Document Version | Description       |
 |-----------------|--------------------|-------------------|
+| Oct 23th, 2026  |   v0p2             | Register update   |
 | Aug 4th, 2026   |   v0p1             | Work in progress  |
 
 
@@ -52,7 +53,7 @@ The terms **MUST**, **MUST NOT**, **SHALL**, **SHOULD**, **SHOULD NOT**, and **M
 
 The SoC with caliptra-ss containing USB module exposes one physical USB connection to the BMC host through a single USB PHY. Behind this physical connection, the device enumerates as a USB compound device containing:
 
-1. Embedded Virtual USB Hub with two downstream ports.
+1. Virtual USB Hub with two embedded downstream ports.
 2. Downstream Port 0 connected to USBDC0 managed by MCU.
 3. Downstream Port 1 connected to USBDC1 managed by SoC-uC.
 
@@ -110,7 +111,7 @@ The SoC integration MUST prevent unintended cross-access between the MCU-owned a
 
 The USB module ooperate in two modes.
 - **Single device mode**: When `HUB_EN = 0`, the hub is bypassed and USBDC0 connects directly to the upstream USB interface.
-- **Embedded Virtual HUB mode**: When `HUB_EN = 1`, the embedded hub is present in the USB tree and USBDC0 and USBDC1 appear as its two embedded downstream devices.
+- **Virtual HUB mode**: When `HUB_EN = 1`, the hub is present in the USB tree and USBDC0 and USBDC1 appear as its two embedded downstream devices.
     - USBDC0 and USBDC1 connection states are independently controlled by the `DCON` field in the corresponding device-controller register bank.
 
 *Figure: USB Subsystem Block Diagram*
@@ -309,13 +310,13 @@ sequenceDiagram
 #### 2.4.3 Common Cold-Boot Sequence
 
 ```text
-Keep HUB_CONNECT, USBDC0.DCON, and USBDC1.DCON cleared
+Keep HUB_DCON, USBDC0.DCON, and USBDC1.DCON cleared
     -> enable clocks and release resets in integration-defined order
     -> initialize and validate HUB RAM
     -> set HUB_EN
     -> initialize USBDC0 registers, EP list, and buffers
     -> initialize USBDC1 only if its owner and memory are ready
-    -> set HUB_CONNECT after VBUS is valid
+    -> set HUB_DCON after VBUS is valid
     -> set USBDC0.DCON
     -> set USBDC1.DCON only when SoC firmware is ready
     -> allow host enumeration
@@ -324,52 +325,73 @@ Keep HUB_CONNECT, USBDC0.DCON, and USBDC1.DCON cleared
 ## 3. Hub Control 
 ### 3.1 HUB Registers
 
-The hub has a dedicated AHB slave interface containing one 32-bit control & status register at offset `0x000`.
+The hub has a dedicated AHB slave interface containing one 32-bit control & status register at offset `0x030`.
 | Offset | Register Name | Access | Description |
 |--------|---------------|--------|-------------|
-| 0x00 | HUB Control Register | RW | Contains bitfields which control HUB behavior. |
-| 0x04 | HUB status Register | RO | Contains status flags of HUB state. |
+| 0x30 | HUB Control Register | RW | Contains bitfields which control HUB behavior. |
+| 0x34 | HUB LPM Register | RW | Contains status flags for controlling LPM L1 state of the hub. |
+| 0x3C | UTMI+/ULPI PHY debug Register | RW | Contains control flag to select the PHY mode and access PHY registers. |
 
 #### 3.1.1 HUB Control register bitfields
 | Bit | Field | Access | Reset | Description |
 |---:|---|---|---|---|
-| 7 | `HUB_EN` | RW | 0 | `0`: hub disabled and bypassed; Device 0 interfaces directly to the upstream UTMI path. `1`: hub enabled in the USB tree. |
-| 16 | `HUB_CONNECT` | RW | 0 | `0`: disconnect the hub; when `HUB_EN = 1`, both embedded devices are also disconnected from the host-visible topology. `1`: connect the hub when VBUS is detected. |
-| Other | Reserved | RO | 0 | Reads as zero. Firmware MUST preserve reserved bits as zero. |
+| 0 | `HUB_EN` | RW | 0 | `0`: hub disabled and bypassed; Device 0 interfaces directly to the upstream UTMI path. <br>`1`: hub enabled in the USB tree. |
+| 9 | `PLL_ON` | RW | 0 | `0`: USB PHY clock can be turned off if hub is in suspend or disconnect mode. <br>`1`: USB PHY clock remains on. |
+| 10 | `FORCE_VBUS` | RW | 0 | `0`: hub will enable pull-up resistor to connect when VBUS is detected and HUB_DCON is set. <br>`1`: hub will enable pull-up resistor to connect when HUB_DCON is set. |
+| 11 | `LPM_SUP` | RW | 1 | `0`: LPM L1 not supported. HW returns no handshake when receiving an LPM token. <br>`1`: LPM L1 supported. |
+| 16 | `HUB_DCON` | RW | 0 | `0`: disconnect the hub; when `HUB_EN = 1`, both embedded devices are also disconnected from the host-visible topology. <br>`1`: connect the hub when VBUS is detected. |
+| 18 | `SELF_POWERED` | RW | 0 | `0`: hub is bus powered. <br>`1`: hub is self powered. |
+| 21 | `PFSC` | RW | 0 | `0`: Port supports HS and FS. Speed will be negotiated during USB Reset sequence. <br>`1`: Port Force Full-speed. The hub will indicate that it can support only FS mode during USB bus reset |
+| 23 - 22 | `Speed` | RW | 0 | `01`: Hub operates in full-speed mode <br>`10`: Hub operates in high-speed mode. |
+| 28 | `VbusDebounced` | RW | 0 | `0`: VBUS is not detected. <br>`1`: VBUS is detected. |
+| Other | Reserved | RW | 0 | Reads as zero. Firmware MUST preserve reserved bits as zero. |
 
-#### 3.1.1 HUB status register bitfields <TBD>
+#### 3.1.2 HUB Link Power Management bitfields
 | Bit | Field | Access | Reset | Description |
 |---:|---|---|---|---|
-| 31 - 0 | Reserved | RO | 0 | Reads as zero. Firmware MUST preserve reserved bits as zero. |
+| 3 - 0 | `BESL_HW` | RW | 0 | BESL value from the last received LPM token. |
+| 7 - 4 | `BESL_SW` | RW | 0 | Time required by the USB hub subsystem to come out of LPM initiated suspend after receiving the host initiated LPM resume. |
+| Other | Reserved | RW | 0 | Reads as zero. Firmware MUST preserve reserved bits as zero. |
 
-#### 3.1.2 Hub register programming rules
+#### 3.1.3 UTMI+/ULPI PHY debug register bitfields
+| Bit | Field | Access | Reset | Description |
+|---:|---|---|---|---|
+| 7 - 0 | `PHY_ADDR` | RW | 0 | UTMI+ mode : Bits 3:0 are used to control VControl signal on Vendor Interface of UTMI+; ULPI mode : Bits 7:0 are used as the address when doing a register access over the ULPI interface. |
+| 15 - 8 | `PHY_WDATA` | RW | 0 | UTMI+ mode : Reserved. This field is not used. ULPI mode : This field is used for the write data when writing a value to a ULPI PHY register |
+| 23 - 16 | `PHY_RDATA` | RW | 0 | UTMI+ mode : Bits 7:0 contains the value returned by the VStatus signal on Vendor Interface of UTMI+. ULPI mode : Bits 7:0 are used for the read data when reading a value to a ULPI PHY register. |
+| 24 | `PHY_RW` | RW | 0 | UTMI+ mode : Reserved. This field is not used. ULPI mode : This bit indicates if a read or write operation must be done. `0` : Read operation; `1` : Write operation.  |
+| 25 | `PHY_ACCESS` | RW | 0 | Software writes this bit to one to start a read or write operation. HW clears the bit when the operation is finished. SW is not allowed to clear the bit.  |
+| 31 | `PHY_MODE` | RW | 0 | This bit indicates if the interface between the controller is UTMI+ or ULPI. `0` : UTMI+; `1` : ULPI |
+| Other | Reserved | RW | 0 | Reads as zero. Firmware MUST preserve reserved bits as zero. |
 
-1. Firmware MUST clear `HUB_CONNECT` before changing `HUB_EN`.
+#### 3.1.4 Hub register programming rules
+
+1. Firmware MUST clear `HUB_DCON` before changing `HUB_EN`.
 2. Firmware MUST program and validate the complete HUB RAM image before setting `HUB_EN`.
 3. Firmware MUST NOT modify HUB RAM while `HUB_EN = 1`.
-4. In hub mode, firmware MUST set `HUB_CONNECT` only after the hub register state and HUB RAM contents are valid.
+4. In hub mode, firmware MUST set `HUB_DCON` only after the hub register state and HUB RAM contents are valid.
 5. Firmware MUST configure each device-controller instance and its EP-list RAM before setting that instance's `DCON` bit.
-6. Clearing `HUB_CONNECT` disconnects the complete compound device. It MUST NOT be used for a Device 1-only reset or hitless update when Device 0 must remain available.
+6. Clearing `HUB_DCON` disconnects the complete compound device. It MUST NOT be used for a Device 1-only reset or hitless update when Device 0 must remain available.
 
-### 3.2 HUB RAM Programming Model
+### 3.2 HUB Descriptor Programming Model
 
-HUB_RAM is a dedicated memory region used to store USB hub configuration and descriptor data used by the RTL lookup logic. While the hub configuration is largely static in nature, storing it in RAM rather than implementing it as fixed hardware registers provides flexibility for firmware to program or update the configuration prior to USB enumeration. This design choice enables late binding of hub attributes and descriptors without requiring RTL changes, while maintaining a fixed operational configuration during normal runtime.
+HUB FF is a dedicated memory region used to store USB hub configuration and descriptor data used by the RTL lookup logic. While the hub configuration is largely static in nature, storing it in FF rather than implementing it as fixed hardware registers provides flexibility for firmware to program or update the configuration prior to USB enumeration. This design choice enables late binding of hub attributes and descriptors without requiring RTL changes, while maintaining a fixed operational configuration during normal runtime.
 
 #### 3.2.1 Capacity and access window
 
-The dedicated HUB RAM is 512 bytes and is mapped at hub RAM byte offsets `0x200` through `0x3FF`.
+The dedicated HUB FF is 784 bytes and is mapped starting from hub register offset `0x000`. The reset values are pre-defined and guaranteed that the USB hub can pass USB compliance tests with these values.
 
 Firmware MUST observe the following rules:
 
-1. HUB RAM MUST be programmed before `HUB_EN` is set to `1`.
-2. HUB RAM MUST be treated as immutable while `HUB_EN = 1`; modifying it in that state has undefined behavior.
-3. The complete RAM image SHOULD be built in ordinary memory, validated, and then copied into HUB RAM while the hub is disabled.
+1. HUB FF MUST be programmed before `HUB_EN` is set to `1`.
+2. HUB FF MUST be treated as immutable while `HUB_EN = 1`; modifying it in that state has undefined behavior.
+3. The complete HUB FF image SHOULD be built in ordinary memory, validated, and then copied into HUB FF while the hub is disabled.
 4. Firmware SHOULD read back the programmed words before enabling the hub.
 5. The hub controller supports descriptors with a maximum length of 64 bytes.
-6. The first descriptor stored in HUB RAM is limited to 60 bytes. Storing the hub Device Descriptor first is recommended.
-7. The number of descriptors and request-match entries is configurable within the available 512-byte RAM. Note, software can include multiple 64-byte descriptor data structures in RAM. The value programmed into the `ptrSetupTable` field determines the boundary between the descriptor array and the SETUP-match entry array. Descriptors are located before this address, while the SETUP-match entries begin at this address.
+6. The first descriptor stored in HUB FF is limited to 48 bytes. Storing the hub Device Descriptor first is recommended.
+7. The number of descriptors and request-match entries is configurable within the available 768-byte RAM. Note, software can include multiple 64-byte descriptor data structures in RAM. The value programmed into the `ptrSetupTable` field determines the boundary between the descriptor array and the SETUP-match entry array. Descriptors are located before this address, while the SETUP-match entries begin at this address.
 
-> The offsets in the remainder of this section are HUB RAM-local offsets. If software accesses the RAM through the hub address window, it must add the HUB RAM aperture base offset of `0x200`.
+> The offsets in the remainder of this section are HUB FF-local offsets.
 
 #### 3.2.2 Logical organization
 
@@ -379,39 +401,55 @@ HUB RAM contains three logical regions:
     - Last four bytes of the first descriptor record shall be set to addres offset of the first SETUP-match entry.
 2. **SETUP-match region**: This region is divided in to 16 byte entries. HUB FSM uses these fixed-format entries to match requests and select a response or internal hub operation.
 
-Below table shows the recommended HUB_RAM layout:
+Below table shows the recommended HUB FF layout:
 | Byte Offset  | Length in bytes | Fieldname    | Description                                            |
 |---------|--------|--------------|--------------------------------------------------------|
-| 0x0000  | 60     | `Descriptor0`  | Contains first descriptor padded to 60 bytes. Recommended to place **Device descriptor** of the HUB. |
-| 0x003C  |  4     | `ptrSetupTable`| Pointer to the first SETUP-match entry. |
-| 0x0040  | 64     | `Descriptor1`  | Contains second descriptor padded to 64 bytes. Recommended to place **Configuration descriptor** containing *interface* and *endpoint* descriptors. |
-| 0x0080  | 64     | `Descriptor2`  | Contains second descriptor padded to 64 bytes. Recommended to place **HUB class descriptor**.|
-| 0x00C0  | 64     | `Descriptor3`  | Contains second descriptor padded to 64 bytes. Recommended to place **Device Qualifier descriptor**.|
-| 0x0100  | 64     | `Descriptor4`  | Contains second descriptor padded to 64 bytes. Recommended to place **Other Speed Configuration descriptor**.|
-| 0x0140  | 16     | SETUP-match 0| Contains first SETUP-match record. |
-| 0x0150  | 16     | SETUP-match 1| Contains SETUP-match record. |
-| 0x0160  | 16     | SETUP-match 2| Contains SETUP-match record. |
-| 0x0170  | 16     | SETUP-match 3| Contains SETUP-match record. |
-| 0x0180  | 16     | SETUP-match 4| Contains SETUP-match record. |
-| 0x0190  | 16     | SETUP-match 5| Contains SETUP-match record. |
-| 0x01A0  | 16     | SETUP-match 6| Contains SETUP-match record. |
-| 0x01B0  | 16     | SETUP-match 7| Contains SETUP-match record. |
-| 0x01C0  | 16     | SETUP-match 8| Contains SETUP-match record. |
-| 0x01D0  | 16     | SETUP-match 9| Contains SETUP-match record. |
-| 0x01E0  | 16     | SETUP-match 10| Contains SETUP-match record. |
-| 0x01F0  | 16     | SETUP-match 11| Contains SETUP-match record. |
-
+| 0x0000  | 48     | `Descriptor0`  | Contains first descriptor padded to 48 bytes. Recommended to place **Device descriptor** of the HUB. |
+| 0x0030  |  4     | `HUB Control register`| This contains the Hub Control register values. Must not be used for anything else |
+| 0x0034  |  4     | `HUB LPM Register`| This contains the Hub LPM register values. Must not be used for anything else |
+| 0x0038  |  4     | `ptrSetupTable`| Pointer to the first SETUP-match entry. |
+| 0x003C  |  4     | `UTMI+/ULPI PHY debug Register`| This contains the Hub UTMI+/ULPI PHY debug register. Must not be used for anything else |
+| 0x0040  | 64     | `Descriptor1`  | Contains second descriptor padded to 64 bytes. <br>Recommended to place **Configuration descriptor** containing *interface* and *endpoint* descriptors. |
+| 0x0080  | 64     | `Descriptor2`  | Contains third descriptor padded to 64 bytes. <br>Recommended to place **HUB class descriptor**.|
+| 0x00C0  | 64     | `Descriptor3`  | Contains fourth descriptor padded to 64 bytes. <br>Recommended to place **Device Qualifier descriptor**.|
+| 0x0100  | 64     | `Descriptor4`  | Contains fifth descriptor padded to 64 bytes. <br>Recommended to place **Other Speed Configuration descriptor**.|
+| 0x0140  | 64     | `Descriptor5`  | Contains sixt descriptor padded to 64 bytes. <br>Recommended to place **BOS descriptor**.|
+| 0x0180  | 16     | SETUP-match 0| Contains first SETUP-match record. <br>Recommended to place **GetDeviceDescriptor**.|
+| 0x0190  | 16     | SETUP-match 1| Contains second SETUP-match record. <br>Recommended to place **GetConfigurationDescriptor**.|
+| 0x01A0  | 16     | SETUP-match 2| Contains third SETUP-match record. <br>Recommended to place **SetAddress**.|
+| 0x01B0  | 16     | SETUP-match 3| Contains fourth SETUP-match record. <br>Recommended to place **SetConfiguration**.|
+| 0x01C0  | 16     | SETUP-match 4| Contains fifth SETUP-match record. <br>Recommended to place **SetDeviceFeature**.|
+| 0x01D0  | 16     | SETUP-match 5| Contains sixth SETUP-match record. <br>Recommended to place **SetEndpointFeature**.|
+| 0x01E0  | 16     | SETUP-match 6| Contains seventh SETUP-match record. <br>Recommended to place **SetInterface**.|
+| 0x01F0  | 16     | SETUP-match 7| Contains eight SETUP-match record. <br>Recommended to place **GetConfiguration**.|
+| 0x0200  | 16     | SETUP-match 8| Contains nineth SETUP-match record. <br>Recommended to place **GetInterface**.|
+| 0x0210  | 16     | SETUP-match 9| Contains tenth SETUP-match record. <br>Recommended to place **GetDeviceStatus**.|
+| 0x0220  | 16     | SETUP-match 10| Contains eleventh SETUP-match record. <br>Recommended to place **GetInterfaceStatus**.|
+| 0x0230  | 16     | SETUP-match 11| Contains twelfth SETUP-match record. <br>Recommended to place **GetEndpointStatus**.|
+| 0x0240  | 16     | SETUP-match 12| Contains tenth SETUP-match record. <br>Recommended to place **ClearDeviceFeature**.|
+| 0x0250  | 16     | SETUP-match 13| Contains eleventh SETUP-match record. <br>Recommended to place **ClearEndpointFeature**.|
+| 0x0260  | 16     | SETUP-match 14| Contains twelfth SETUP-match record. <br>Recommended to place **GetHubDescriptor**.|
+| 0x0270  | 16     | SETUP-match 15| Contains eleventh SETUP-match record. <br>Recommended to place **GetHubStatus**.|
+| 0x0280  | 16     | SETUP-match 16| Contains twelfth SETUP-match record. <br>Recommended to place **GetHubPortStatus**.|
+| 0x0290  | 16     | SETUP-match 17| Contains tenth SETUP-match record. <br>Recommended to place **ClearHubFeature**.|
+| 0x02A0  | 16     | SETUP-match 18| Contains eleventh SETUP-match record. <br>Recommended to place **ClearHubPortFeature**.|
+| 0x02B0  | 16     | SETUP-match 19| Contains twelfth SETUP-match record. <br>Recommended to place **SetHubFeature**.|
+| 0x02C0  | 16     | SETUP-match 20| Contains eleventh SETUP-match record. <br>Recommended to place **SetHubPortFeature**.|
+| 0x02D0  | 16     | SETUP-match 21| Contains twelfth SETUP-match record. <br>Recommended to place **GetDeviceQualifierDescriptor**.|
+| 0x02E0  | 16     | SETUP-match 22| Contains tenth SETUP-match record. <br>Recommended to place **GetOtherSpeedConfigurationDescriptor**.|
+| 0x02F0  | 16     | SETUP-match 23| Contains eleventh SETUP-match record. <br>Recommended to place **GetBOSDescriptor**.|
+| 0x0300  | 16     | SETUP-match 24| Contains twelfth SETUP-match record. <br>Recommended to place **SetandTestHubPortFeature**.|
 
 #### 3.2.3 Descriptor region 
 
 1. Descriptor and fixed response data MUST be stored before their associated request-match entries are activated. 
-    - The design supports HUB descriptors with a maximum length of 64 bytes. The maximum size of the first descriptor stored in the USB HUB RAM is limited to be 60 bytes. 
+    - The design supports HUB descriptors with a maximum length of 64 bytes. The maximum size of the first descriptor stored in the USB HUB RAM is limited to be 48 bytes. 
     - It is recommended (but not required) that the descriptor stored in the first location is the DeviceDescriptor of the hub.
-    - The number of descriptors and requests that can be stored in the USB HUB RAM is configurable.
+    - The number of descriptors and requests that can be stored in the USB HUB FF is configurable.
 
-2. HUB RAM local offset `0x003C` MUST contain an address pointer to the first location immediately after all descriptor data.
+2. HUB FF local offset `0x0038` MUST contain an address pointer to the first location immediately after all descriptor data.
 3. At the pointed-to location, firmware MUST store the link to the first SETUP-match entry.
-4. Every descriptor selected by a SETUP-match entry MUST fit completely within HUB RAM.
+4. Every descriptor selected by a SETUP-match entry MUST fit completely within HUB FF.
 5. Firmware MUST ensure that descriptor-response lengths do not exceed the stored object or the 64-byte descriptor limit.
 
 #### 3.2.4 SETUP-match region
@@ -470,6 +508,7 @@ Each request-match entry contains 16 bytes:
 | ClearPortFeature, class | `0x80` | Update downstream-port status for a class request. |
 | SetFeature, class | `0x81` | Update hub or downstream-port state for a class request. |
 | GetStatus, class | `0x82` | Return hub or downstream-port status. |
+| SetandTestHubPortFeature, class | `0x83` | Return LPM L1 status. |
 
 Firmware MUST program only operations supported by the implemented hub FSM and the advertised hub descriptors.
 
@@ -479,7 +518,7 @@ Firmware MUST program only operations supported by the implemented hub FSM and t
 
 |Servicer | Encoding | Meaning |
 |---------|----------|---------|
-| HUB_RAM descriptor region | Bit 7 = `1` | Return descriptor/response data from HUB_RAM. |
+| HUB_FF descriptor region | Bit 7 = `1` | Return descriptor/response data from HUB_FF. |
 |                           | Bits `[6:0]`| Selects the descriptor data buffer: <br>`0` selects `Descriptor0`,<br>`2` selects `Descriptor2`, and so on. |
 | HUB_FSM Standard resp buffer| Bits `[7:6]` = `00` | Return dynamic response data generated by the RTL EP0 standard request handler. |
 |                             | Bits `[5:0]` | MUST be zero. |
@@ -500,12 +539,12 @@ The HUB RAM image for the two-port compound device SHOULD provide the descriptor
 
 The Hub Descriptor MUST remain consistent with the hardware topology. In particular, it must advertise two downstream ports and mark the embedded devices as non-removable when that is the implemented configuration.
 
-#### 3.2.7 HUB RAM construction and enable sequence
+#### 3.2.7 HUB FF construction and enable sequence
 
 Firmware SHALL use the following sequence:
 
 ```text
-1. Clear HUB_CONNECT.
+1. Clear HUB_DCON.
 2. Clear HUB_EN.
 3. Build the descriptor and fixed-response byte arrays.
 4. Place descriptor data in HUB RAM within size and boundary limits.
@@ -519,15 +558,15 @@ Firmware SHALL use the following sequence:
 12. Set HUB_CONNECT = 1 after VBUS and the remaining integration prerequisites are valid.
 ```
 
-If validation or readback fails, firmware MUST leave `HUB_EN = 0` and `HUB_CONNECT = 0` and report a boot error.
+If validation or readback fails, firmware MUST leave `HUB_EN = 0` and `HUB_DCON = 0` and report a boot error.
 
-#### 3.2.8 Updating HUB RAM after enable
+#### 3.2.8 Updating HUB FF after enable
 
 To update descriptors or request patterns after the hub has been enabled, firmware MUST:
 
 ```text
 1. Disconnect Device 0 and Device 1, or otherwise quiesce them as required by system policy.
-2. Clear HUB_CONNECT.
+2. Clear HUB_DCON.
 3. Clear HUB_EN.
 4. Confirm that the hub is inactive.
 5. Program and validate the replacement HUB RAM image.
@@ -563,7 +602,7 @@ This section gives an overview of the register set used to control the hardware 
 | 0x30 | USB Configuration | RO | Contains configuration values defined in Section 5. |
 | 0x34 | USB EP Toggle | RO | Debug register indicating the current data toggle value for each endpoint. |
 | 0x38 | Reserved | RO | Reserved. |
-| 0x3C | UTMI+/ULPI Debug | RW | Allows reading and writing registers in the attached USB PHY. |
+| 0x3C | Reserved | RO | Reserved. |
 
 ### 4.1 Per-device initialization
 
@@ -721,18 +760,12 @@ Verification SHALL include:
 
 | ID | Open item |
 |---|---|
-| USB2-PRG-001 | Confirm final SoC address map for the hub register, USBDC0 registers, USBDC1 registers, HUB RAM, and both EP-list/data-buffer RAM regions. |
-| USB2-PRG-002 | Confirm the exact pointer width and units used by HUB RAM offset `0x000F` or `0x003C`and the SETUP-match link. |
-| USB2-PRG-003 | Confirm the final binary layout and alignment of each SETUP-match entry. Add |
-| USB2-PRG-004 | Confirm whether hardware blocks or ignores writes to HUB RAM while `HUB_EN = 1`; software must treat such writes as prohibited regardless. |
-| USB2-PRG-005 | Confirm the final descriptor set, VID/PID, strings, power attributes, interrupt endpoint interval, and speed-dependent values. |
-| USB2-PRG-006 | Confirm the mechanism available to MCU firmware or reset control to force Device 1 `DCON = 0` during unexpected SoC failure. |
-| USB2-PRG-007 | Confirm USB 2.0 LPM L1 support and the associated hub/device descriptor and programming requirements. |
+| USB2-PRG-001 | Confirm the mechanism available to MCU firmware or reset control to force Device 1 `DCON = 0` during unexpected SoC failure. |
 
 ## 14. References
 
 1. *Universal Serial Bus Specification, Revision 2.0*.
-2. *USB 2.0 Link Power Management Addendum*, if LPM L1 is implemented.
+2. *USB 2.0 Link Power Management Addendum*.
 3. *NXP USB2.0 HS/FS/LS USB Device and Host IP Integration Guide*.
 4. Caliptra Subsystem Hardware Specification.
 5. Caliptra Subsystem Integration Specification.
