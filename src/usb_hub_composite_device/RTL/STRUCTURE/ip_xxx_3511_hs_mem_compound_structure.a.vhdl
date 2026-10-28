@@ -976,6 +976,7 @@ signal dp_s                     : std_logic;
 signal dm_s                     : std_logic;
 constant CLOCKOFF_CYCLE         : integer := 255;
 signal clk_off_counter          : integer range 0 to CLOCKOFF_CYCLE;
+signal clk_off_counter_running  : std_logic;
 
 signal usbram_word_enable_int :
   std_logic_vector(RAM_DATAWIDTH/32-1 downto 0);
@@ -2474,7 +2475,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
 
   hreset_ulpi_awake_n <= hresetn and (not ulpi_awake or async_disable);
   reset_ulpi_awake_n  <= reset_n and (not ulpi_awake or async_disable);
-  utmiclk_reset_n  <= (sys_utmi_clkin_lock and (clock_on or to_std_logic(clk_off_counter /= 0))) or async_disable;
+  utmiclk_reset_n  <= (sys_utmi_clkin_lock and (clock_on or clk_off_counter_running)) or async_disable;
 
 -- DOC_BEGIN: Vbus Debouncing
 -- This circuit masks small low spikes on Vbus. This allows
@@ -2534,12 +2535,17 @@ usb_app_hw_hub_1 : usb_app_hw_hub
       reset_needed_z  <= '1';
       reset_needed_zz <= '1';
       clk_off_counter <= 0;
+      clk_off_counter_running <= '0';
     elsif pie_clk'event and pie_clk = '1' then
       if phy_mode = '0' then -- UTMI only
-        if clock_on = '1' or  utmi_pwrctrl_wakeup_int = '1' then
-          clk_off_counter <= CLOCKOFF_CYCLE;
+        if clock_on = '1' or utmi_pwrctrl_wakeup_int = '1' then
+          clk_off_counter         <= CLOCKOFF_CYCLE;
+          clk_off_counter_running <= '1';
         elsif clk_off_counter > 0 then
           clk_off_counter <= clk_off_counter -1;
+          if clk_off_counter = 1 then
+            clk_off_counter_running <= '0';
+          end if;
         end if;
         reset_needed_z  <= reset_needed;
         reset_needed_zz <= reset_needed_z;
@@ -2641,15 +2647,15 @@ usb_app_hw_hub_1 : usb_app_hw_hub
     end if;
   end process WAKEUP_DETECTION;
 
-  usb_needclk_utmi     <= '1' when ((clock_on = '1' or clk_off_counter /= 0        or dataline_low_power_en = '0' or utmi_pwrctrl_wakeup_int = '1') and phy_mode = '0') else '0';
-  usb_needclk_ulpi     <= '1' when ((clock_on = '1' or dataline_low_power_en = '0' or ulpi_pwrctrl_wakeup_int = '1')                                and phy_mode = '1') else '0';
+  usb_needclk_utmi     <= '1' when ((clock_on = '1' or clk_off_counter_running = '1' or dataline_low_power_en = '0' or utmi_pwrctrl_wakeup_int = '1') and phy_mode = '0') else '0';
+  usb_needclk_ulpi     <= '1' when ((clock_on = '1' or dataline_low_power_en = '0'   or ulpi_pwrctrl_wakeup_int = '1')                                and phy_mode = '1') else '0';
 
   usb_needclk <= (usb_needclk_utmi or usb_needclk_ulpi) and sys_donotwakeup_n;
 
   ------------------------------------------
   -- UTMI wakeup logic
   ------------------------------------------
-  set_utmi_pwrctrl_wakeup <= clock_on and to_std_logic(clk_off_counter = 0) and dataline_low_power_en and not(phy_mode);
+  set_utmi_pwrctrl_wakeup <= clock_on and not(clk_off_counter_running) and dataline_low_power_en and not(phy_mode);
   
   UTMI_WAKEUP_STAGE : Process (set_utmi_pwrctrl_wakeup,pie_clk, async_disable, reset_n)
   -- wake up is set asynchronously, and synchronously if suspend_set is cleared
@@ -2663,7 +2669,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
   end process UTMI_WAKEUP_STAGE;
   
   -- Only relevant for UTMI:
-  utmi_suspendm <= '1' when ((clock_on = '1') or (clk_off_counter /= 0) or utmi_pwrctrl_wakeup_int = '1') and sys_donotwakeup_n = '1'
+  utmi_suspendm <= '1' when ((clock_on = '1') or (clk_off_counter_running = '1') or utmi_pwrctrl_wakeup_int = '1') and sys_donotwakeup_n = '1'
                        else '0';
 
   ------------------------------------------
