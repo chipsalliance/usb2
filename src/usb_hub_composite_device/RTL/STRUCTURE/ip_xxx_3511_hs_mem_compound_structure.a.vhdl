@@ -340,6 +340,9 @@ component usb_ocp_recovery_post_sync_arb
     epinfo_sync_txdata_valid_o : out std_logic;
     setup_pkt_vld : out std_logic;
     setup_pkt : out std_logic_vector(63 downto 0);
+    setup_generation_o : out std_logic_vector(11 downto 0);
+    setup_owner_ocp_o : out std_logic;
+    post_sync_arb_state_o : out std_logic_vector(2 downto 0);
     ctrl_out_data : out std_logic_vector(31 downto 0);
     ctrl_out_vld : out std_logic;
     ctrl_out_last : out std_logic;
@@ -1734,6 +1737,9 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     epinfo_sync_txdata_valid_o => epinfo_sync_txdata_valid,
     setup_pkt_vld => rec_setup_pkt_vld,
     setup_pkt => rec_setup_pkt,
+    setup_generation_o => rec_setup_generation,
+    setup_owner_ocp_o => rec_setup_owner_ocp,
+    post_sync_arb_state_o => rec_post_sync_arb_state,
     ctrl_out_data => rec_ctrl_out_data,
     ctrl_out_vld => rec_ctrl_out_vld,
     ctrl_out_last => rec_ctrl_out_last,
@@ -2693,4 +2699,3 @@ usb_app_hw_hub_1 : usb_app_hw_hub
 
 
 end structure;
-
