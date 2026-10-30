@@ -286,7 +286,7 @@ begin
         sync_phy_start_sss   <= sync_phy_start_ss;
         sync_phy_mode_s      <= usbreg_phy_mode;
         sync_phy_mode_ss     <= sync_phy_mode_s;       
-     end if;
+      end if;
 
       usbreg_dev_connect_s <= usbreg_dev_connect;
       usbreg_dev_connect_ss <= usbreg_dev_connect_s;
