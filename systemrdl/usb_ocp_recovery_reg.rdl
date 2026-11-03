@@ -567,7 +567,7 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Indirect FIFO Status 0";
-        desc = "INDIRECT_FIFO_STATUS bytes 0-3. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_STATUS command summary, with USB-specific sticky status bits following usb_ocp_recovery_cms_fifo.sv.";
+        desc = "INDIRECT_FIFO_STATUS bytes 0-3: EMPTY, FULL, region type, and reserved bits. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_STATUS command summary.";
         field {
             name = "FIFO Empty";
             desc = "Byte 0 bit 0 indicates the FIFO is empty. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_STATUS command summary.";

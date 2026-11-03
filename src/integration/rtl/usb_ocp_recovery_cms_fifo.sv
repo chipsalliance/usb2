@@ -14,7 +14,7 @@
 //       single-clock synchronous FIFO reports occupancy exactly with no
 //       clock-domain-crossing pointer lag.
 //     - WRITE_INDEX increments only on actual primitive write acceptance.
-//       READ_INDEX is derived as (WRITE_INDEX - depth) mod 65 from the exact
+//       READ_INDEX is derived as (WRITE_INDEX - depth) mod 64 from the exact
 //       synchronous depth, so occupancy advertised through INDIRECT_FIFO_STATUS
 //       reflects a just-freed slot on the cycle after the pop.
 //     - USB accesses still use the direct fifo_rb_* path. EXT accesses arrive
@@ -27,8 +27,8 @@
 //     - fifo_cms_q, image_size_q, write_index_q, accepted_push_count_q,
 //       overflow_q, region_reset_q, and image_done_q are the sole live owners
 //       of FIFO control, status, payload progress, and
-//       image-completion accounting. READ_INDEX is derived from write-domain
-//       depth rather than stored as an independent counter.
+//       image-completion accounting. READ_INDEX is derived from synchronous
+//       FIFO occupancy rather than stored as an independent counter.
 //     - USB and EXT each capture an independent five-word status snapshot so a
 //       multiword INDIRECT_FIFO_STATUS read stays source-consistent.
 //
@@ -574,15 +574,15 @@ module usb_ocp_recovery_cms_fifo #(
                 && (ext_data_rd || ext_ctrl_word0_wr || ext_ctrl_word1_wr)))
         else $error("usb_ocp_recovery_cms_fifo: USB and EXT fifo control/data activity collided");
       assert (write_index_q <= FIFO_INDEX_MAX_DWORDS)
-        else $error("usb_ocp_recovery_cms_fifo: WRITE_INDEX exceeded 64");
+        else $error("usb_ocp_recovery_cms_fifo: WRITE_INDEX out of range");
       assert (read_index_derived <= FIFO_INDEX_MAX_DWORDS)
-        else $error("usb_ocp_recovery_cms_fifo: READ_INDEX exceeded 64");
+        else $error("usb_ocp_recovery_cms_fifo: READ_INDEX out of range");
       assert (fifo_occupancy == fifo_wdepth)
-        else $error("usb_ocp_recovery_cms_fifo: protocol occupancy mismatches write-domain depth");
+        else $error("usb_ocp_recovery_cms_fifo: protocol occupancy mismatches synchronous FIFO occupancy");
       assert (read_index_derived == fifo_index_sub_depth(write_index_q, fifo_wdepth))
         else $error("usb_ocp_recovery_cms_fifo: READ_INDEX derivation mismatch");
       assert (fifo_empty == (fifo_wdepth == FIFO_DEPTH_W'(0)))
-        else $error("usb_ocp_recovery_cms_fifo: EMPTY mismatches write-domain depth");
+        else $error("usb_ocp_recovery_cms_fifo: EMPTY mismatches synchronous FIFO occupancy");
       assert (fifo_full == (fifo_wdepth == FIFO_DEPTH_W'(FIFO_DEPTH)))
         else $error("usb_ocp_recovery_cms_fifo: FULL without physical depth");
       assert (!payload_available_q || !fifo_empty)
