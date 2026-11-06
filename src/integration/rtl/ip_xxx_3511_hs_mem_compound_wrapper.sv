@@ -343,6 +343,9 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   // ---- VHDL recovery arbiter interface ----
   logic rec_setup_pkt_vld_w;
   logic [63:0] rec_setup_pkt_w;
+  logic [11:0] rec_setup_generation_w;
+  logic rec_setup_owner_ocp_w;
+  logic [2:0] rec_post_sync_arb_state_w;
   logic [31:0] rec_ctrl_out_data_w;
   logic rec_ctrl_out_vld_w;
   logic rec_ctrl_out_last_w;
@@ -539,6 +542,9 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .rst_ni(usb_axi_aresetn),
     .rec_setup_pkt_vld(rec_setup_pkt_vld_w),
     .rec_setup_pkt(rec_setup_pkt_w),
+    .rec_setup_generation(rec_setup_generation_w),
+    .rec_setup_owner_ocp(rec_setup_owner_ocp_w),
+    .rec_post_sync_arb_state(rec_post_sync_arb_state_w),
     .rec_ctrl_out_data(rec_ctrl_out_data_w),
     .rec_ctrl_out_vld(rec_ctrl_out_vld_w),
     .rec_ctrl_out_last(rec_ctrl_out_last_w),
@@ -696,6 +702,9 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .USB_FrameToggle(usb_frametoggle),
     .rec_setup_pkt_vld(rec_setup_pkt_vld_w),
     .rec_setup_pkt(rec_setup_pkt_w),
+    .rec_setup_generation(rec_setup_generation_w),
+    .rec_setup_owner_ocp(rec_setup_owner_ocp_w),
+    .rec_post_sync_arb_state(rec_post_sync_arb_state_w),
     .rec_ctrl_out_data(rec_ctrl_out_data_w),
     .rec_ctrl_out_vld(rec_ctrl_out_vld_w),
     .rec_ctrl_out_last(rec_ctrl_out_last_w),

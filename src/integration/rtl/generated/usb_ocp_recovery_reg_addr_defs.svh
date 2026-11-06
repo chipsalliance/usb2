@@ -16,4 +16,5 @@ localparam logic [11:0] OCP_ADDR_INDIRECT_FIFO_DATA = 12'h068;
 localparam logic [11:0] OCP_ADDR_VENDOR = 12'h100;
 localparam logic [11:0] OCP_ADDR_CALIPTRA_CTRL = 12'h200;
 localparam logic [11:0] OCP_ADDR_CALIPTRA_STATUS = 12'h204;
+localparam logic [11:0] OCP_ADDR_CALIPTRA_SETUP_DEBUG = 12'h208;
 localparam logic [11:0] OCP_ADDR_WINDOW_PAD = 12'h7FC;

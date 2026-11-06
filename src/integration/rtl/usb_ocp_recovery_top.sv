@@ -33,6 +33,9 @@ module usb_ocp_recovery_top
   //----------------------------------------------------------------------------
   input  logic                    rec_setup_pkt_vld,
   input  logic [63:0]             rec_setup_pkt,
+  input  logic [11:0]             rec_setup_generation,
+  input  logic                    rec_setup_owner_ocp,
+  input  logic [2:0]              rec_post_sync_arb_state,
 
   input  logic [31:0]             rec_ctrl_out_data,
   input  logic                    rec_ctrl_out_vld,
@@ -705,6 +708,9 @@ module usb_ocp_recovery_top
     rb_hwif_in.CALIPTRA_STATUS.OVERFLOW.next     = fifo_overflow;
     rb_hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next   = image_push_done;
     rb_hwif_in.CALIPTRA_STATUS.BATCH_ABORTED.next = batch_aborted;
+    rb_hwif_in.CALIPTRA_STATUS.POST_SYNC_ARB_STATE.next = rec_post_sync_arb_state;
+    rb_hwif_in.CALIPTRA_SETUP_DEBUG.GENERATION.next = rec_setup_generation;
+    rb_hwif_in.CALIPTRA_SETUP_DEBUG.OWNER_OCP.next = rec_setup_owner_ocp;
 
     // INDIRECT_FIFO_CTRL read-back: cms_fifo is the live owner and drives the
     // mirrored regblock copy. CTRL_0 byte0 = CMS, byte1 bit0 = region-reset
