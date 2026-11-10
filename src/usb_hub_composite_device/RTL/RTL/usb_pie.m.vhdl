@@ -456,7 +456,8 @@ type t_packet_handling_state is
   USB_PROT_WF_TX_TEST_PACKET,
   USB_PROT_WF_EXT_TOKEN_PID,
   USB_PROT_WF_EXT_TOKEN_BYTE2,
-  USB_PROT_WF_EXT_TOKEN_BYTE3
+  USB_PROT_WF_EXT_TOKEN_BYTE3,
+  USB_PROT_EXT_TOKEN_WF_EOP
 );
 
 signal packet_handling_state_nxt,packet_handling_state_r : t_packet_handling_state;
@@ -3235,41 +3236,46 @@ begin
                new_ext_token_byte3_vld <= '1';
                clear_wf_ext_token_packet <= '1';
                if crc5_valid_nxt = '1' then
-                  if dev_speed_r = USB_FULL_SPEED then
-                     timer_packet_handling_nxt <= INTER_PACKET_DELAY_FS-1;
-                     reload_timer_packet_handling_nxt <= '1';
-                  else
-                     timer_packet_handling_nxt <= INTER_PACKET_DELAY_HS-1;
-                     reload_timer_packet_handling_nxt <= '1';
-                  end if;
-                  if (usbreg_lpm_hird_sw > lpm_hird_hw_r) or usbreg_lpm_nyet= '1' then
-                     packet_handling_state_nxt <= USB_PROT_OUT_WF_TX_NYET_HANDSHAKE;
-                  elsif usbreg_lpm_sup = '0' or linkstate_r /= LINKSTATE_L1 then
-                     packet_handling_state_nxt <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
-                  else
-                     packet_handling_state_nxt <= USB_PROT_OUT_SETUP_PING_WF_TX_ACK_HANDSHAKE;
-                     set_lpm_init_valid <= '1';
-                  end if;
-                else  -- CRC5 not valid. Packet is ignore
-                   --SetError(ERROR_TOKEN_CRC);
-                   --Removed procedure and moved code explicitly in design to fix lint error
-                   errortype                   <= "0100"; --ERROR_TOKEN_CRC
-                   set_pie_error               <= '1';
-                   set_pie_endtransfer         <= '1';
-                   clear_pie_success           <= '1';
-                   clear_iso_in_pending        <= '1';
-                   clear_iso_out_pending       <= '1';
-                   clear_iso_transact_cnt_down <= '1';
-                   clear_iso_mdata_cnt_up      <= '1';
-                   clear_wf_ext_token_packet   <= '1';
-                   clear_sop_det               <= '1';
-                   packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                  packet_handling_state_nxt <= USB_PROT_EXT_TOKEN_WF_EOP;
+               else  -- CRC5 not valid. Packet is ignore
+                  --SetError(ERROR_TOKEN_CRC);
+                  --Removed procedure and moved code explicitly in design to fix lint error
+                  errortype                   <= "0100"; --ERROR_TOKEN_CRC
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
+                  packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                 end if;
-             elsif rxactive = '0' then -- no 3rd byte
-                packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+            elsif rxactive = '0' then -- no 3rd byte
+              packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+            end if;
+            
+          when USB_PROT_EXT_TOKEN_WF_EOP => -- waiting for EOP to return handshake
+            if rxactive = '0' then 
+              if dev_speed_r = USB_FULL_SPEED then
+                timer_packet_handling_nxt <= INTER_PACKET_DELAY_FS-1;
+                reload_timer_packet_handling_nxt <= '1';
+              else
+                timer_packet_handling_nxt <= INTER_PACKET_DELAY_HS-1;
+                reload_timer_packet_handling_nxt <= '1';
+              end if;
+              if (usbreg_lpm_hird_sw > lpm_hird_hw_r) or usbreg_lpm_nyet= '1' then
+                packet_handling_state_nxt <= USB_PROT_OUT_WF_TX_NYET_HANDSHAKE;
+              elsif usbreg_lpm_sup = '0' or linkstate_r /= LINKSTATE_L1 then
+                packet_handling_state_nxt <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
+              else
+                packet_handling_state_nxt <= USB_PROT_OUT_SETUP_PING_WF_TX_ACK_HANDSHAKE;
+                set_lpm_init_valid <= '1';
+              end if;
             end if;
 
-         when others =>
+          when others =>
             packet_handling_state_nxt <= USB_PROT_WF_IDLE;
       end case;
    end if;
