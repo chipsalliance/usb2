@@ -98,6 +98,7 @@ entity usb_pie is
          usbreg_lpmremotewakeup       : in  std_logic;
          usbreg_lpm_hird_sw           : in std_logic_vector(3 downto 0);
          usbreg_lpm_nyet              : in std_logic;
+         usbreg_frame_number_toggle   : out std_logic;
          usbreg_frame_number          : out std_logic_vector(10 downto 0);
          usbreg_usbaddress            : in  std_logic_vector(C_NBDEV*7-1 downto 0);
          usbreg_usbaddress_tmp        : in  std_logic_vector(C_NBDEV*7-1 downto 0);
@@ -385,7 +386,7 @@ signal lpm_wf_l1_state_r: std_logic;
 signal lpm_init_valid_r: std_logic;
 
 signal phy_endtoggle_r: std_logic;
-
+signal frame_number_toggle : std_logic;
 
 type t_bus_event_state is
 (
@@ -1148,7 +1149,7 @@ end if;
 end process utmi_ulpi_vendor_specific_clk_proc;
 
 
---For UTMI+ interface, phy_endtoggle is inverted when phy_start = \ufffd1\ufffd.\ufffd
+--For UTMI+ interface, phy_endtoggle is inverted when phy_start = TBD
 
 
 
@@ -3433,6 +3434,7 @@ begin
       end case;
 end process packet_handling_to_phy_comb_proc;
 
+usbreg_frame_number_toggle <= frame_number_toggle;
 
 -- packets and signals that need to be registered
 packet_reg_clk_proc : process (pie_clk,reset_n)
@@ -3462,6 +3464,7 @@ begin
       req_handshake_r  <= '0';
       data_fifo_r <= (others => '0');
       data_fifo_rx_r <= (others => '0');
+      frame_number_toggle <= '0';
       usbreg_frame_number <= (others => '0');
       rxdata_valid_r <= '0';
       pie_success_int <= '0';
@@ -3537,6 +3540,7 @@ begin
          ep_r(3 downto 1)    <= rxdata(2 downto 0);
       end if;
       if new_sof_vld= '1' then
+         frame_number_toggle <= not(frame_number_toggle);
          usbreg_frame_number <= rxdata_16(10 downto 0);
 	 usb_token_length    <= token_length_counter;
       end if;
@@ -3954,7 +3958,7 @@ end process counter_packet_clk_proc;
 -- HS Reset T0 + 3.0 ms < T1 {TWTREV} <HS Reset T0 + 3.125 ms (debouncing time) ===> TAKEN INTO ACCOUNT via T_3ms
 -- T2(TWTWRSTHS): PIE samples LineState. If LineState = 'J',then the initial SE0 on the bus (T0 - T1)
 -- had been due to a Suspend state and the PIE remains in HS mode.===> TAKEN INTO ACCOUNT via T_TWTRSTHS
--- T2: T1 + 100 \ufffds < T2 {TWTWRSTHS} <T1 + 875 \ufffds (elapse time before sampling)
+-- T2: T1 + 100 us < T2 {TWTWRSTHS} <T1 + 875 us (elapse time before sampling)
 -- T3 (TWTRSM): The earliest time where a device can issue Resume signaling.
 -- T3 > HS Reset T0 + 5ms {TWTRSM} ===> TAKEN INTO ACCOUNT via T_3ms (from T2)
 -- T4(T2SUSP): The latest time that a device must actually be suspended,
@@ -3967,7 +3971,7 @@ end process counter_packet_clk_proc;
 -- HS Reset T0 + 3.0 ms < T1 {TWTREV} <HS Reset T0 + 3.125 ms ===>  IDEM AS T1 SUSPEND
 -- T2((TWTWRSTHS): PIE samples LineState. If LineState = SE0, then the SE0 on the bus is due to
 -- a Reset state. The device now enters the HS Detection Handshake protocol.
--- T2: T1 + 100 \ufffds < T2 {TWTWRSTHS} <T1 + 875 \ufffds ===> IDEM AS T2 SUSPEND. ACTION IS DIFFERENT
+-- T2: T1 + 100 us < T2 {TWTWRSTHS} <T1 + 875 us ===> IDEM AS T2 SUSPEND. ACTION IS DIFFERENT
 
 -- HS Detection HandShake
 -------------------------
@@ -3977,7 +3981,7 @@ end process counter_packet_clk_proc;
 -- The PIE must employ a counter (Chirp Count) to count the number of Chirp K and Chirp J states (0--> max value =6).===> TAKEN INTO ACCOUNT via chirp counter
 -- LineState signal transitions must be used by the PIE to step through the Chirp K-J-K-J-K-J state diagram ===> TAKEN INTO ACCOUNT via bus_event FSM
 -- LineState does not filter the bus signals so the requirement that a bus state must be "continuously asserted
--- for 2.5 \ufffds" must be verified by the PIE sampling the LineState signals ===> TAKEN INTO ACCOUNT via MAX_LINESTATE_DBC_CNT
+-- for 2.5 us" must be verified by the PIE sampling the LineState signals ===> TAKEN INTO ACCOUNT via MAX_LINESTATE_DBC_CNT
 -- T1 should be > T0 + 125 us to be compliant with all 2.0 Host ===> TAKEN INTO ACCOUNT via T_125us
 
 -- FS Downstream Port:
@@ -3987,7 +3991,7 @@ end process counter_packet_clk_proc;
 -- T2(TUCHEND): Device removes Chirp K from the bus. 1 ms minimum width
 -- T2: T1 + 1.0 ms {TUCH} < T2 < HS Reset T0 + 7.0 ms {TUCHEND} ===> TAKEN INTO ACCOUNT via T_3ms
 -- T3: Earliest time when downstream port may assert Chirp K on the bus
--- T3: T2 < T3 < T2+100 \ufffds {TWTDCH} ==> NOT RELEVANT FOR DEVICE
+-- T3: T2 < T3 < T2+100 us {TWTDCH} ==> NOT RELEVANT FOR DEVICE
 -- T4 (TWTFS): Downstream port chirp not detected by the device.
 -- Device reverts to FS default state and waits for end of reset.
 -- T4: T2 + 1.0 ms < T4 {TWTFS} < T2 + 2.5 ms ===> TAKEN INTO ACCOUNT via T_TWTFS
@@ -4001,17 +4005,17 @@ end process counter_packet_clk_proc;
 -- T2: Device removes Chirp K from the bus. 1 ms minimum width.
 -- T2: T1 + 1.0 ms {TUCH} < T2 < HS Reset T0 + 7.0 ms {TUCHEND} ===> IDEM AS T2 FS DS Port
 -- T3: Downstream port asserts Chirp K on the bus
--- T3: T2 < T3 < T2+100 \ufffds {TWTDCH}  ===> NOT RELEVANT FOR DEVICE
+-- T3: T2 < T3 < T2+100 us {TWTDCH}  ===> NOT RELEVANT FOR DEVICE
 -- T4: Downstream port toggles Chirp K to Chirp J on the bus.
--- T4: T3 + 40 \ufffds {TDCHBIT (min)} < T4 < T3 + 60 \ufffds {TDCHBIT (max)} ===> REPLACED BY CHIRP COUNTER on LineState_filtered
+-- T4: T3 + 40 us {TDCHBIT (min)} < T4 < T3 + 60 us {TDCHBIT (max)} ===> REPLACED BY CHIRP COUNTER on LineState_filtered
 -- T5: Downstream port toggles Chirp J to Chirp K on the bus.
--- T5: T4 + 40 \ufffds {TDCHBIT (min)} < T5 < T4 + 60 \ufffds {TDCHBIT (max)} ===> REPLACED BY CHIRP COUNTER on LineState_filtered
+-- T5: T4 + 40 us {TDCHBIT (min)} < T5 < T4 + 60 us {TDCHBIT (max)} ===> REPLACED BY CHIRP COUNTER on LineState_filtered
 -- T6 Device detects downstream port chirp. ===> NOT RELEVANT FOR DEVICE
 -- T7 : Downstream port chirp detected by the device. Device removes D+ pull-up and asserts HS
 -- terminations, reverts to HS default state and waits for end of reset.
--- T7: T6 < T7 < T6 + 500 \ufffds {TWTHS}
+-- T7: T6 < T7 < T6 + 500 us {TWTHS}
 -- T8: Terminate downstream port Chirp K-J sequence (Repeating T4 and T5) ===> NOT RELEVANT FOR DEVICE
--- T8: T9 - 500 \ufffds {TDCHSE0 (max)} < T8 < T9 - 100 \ufffds {TDCHSE0 (min)}
+-- T8: T9 - 500 us {TDCHSE0 (max)} < T8 < T9 - 100 us {TDCHSE0 (min)}
 -- T9 The earliest time at which downstream port may end reset. The latest time at which the
 -- device may remove the D+ pull-up and assert the HS terminations, reverts to HS default state.
 -- T9 > HS Reset T0 + 10 ms {TDRST(Min)} ===> REPLACED BY CHECK on Linestate_debounced = SE0
@@ -4029,7 +4033,7 @@ end process counter_packet_clk_proc;
 -- T2: T1 (+125 us) < T2 < T0 + 5.8 ms ===> IDEM AS T1 HS Detection HandShake FS DS Port
 -- T3: Device removes Chirp K from the bus. (1 ms minimum width) and begins looking for downstream chirps.
 -- T3: T2 + 1.0 ms {TUCH} < T3 < T0 + 7.0 ms {TUCHEND} ===> IDEM AS T2 FS DS Port
--- T4: CLK "Nominal" (CLK is frequency accurate to \ufffd500 ppm, duty cycle accurate to 50\ufffd5%).
+-- T4: CLK "Nominal" (CLK is frequency accurate to +/-500 ppm, duty cycle accurate to 50 +/-5%).
 -- T4: T1 < T4 < T0 + 20.0 ms {TDRST (Min) + TRSMRCY}
 
 
@@ -4051,20 +4055,20 @@ end process counter_packet_clk_proc;
 -- T3: T1 + 20 ms {TDRSMDN} ===> T3 Calculation NOT RELEVANT FOR DEVICE
 -- T4: Latest time at which a device, which was previously in HS mode,
 -- must restore HS mode after bus activity stops.SE0 must be detected before switching !!!
--- T4 <  T3 + 1.33 \ufffds {2 Low-speed bit times} ===> SEO DETECTED via Linestate filtered.
+-- T4 <  T3 + 1.33 us {2 Low-speed bit times} ===> SEO DETECTED via Linestate filtered.
 
 
 -- DETECTION OF RESUME --
 -------------------------
 -- The PIE uses the LineState signals to determine when the USB transitions from the 'J' to the 'K' state
--- and finally to the terminating low-speed EOP (SE0 for 1.25-1.5 \ufffds.).
+-- and finally to the terminating low-speed EOP (SE0 for 1.25-1.5 us.).
 -- It is recommended that all PIE implementations key off the 'J' to 'K' transition for exiting suspend mode
--- (SuspendM = 1). And within 1.25 \ufffds after the transition to the SE0 state (low-speed EOP) the PIE must
+-- (SuspendM = 1). And within 1.25 us after the transition to the SE0 state (low-speed EOP) the PIE must
 -- enable normal operation, i.e. enter HS or FS mode depending on the mode the device was in when it was
 -- suspended.
 -- If the device was in FS mode before the suspend: then the PIE leaves the FS terminations enabled
 -- If the device was in HS mode before the suspend: then the PIE must switch to the HS terminations before
--- the SE0 expires ( < 1.25 \ufffds). ===> TAKEN INTO ACCOUNT via BUS EVENT FSM & debounced LINESTATE (K detection) &
+-- the SE0 expires ( < 1.25 us). ===> TAKEN INTO ACCOUNT via BUS EVENT FSM & debounced LINESTATE (K detection) &
 -- & filtered LINESTATE  (SEO detection)
 
 -- DEVICE ATTACH

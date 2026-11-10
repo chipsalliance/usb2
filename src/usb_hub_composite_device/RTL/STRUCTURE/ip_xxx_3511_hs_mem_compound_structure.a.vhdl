@@ -110,6 +110,7 @@ component usb_pie
         usbreg_lpmremotewakeup           : in  std_logic;
         usbreg_lpm_hird_sw               : in  std_logic_vector(3 downto 0);
         usbreg_lpm_nyet                  : in  std_logic;
+	usbreg_frame_number_toggle       : out std_logic;
         usbreg_frame_number              : out std_logic_vector(10 downto 0);
         usbreg_usbaddress                : in  std_logic_vector(C_NBDEV*7-1 downto 0);
         usbreg_usbaddress_tmp            : in  std_logic_vector(C_NBDEV*7-1 downto 0);
@@ -208,6 +209,7 @@ component usb_synchronizer
         sync_usbreg_lpm_nyet             : out std_logic;
         pie_speed                        : in  std_logic_vector(1 downto 0);
         sieint_lpm_hird_hw               : in  std_logic_vector( 3 downto 0);
+	usbreg_frame_number_toggle       : in  std_logic;
         usbreg_frame_number              : in  std_logic_vector(10 downto 0);
         pie_dev_selected                 : in  integer range 0 to C_NBDEV - 1;
         sync_sieint_epinfo_req           : out std_logic;
@@ -909,6 +911,7 @@ signal usbreg_deviceenabled   : std_logic_vector(C_NBDEV+1 downto 0);
 --signal sync_usbreg_deviceenabled : std_logic_vector(C_NBDEV+1 downto 0);
 signal usbreg_remotewakeup    : std_logic;
 signal usbreg_lpmremotewakeup : std_logic;
+signal usbreg_frame_number_toggle : std_logic;
 signal usbreg_frame_number    : std_logic_vector(10 downto 0);
 signal sync_usbreg_frame_number : std_logic_vector(10 downto 0);
 signal sieint_usbaddress      : std_logic_vector(6 downto 0);
@@ -934,8 +937,6 @@ signal dma_clear_skip:          std_logic;
 signal dma_skip_ep           : integer range 0 to C_NBPHYSEP_MAX+1;
 signal dev0_dma_skip_ep      : integer range 0 to 31; --This needs to be MAX because DMA toggles through all endpoints
 signal dev1_dma_skip_ep      : integer range 0 to 31; --This needs to be MAX because DMA toggles through all endpoints
-signal sync_s_reset_n:         std_logic;
-signal sync_ss_reset_n:        std_logic;
 
 signal pie_isotoggle:          std_logic;
 signal pie_suspend:            std_logic;
@@ -1275,13 +1276,14 @@ usb_pie_1 : usb_pie
              usbreg_lpmremotewakeup       => usbreg_lpmremotewakeup,
              usbreg_lpm_hird_sw           => sync_usbreg_lpm_hird_sw, --|
              usbreg_lpm_nyet              => sync_usbreg_lpm_nyet, --|
-             usbreg_frame_number          => usbreg_frame_number, --|
+             usbreg_frame_number_toggle   => usbreg_frame_number_toggle,
+             usbreg_frame_number          => usbreg_frame_number,
              usbreg_usbaddress            => pie_dev_addr, --
              usbreg_usbaddress_tmp        => pie_dev_addr_tmp, --
              usbreg_phy_test_mode         => usb_phy_test_mode,
              usbreg_port_force_fullspeed  => usbreg_port_force_fullspeed,
-	         token_length_counter         => zero8(6 downto 0),
-	         usb_token_length             => open,
+             token_length_counter         => zero8(6 downto 0),
+             usb_token_length             => open,
              utmi_vcontrol                => utmi_vcontrol,
              utmi_vcontrolloadm           => utmi_vcontrolloadm,
              utmi_vstatus                 => utmi_vstatus,
@@ -1332,6 +1334,7 @@ usb_synchronizer_1: usb_synchronizer
               sieint_lpm_hird_hw           => sieint_lpm_hird_hw,
               sync_sieint_lpm_hird_hw      => sync_sieint_lpm_hird_hw,
               sync_usbreg_frame_number     => sync_usbreg_frame_number,
+              usbreg_frame_number_toggle   => usbreg_frame_number_toggle,
               usbreg_frame_number          => usbreg_frame_number,
               pie_dev_selected             => pie_dev_selected,
               sync_pie_dev_selected        => sync_pie_dev_selected,

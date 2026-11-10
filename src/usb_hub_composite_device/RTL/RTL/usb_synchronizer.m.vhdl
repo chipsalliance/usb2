@@ -90,7 +90,8 @@ entity  usb_synchronizer is
           sync_usbreg_lpm_nyet       : out std_logic;
 
           pie_speed                  : in std_logic_vector(1 downto 0);
-          sieint_lpm_hird_hw         : in  std_logic_vector( 3 downto 0);
+          sieint_lpm_hird_hw         : in std_logic_vector( 3 downto 0);
+          usbreg_frame_number_toggle : in std_logic;
           usbreg_frame_number        : in std_logic_vector(10 downto 0);
           pie_dev_selected           : in integer range 0 to C_NBDEV - 1;
 
@@ -210,6 +211,7 @@ signal usbreg_phy_test_mode_toggle : std_logic;
 signal sync_pie_lowpower_n_s  : std_logic;
 signal sync_pie_lowpower_n_ss : std_logic;
 signal sync_vbuscomp_on_s,sync_vbuscomp_on_ss : std_logic;
+signal usbreg_frame_number_toggle_s, usbreg_frame_number_toggle_ss, usbreg_frame_number_toggle_sss: std_logic;
 
 signal LPM_TM_Suspend_s  : boolean;
 signal TM_Suspend_s      : boolean;
@@ -375,6 +377,11 @@ begin
 
       usbreg_phy_test_mode_s <= (others => '0');
       usbreg_phy_test_mode_toggle <= '0';
+      
+      usbreg_frame_number_toggle_s   <= '0';
+      usbreg_frame_number_toggle_ss  <= '0';
+      usbreg_frame_number_toggle_sss <= '0';
+      sync_usbreg_frame_number       <= (others => '0');
 
     elsif hclk'event and hclk = '1' then
 
@@ -461,6 +468,14 @@ begin
       usbreg_phy_test_mode_s <= usbreg_phy_test_mode;
       if usbreg_phy_test_mode_s /= usbreg_phy_test_mode then -- phy_test_mode has changed
          usbreg_phy_test_mode_toggle <= not usbreg_phy_test_mode_toggle;
+      end if;
+
+      usbreg_frame_number_toggle_s   <= usbreg_frame_number_toggle;
+      usbreg_frame_number_toggle_ss  <= usbreg_frame_number_toggle_s;
+      usbreg_frame_number_toggle_sss <= usbreg_frame_number_toggle_ss;
+      
+      if usbreg_frame_number_toggle_ss /= usbreg_frame_number_toggle_sss then
+        sync_usbreg_frame_number <= usbreg_frame_number;
       end if;
 
     end if;
@@ -561,7 +576,6 @@ begin
 
   sync_pie_speed          <= pie_speed;
   sync_sieint_lpm_hird_hw <= sieint_lpm_hird_hw;
-  sync_usbreg_frame_number<= usbreg_frame_number;
   sync_pie_dev_selected   <= pie_dev_selected;
 
 end RTL;
