@@ -110,7 +110,7 @@ component usb_pie
         usbreg_lpmremotewakeup           : in  std_logic;
         usbreg_lpm_hird_sw               : in  std_logic_vector(3 downto 0);
         usbreg_lpm_nyet                  : in  std_logic;
-	usbreg_frame_number_toggle       : out std_logic;
+        usbreg_frame_number_toggle       : out std_logic;
         usbreg_frame_number              : out std_logic_vector(10 downto 0);
         usbreg_usbaddress                : in  std_logic_vector(C_NBDEV*7-1 downto 0);
         usbreg_usbaddress_tmp            : in  std_logic_vector(C_NBDEV*7-1 downto 0);
@@ -209,7 +209,7 @@ component usb_synchronizer
         sync_usbreg_lpm_nyet             : out std_logic;
         pie_speed                        : in  std_logic_vector(1 downto 0);
         sieint_lpm_hird_hw               : in  std_logic_vector( 3 downto 0);
-	usbreg_frame_number_toggle       : in  std_logic;
+        usbreg_frame_number_toggle       : in  std_logic;
         usbreg_frame_number              : in  std_logic_vector(10 downto 0);
         pie_dev_selected                 : in  integer range 0 to C_NBDEV - 1;
         sync_sieint_epinfo_req           : out std_logic;
@@ -2322,10 +2322,27 @@ usb_app_hw_hub_1 : usb_app_hw_hub
   hub_port_lpm_sup(1)          <= dev1_lpm_sup;
   hub_port_lpm_data_pending(1) <= dev1_lpm_nyet;
   
-  usb_dev_connect        <= hub_connect         when hub_enable_q = '1' else dev0_usbreg_dev_connect;
-  usbreg_lpm_sup         <= hub_lpm_sup         when hub_enable_q = '1' else dev0_lpm_sup;
-  usbreg_remotewakeup    <= hub_remotewakeup    when hub_enable_q = '1' else hub_port_remotewakeup(0);
-  usbreg_lpmremotewakeup <= hub_lpmremotewakeup when hub_enable_q = '1' else hub_port_lpmremotewakeup(0);
+  proc_hub_enable_q : process(hresetn,hclk)
+  begin
+    if hresetn = '0' then
+      usb_dev_connect          <= '0';
+      usbreg_lpm_sup           <= '0';
+      usbreg_remotewakeup      <= '0';
+      usbreg_lpmremotewakeup   <= '0';
+    elsif hclk'event and hclk = '1' then
+      if hub_enable_q = '1' then
+        usb_dev_connect        <= hub_connect;        
+        usbreg_lpm_sup         <= hub_lpm_sup;        
+        usbreg_remotewakeup    <= hub_remotewakeup;   
+        usbreg_lpmremotewakeup <= hub_lpmremotewakeup;
+      else
+        usb_dev_connect        <= dev0_usbreg_dev_connect;
+        usbreg_lpm_sup         <= dev0_lpm_sup;
+        usbreg_remotewakeup    <= hub_port_remotewakeup(0);
+        usbreg_lpmremotewakeup <= hub_port_lpmremotewakeup(0);
+      end if;
+    end if;
+  end process proc_hub_enable_q;
 
   hub_remotewakeup       <= sync_suspend               and 
                             ep0_remote_wake_enabled(0) and
