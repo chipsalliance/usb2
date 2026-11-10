@@ -770,6 +770,8 @@ signal sys_nbphysep    : std_logic_vector((C_NBDEV+2)*5-1 downto 0);
 
 signal RG_BUSReset     : boolean;
 signal reset_n         : std_logic;
+signal sync_s_reset_n  : std_logic;
+signal sync_ss_reset_n : std_logic;
 
 signal TM_Suspend: boolean;
 signal TM_IsoToggle: integer range 0 to 1;
@@ -2486,7 +2488,20 @@ usb_app_hw_hub_1 : usb_app_hw_hub
    end if;
   end process utmi_reset_detect_proc;
 
-  reset_n    <= not(atx_reset_core) or async_disable;
+  -- Reset resynchronization (ahb --> USB clock domain):
+  proc_pie_reset_gen : process(hresetn,pie_clk)
+  begin
+    if hresetn = '0' then
+      sync_s_reset_n  <= '0';
+      sync_ss_reset_n <= '0';
+    elsif pie_clk'event and pie_clk = '1' then
+      sync_s_reset_n  <= '1';
+      sync_ss_reset_n <= sync_s_reset_n;
+    end if;
+  end process proc_pie_reset_gen;
+
+  reset_n <= sync_ss_reset_n or async_disable;
+  
   utmi_reset <= atx_reset_core;
 
 -- DOC_BEGIN: Vbus Debouncing
@@ -2539,9 +2554,9 @@ usb_app_hw_hub_1 : usb_app_hw_hub
     end if;
   end process clk_off_counter_proc;
 
-  utmi_clk_ok_proc : process(utmi_clk, async_disable, reset_n, sys_utmi_clkin_lock, clock_on)
+  utmi_clk_ok_proc : process(utmi_clk, async_disable, hresetn, sys_utmi_clkin_lock, clock_on)
   begin
-    if reset_n = '0' or
+    if hresetn = '0' or
        ((sys_utmi_clkin_lock = '0' or clock_on = '0') and async_disable = '1') then
       utmi_clk_not_ok_s  <= '1';
       utmi_clk_not_ok_ss <= '1';
