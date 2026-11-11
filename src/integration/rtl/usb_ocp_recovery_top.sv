@@ -149,11 +149,6 @@ module usb_ocp_recovery_top
   logic [3:0]                 cpuif_wr_strb;
   logic                       ext_fifo_ctrl_0_access;
   logic                       ext_fifo_ctrl_1_access;
-  logic                       ext_fifo_status_0_access;
-  logic                       ext_fifo_status_1_access;
-  logic                       ext_fifo_status_2_access;
-  logic                       ext_fifo_status_3_access;
-  logic                       ext_fifo_status_4_access;
   logic                       ext_fifo_data_read;
   logic                       ext_fifo_data_write;
 
@@ -625,11 +620,6 @@ module usb_ocp_recovery_top
 
   assign ext_fifo_ctrl_0_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_CTRL_0.CMS.swacc;
   assign ext_fifo_ctrl_1_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.swacc;
-  assign ext_fifo_status_0_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_0.EMPTY.swacc;
-  assign ext_fifo_status_1_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_1.WRITE_INDEX.swacc;
-  assign ext_fifo_status_2_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_2.READ_INDEX.swacc;
-  assign ext_fifo_status_3_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_3.FIFO_SIZE.swacc;
-  assign ext_fifo_status_4_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_4.MAX_TRANSFER_SIZE.swacc;
   assign ext_fifo_data_read = cpuif_req
                             && !cpuif_req_is_wr
                             && rb_hwif_out.INDIRECT_FIFO_DATA.DATA.swacc;
@@ -809,11 +799,6 @@ module usb_ocp_recovery_top
 
      .ext_fifo_ctrl_0_access (ext_fifo_ctrl_0_access),
      .ext_fifo_ctrl_1_access (ext_fifo_ctrl_1_access),
-     .ext_fifo_status_0_access (ext_fifo_status_0_access),
-     .ext_fifo_status_1_access (ext_fifo_status_1_access),
-     .ext_fifo_status_2_access (ext_fifo_status_2_access),
-     .ext_fifo_status_3_access (ext_fifo_status_3_access),
-     .ext_fifo_status_4_access (ext_fifo_status_4_access),
      .ext_fifo_data_read (ext_fifo_data_read),
      .ext_fifo_data_write (ext_fifo_data_write),
      .ext_cpuif_req_is_wr (cpuif_req_is_wr),
