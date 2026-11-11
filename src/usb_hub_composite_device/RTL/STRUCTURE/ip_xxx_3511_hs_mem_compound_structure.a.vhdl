@@ -2543,10 +2543,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
       clk_off_counter   <= CLOCKOFF_CYCLE;
       clock_on          <= '1';
     elsif pie_clk'event and pie_clk = '1' then
-      if pie_lowpower_n = '1' then
-        clk_off_counter   <= CLOCKOFF_CYCLE;
-        clock_on          <= '1';
-      elsif clk_off_counter = 0 then
+      if clk_off_counter = 0 then
         clock_on        <= '0';
       else
         clk_off_counter <= clk_off_counter -1;
@@ -2669,6 +2666,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
                         (dm_s         /= dm and sync_usbreg_dev_connect = '1') or
                         (sync_usbreg_dev_connect /= usb_dev_connect)      or
                         (usbreg_phy_mode /= phy_mode)                     or
+                        pie_lowpower_n = '1'                              or
                         sys_dev_wakeup_n = '0'                            or
                         (ulpi_int_lp = '1' and phy_mode = '1')            or
                         usbreg_phy_start = '1'                            or
