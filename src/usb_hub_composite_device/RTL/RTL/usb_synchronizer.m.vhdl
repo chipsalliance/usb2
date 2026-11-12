@@ -90,7 +90,8 @@ entity  usb_synchronizer is
           sync_usbreg_lpm_nyet       : out std_logic;
 
           pie_speed                  : in std_logic_vector(1 downto 0);
-          sieint_lpm_hird_hw         : in  std_logic_vector( 3 downto 0);
+          sieint_lpm_hird_hw         : in std_logic_vector( 3 downto 0);
+          usbreg_frame_number_toggle : in std_logic;
           usbreg_frame_number        : in std_logic_vector(10 downto 0);
           pie_dev_selected           : in integer range 0 to C_NBDEV - 1;
 
@@ -196,6 +197,7 @@ signal sync_suspend_s,sync_suspend_ss                              : std_logic;
 signal sync_lpm_suspend_s,sync_lpm_suspend_ss                      : std_logic;
 signal sync_lpm_rw_s,sync_lpm_rw_ss                                : std_logic;
 signal sync_phy_start_s, sync_phy_start_ss, sync_phy_start_sss     : std_logic;
+signal sync_phy_mode_s, sync_phy_mode_ss                           : std_logic;                  
 signal sync_phy_endtoggle_s, sync_phy_endtoggle_ss, sync_phy_endtoggle_sss : std_logic;
 signal sync_VBusDebounced_s, sync_VBusDebounced_ss      : std_logic;
 signal sync_avalid_s, sync_avalid_ss      : std_logic;
@@ -209,6 +211,7 @@ signal usbreg_phy_test_mode_toggle : std_logic;
 signal sync_pie_lowpower_n_s  : std_logic;
 signal sync_pie_lowpower_n_ss : std_logic;
 signal sync_vbuscomp_on_s,sync_vbuscomp_on_ss : std_logic;
+signal usbreg_frame_number_toggle_s, usbreg_frame_number_toggle_ss, usbreg_frame_number_toggle_sss: std_logic;
 
 signal LPM_TM_Suspend_s  : boolean;
 signal TM_Suspend_s      : boolean;
@@ -236,6 +239,8 @@ begin
         sync_phy_start_s     <= '0';
         sync_phy_start_ss    <= '0';
         sync_phy_start_sss   <= '0';
+        sync_phy_mode_s      <= '0';
+        sync_phy_mode_ss     <= '0';
       end if;
 
       usbreg_dev_connect_s <= '0';
@@ -281,6 +286,8 @@ begin
         sync_phy_start_s     <= usbreg_phy_start;
         sync_phy_start_ss    <= sync_phy_start_s;
         sync_phy_start_sss   <= sync_phy_start_ss;
+        sync_phy_mode_s      <= usbreg_phy_mode;
+        sync_phy_mode_ss     <= sync_phy_mode_s;       
       end if;
 
       usbreg_dev_connect_s <= usbreg_dev_connect;
@@ -370,6 +377,11 @@ begin
 
       usbreg_phy_test_mode_s <= (others => '0');
       usbreg_phy_test_mode_toggle <= '0';
+      
+      usbreg_frame_number_toggle_s   <= '0';
+      usbreg_frame_number_toggle_ss  <= '0';
+      usbreg_frame_number_toggle_sss <= '0';
+      sync_usbreg_frame_number       <= (others => '0');
 
     elsif hclk'event and hclk = '1' then
 
@@ -458,6 +470,14 @@ begin
          usbreg_phy_test_mode_toggle <= not usbreg_phy_test_mode_toggle;
       end if;
 
+      usbreg_frame_number_toggle_s   <= usbreg_frame_number_toggle;
+      usbreg_frame_number_toggle_ss  <= usbreg_frame_number_toggle_s;
+      usbreg_frame_number_toggle_sss <= usbreg_frame_number_toggle_ss;
+      
+      if usbreg_frame_number_toggle_ss /= usbreg_frame_number_toggle_sss then
+        sync_usbreg_frame_number <= usbreg_frame_number;
+      end if;
+
     end if;
   end process proc_sync_ahb;
 
@@ -536,7 +556,7 @@ begin
                                     (sync_phy_start_ss  = '1')         and
                                        (sync_phy_start_sss = '0') else
                            '0';
-  phy_mode              <= usbreg_phy_mode;
+  phy_mode              <= sync_phy_mode_ss;
   sync_phy_endtoggle    <= '1' when (C_ULPI_SUPPORT or C_UTMI_SUPPORT) and
                                        (sync_phy_endtoggle_ss  /=
                                         sync_phy_endtoggle_sss) else
@@ -556,7 +576,6 @@ begin
 
   sync_pie_speed          <= pie_speed;
   sync_sieint_lpm_hird_hw <= sieint_lpm_hird_hw;
-  sync_usbreg_frame_number<= usbreg_frame_number;
   sync_pie_dev_selected   <= pie_dev_selected;
 
 end RTL;

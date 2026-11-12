@@ -98,6 +98,7 @@ entity usb_pie is
          usbreg_lpmremotewakeup       : in  std_logic;
          usbreg_lpm_hird_sw           : in std_logic_vector(3 downto 0);
          usbreg_lpm_nyet              : in std_logic;
+         usbreg_frame_number_toggle   : out std_logic;
          usbreg_frame_number          : out std_logic_vector(10 downto 0);
          usbreg_usbaddress            : in  std_logic_vector(C_NBDEV*7-1 downto 0);
          usbreg_usbaddress_tmp        : in  std_logic_vector(C_NBDEV*7-1 downto 0);
@@ -385,7 +386,7 @@ signal lpm_wf_l1_state_r: std_logic;
 signal lpm_init_valid_r: std_logic;
 
 signal phy_endtoggle_r: std_logic;
-
+signal frame_number_toggle : std_logic;
 
 type t_bus_event_state is
 (
@@ -456,7 +457,8 @@ type t_packet_handling_state is
   USB_PROT_WF_TX_TEST_PACKET,
   USB_PROT_WF_EXT_TOKEN_PID,
   USB_PROT_WF_EXT_TOKEN_BYTE2,
-  USB_PROT_WF_EXT_TOKEN_BYTE3
+  USB_PROT_WF_EXT_TOKEN_BYTE3,
+  USB_PROT_EXT_TOKEN_WF_EOP
 );
 
 signal packet_handling_state_nxt,packet_handling_state_r : t_packet_handling_state;
@@ -684,6 +686,8 @@ signal set_ulpi_reg_rdata_vld : std_logic;
 
 signal pie_success_int : std_logic;
 signal pie_dev_selected_int : integer range 0 to C_NBDEV - 1;
+
+signal ulpi_wakeup_sync : std_logic;
 
 --FUNCTIONS:
 
@@ -1073,6 +1077,8 @@ ulpi_nxt_int <= ulpi_nxt when  ULPI_SUPPORT and phy_mode = '1'
 ulpi_stp <= ulpi_stp_r when ulpi_async_mode_r = '0' else
             ulpi_stp_async;
 
+ulpi_stp_async <= ulpi_pwrctrl_wakeup;
+
 -- UTMI/ULPI signals that are driven combinatorially
 utmi_ulpi_out_comb_proc: process (suspendm_nxt,ulpi_oper_state_r,reset_n,phy_mode,ulpi_dir_r)
 
@@ -1082,7 +1088,7 @@ begin
       pie_lowpower_n <= suspendm_nxt;
    else -- ULPI mode
       utmi_reset <= '0';
-      if ulpi_oper_state_r = ULPI_OPER_LOW_POWER and ulpi_dir_r = '1'then
+      if ulpi_oper_state_r = ULPI_OPER_LOW_POWER and ulpi_dir_r = '1' then
       -- should mimic the internal suspend bit register of the PHY (not directly equivalent to suspend_nxt)
          pie_lowpower_n <= '0';
       else
@@ -1143,7 +1149,7 @@ end if;
 end process utmi_ulpi_vendor_specific_clk_proc;
 
 
---For UTMI+ interface, phy_endtoggle is inverted when phy_start = �1�.�
+--For UTMI+ interface, phy_endtoggle is inverted when phy_start = TBD
 
 
 
@@ -3231,41 +3237,46 @@ begin
                new_ext_token_byte3_vld <= '1';
                clear_wf_ext_token_packet <= '1';
                if crc5_valid_nxt = '1' then
-                  if dev_speed_r = USB_FULL_SPEED then
-                     timer_packet_handling_nxt <= INTER_PACKET_DELAY_FS-1;
-                     reload_timer_packet_handling_nxt <= '1';
-                  else
-                     timer_packet_handling_nxt <= INTER_PACKET_DELAY_HS-1;
-                     reload_timer_packet_handling_nxt <= '1';
-                  end if;
-                  if (usbreg_lpm_hird_sw > lpm_hird_hw_r) or usbreg_lpm_nyet= '1' then
-                     packet_handling_state_nxt <= USB_PROT_OUT_WF_TX_NYET_HANDSHAKE;
-                  elsif usbreg_lpm_sup = '0' or linkstate_r /= LINKSTATE_L1 then
-                     packet_handling_state_nxt <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
-                  else
-                     packet_handling_state_nxt <= USB_PROT_OUT_SETUP_PING_WF_TX_ACK_HANDSHAKE;
-                     set_lpm_init_valid <= '1';
-                  end if;
-                else  -- CRC5 not valid. Packet is ignore
-                   --SetError(ERROR_TOKEN_CRC);
-                   --Removed procedure and moved code explicitly in design to fix lint error
-                   errortype                   <= "0100"; --ERROR_TOKEN_CRC
-                   set_pie_error               <= '1';
-                   set_pie_endtransfer         <= '1';
-                   clear_pie_success           <= '1';
-                   clear_iso_in_pending        <= '1';
-                   clear_iso_out_pending       <= '1';
-                   clear_iso_transact_cnt_down <= '1';
-                   clear_iso_mdata_cnt_up      <= '1';
-                   clear_wf_ext_token_packet   <= '1';
-                   clear_sop_det               <= '1';
-                   packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+                  packet_handling_state_nxt <= USB_PROT_EXT_TOKEN_WF_EOP;
+               else  -- CRC5 not valid. Packet is ignore
+                  --SetError(ERROR_TOKEN_CRC);
+                  --Removed procedure and moved code explicitly in design to fix lint error
+                  errortype                   <= "0100"; --ERROR_TOKEN_CRC
+                  set_pie_error               <= '1';
+                  set_pie_endtransfer         <= '1';
+                  clear_pie_success           <= '1';
+                  clear_iso_in_pending        <= '1';
+                  clear_iso_out_pending       <= '1';
+                  clear_iso_transact_cnt_down <= '1';
+                  clear_iso_mdata_cnt_up      <= '1';
+                  clear_wf_ext_token_packet   <= '1';
+                  clear_sop_det               <= '1';
+                  packet_handling_state_nxt <= USB_PROT_WF_IDLE;
                 end if;
-             elsif rxactive = '0' then -- no 3rd byte
-                packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+            elsif rxactive = '0' then -- no 3rd byte
+              packet_handling_state_nxt <= USB_PROT_WF_IDLE;
+            end if;
+            
+          when USB_PROT_EXT_TOKEN_WF_EOP => -- waiting for EOP to return handshake
+            if rxactive = '0' then 
+              if dev_speed_r = USB_FULL_SPEED then
+                timer_packet_handling_nxt <= INTER_PACKET_DELAY_FS-1;
+                reload_timer_packet_handling_nxt <= '1';
+              else
+                timer_packet_handling_nxt <= INTER_PACKET_DELAY_HS-1;
+                reload_timer_packet_handling_nxt <= '1';
+              end if;
+              if (usbreg_lpm_hird_sw > lpm_hird_hw_r) or usbreg_lpm_nyet= '1' then
+                packet_handling_state_nxt <= USB_PROT_OUT_WF_TX_NYET_HANDSHAKE;
+              elsif usbreg_lpm_sup = '0' or linkstate_r /= LINKSTATE_L1 then
+                packet_handling_state_nxt <= USB_PROT_IN_OUT_PING_WF_TX_STALL_HANDSHAKE;
+              else
+                packet_handling_state_nxt <= USB_PROT_OUT_SETUP_PING_WF_TX_ACK_HANDSHAKE;
+                set_lpm_init_valid <= '1';
+              end if;
             end if;
 
-         when others =>
+          when others =>
             packet_handling_state_nxt <= USB_PROT_WF_IDLE;
       end case;
    end if;
@@ -3423,6 +3434,7 @@ begin
       end case;
 end process packet_handling_to_phy_comb_proc;
 
+usbreg_frame_number_toggle <= frame_number_toggle;
 
 -- packets and signals that need to be registered
 packet_reg_clk_proc : process (pie_clk,reset_n)
@@ -3452,6 +3464,7 @@ begin
       req_handshake_r  <= '0';
       data_fifo_r <= (others => '0');
       data_fifo_rx_r <= (others => '0');
+      frame_number_toggle <= '0';
       usbreg_frame_number <= (others => '0');
       rxdata_valid_r <= '0';
       pie_success_int <= '0';
@@ -3527,6 +3540,7 @@ begin
          ep_r(3 downto 1)    <= rxdata(2 downto 0);
       end if;
       if new_sof_vld= '1' then
+         frame_number_toggle <= not(frame_number_toggle);
          usbreg_frame_number <= rxdata_16(10 downto 0);
 	 usb_token_length    <= token_length_counter;
       end if;
@@ -3944,7 +3958,7 @@ end process counter_packet_clk_proc;
 -- HS Reset T0 + 3.0 ms < T1 {TWTREV} <HS Reset T0 + 3.125 ms (debouncing time) ===> TAKEN INTO ACCOUNT via T_3ms
 -- T2(TWTWRSTHS): PIE samples LineState. If LineState = 'J',then the initial SE0 on the bus (T0 - T1)
 -- had been due to a Suspend state and the PIE remains in HS mode.===> TAKEN INTO ACCOUNT via T_TWTRSTHS
--- T2: T1 + 100 �s < T2 {TWTWRSTHS} <T1 + 875 �s (elapse time before sampling)
+-- T2: T1 + 100 us < T2 {TWTWRSTHS} <T1 + 875 us (elapse time before sampling)
 -- T3 (TWTRSM): The earliest time where a device can issue Resume signaling.
 -- T3 > HS Reset T0 + 5ms {TWTRSM} ===> TAKEN INTO ACCOUNT via T_3ms (from T2)
 -- T4(T2SUSP): The latest time that a device must actually be suspended,
@@ -3957,7 +3971,7 @@ end process counter_packet_clk_proc;
 -- HS Reset T0 + 3.0 ms < T1 {TWTREV} <HS Reset T0 + 3.125 ms ===>  IDEM AS T1 SUSPEND
 -- T2((TWTWRSTHS): PIE samples LineState. If LineState = SE0, then the SE0 on the bus is due to
 -- a Reset state. The device now enters the HS Detection Handshake protocol.
--- T2: T1 + 100 �s < T2 {TWTWRSTHS} <T1 + 875 �s ===> IDEM AS T2 SUSPEND. ACTION IS DIFFERENT
+-- T2: T1 + 100 us < T2 {TWTWRSTHS} <T1 + 875 us ===> IDEM AS T2 SUSPEND. ACTION IS DIFFERENT
 
 -- HS Detection HandShake
 -------------------------
@@ -3967,7 +3981,7 @@ end process counter_packet_clk_proc;
 -- The PIE must employ a counter (Chirp Count) to count the number of Chirp K and Chirp J states (0--> max value =6).===> TAKEN INTO ACCOUNT via chirp counter
 -- LineState signal transitions must be used by the PIE to step through the Chirp K-J-K-J-K-J state diagram ===> TAKEN INTO ACCOUNT via bus_event FSM
 -- LineState does not filter the bus signals so the requirement that a bus state must be "continuously asserted
--- for 2.5 �s" must be verified by the PIE sampling the LineState signals ===> TAKEN INTO ACCOUNT via MAX_LINESTATE_DBC_CNT
+-- for 2.5 us" must be verified by the PIE sampling the LineState signals ===> TAKEN INTO ACCOUNT via MAX_LINESTATE_DBC_CNT
 -- T1 should be > T0 + 125 us to be compliant with all 2.0 Host ===> TAKEN INTO ACCOUNT via T_125us
 
 -- FS Downstream Port:
@@ -3977,7 +3991,7 @@ end process counter_packet_clk_proc;
 -- T2(TUCHEND): Device removes Chirp K from the bus. 1 ms minimum width
 -- T2: T1 + 1.0 ms {TUCH} < T2 < HS Reset T0 + 7.0 ms {TUCHEND} ===> TAKEN INTO ACCOUNT via T_3ms
 -- T3: Earliest time when downstream port may assert Chirp K on the bus
--- T3: T2 < T3 < T2+100 �s {TWTDCH} ==> NOT RELEVANT FOR DEVICE
+-- T3: T2 < T3 < T2+100 us {TWTDCH} ==> NOT RELEVANT FOR DEVICE
 -- T4 (TWTFS): Downstream port chirp not detected by the device.
 -- Device reverts to FS default state and waits for end of reset.
 -- T4: T2 + 1.0 ms < T4 {TWTFS} < T2 + 2.5 ms ===> TAKEN INTO ACCOUNT via T_TWTFS
@@ -3991,17 +4005,17 @@ end process counter_packet_clk_proc;
 -- T2: Device removes Chirp K from the bus. 1 ms minimum width.
 -- T2: T1 + 1.0 ms {TUCH} < T2 < HS Reset T0 + 7.0 ms {TUCHEND} ===> IDEM AS T2 FS DS Port
 -- T3: Downstream port asserts Chirp K on the bus
--- T3: T2 < T3 < T2+100 �s {TWTDCH}  ===> NOT RELEVANT FOR DEVICE
+-- T3: T2 < T3 < T2+100 us {TWTDCH}  ===> NOT RELEVANT FOR DEVICE
 -- T4: Downstream port toggles Chirp K to Chirp J on the bus.
--- T4: T3 + 40 �s {TDCHBIT (min)} < T4 < T3 + 60 �s {TDCHBIT (max)} ===> REPLACED BY CHIRP COUNTER on LineState_filtered
+-- T4: T3 + 40 us {TDCHBIT (min)} < T4 < T3 + 60 us {TDCHBIT (max)} ===> REPLACED BY CHIRP COUNTER on LineState_filtered
 -- T5: Downstream port toggles Chirp J to Chirp K on the bus.
--- T5: T4 + 40 �s {TDCHBIT (min)} < T5 < T4 + 60 �s {TDCHBIT (max)} ===> REPLACED BY CHIRP COUNTER on LineState_filtered
+-- T5: T4 + 40 us {TDCHBIT (min)} < T5 < T4 + 60 us {TDCHBIT (max)} ===> REPLACED BY CHIRP COUNTER on LineState_filtered
 -- T6 Device detects downstream port chirp. ===> NOT RELEVANT FOR DEVICE
 -- T7 : Downstream port chirp detected by the device. Device removes D+ pull-up and asserts HS
 -- terminations, reverts to HS default state and waits for end of reset.
--- T7: T6 < T7 < T6 + 500 �s {TWTHS}
+-- T7: T6 < T7 < T6 + 500 us {TWTHS}
 -- T8: Terminate downstream port Chirp K-J sequence (Repeating T4 and T5) ===> NOT RELEVANT FOR DEVICE
--- T8: T9 - 500 �s {TDCHSE0 (max)} < T8 < T9 - 100 �s {TDCHSE0 (min)}
+-- T8: T9 - 500 us {TDCHSE0 (max)} < T8 < T9 - 100 us {TDCHSE0 (min)}
 -- T9 The earliest time at which downstream port may end reset. The latest time at which the
 -- device may remove the D+ pull-up and assert the HS terminations, reverts to HS default state.
 -- T9 > HS Reset T0 + 10 ms {TDRST(Min)} ===> REPLACED BY CHECK on Linestate_debounced = SE0
@@ -4019,7 +4033,7 @@ end process counter_packet_clk_proc;
 -- T2: T1 (+125 us) < T2 < T0 + 5.8 ms ===> IDEM AS T1 HS Detection HandShake FS DS Port
 -- T3: Device removes Chirp K from the bus. (1 ms minimum width) and begins looking for downstream chirps.
 -- T3: T2 + 1.0 ms {TUCH} < T3 < T0 + 7.0 ms {TUCHEND} ===> IDEM AS T2 FS DS Port
--- T4: CLK "Nominal" (CLK is frequency accurate to �500 ppm, duty cycle accurate to 50�5%).
+-- T4: CLK "Nominal" (CLK is frequency accurate to +/-500 ppm, duty cycle accurate to 50 +/-5%).
 -- T4: T1 < T4 < T0 + 20.0 ms {TDRST (Min) + TRSMRCY}
 
 
@@ -4041,20 +4055,20 @@ end process counter_packet_clk_proc;
 -- T3: T1 + 20 ms {TDRSMDN} ===> T3 Calculation NOT RELEVANT FOR DEVICE
 -- T4: Latest time at which a device, which was previously in HS mode,
 -- must restore HS mode after bus activity stops.SE0 must be detected before switching !!!
--- T4 <  T3 + 1.33 �s {2 Low-speed bit times} ===> SEO DETECTED via Linestate filtered.
+-- T4 <  T3 + 1.33 us {2 Low-speed bit times} ===> SEO DETECTED via Linestate filtered.
 
 
 -- DETECTION OF RESUME --
 -------------------------
 -- The PIE uses the LineState signals to determine when the USB transitions from the 'J' to the 'K' state
--- and finally to the terminating low-speed EOP (SE0 for 1.25-1.5 �s.).
+-- and finally to the terminating low-speed EOP (SE0 for 1.25-1.5 us.).
 -- It is recommended that all PIE implementations key off the 'J' to 'K' transition for exiting suspend mode
--- (SuspendM = 1). And within 1.25 �s after the transition to the SE0 state (low-speed EOP) the PIE must
+-- (SuspendM = 1). And within 1.25 us after the transition to the SE0 state (low-speed EOP) the PIE must
 -- enable normal operation, i.e. enter HS or FS mode depending on the mode the device was in when it was
 -- suspended.
 -- If the device was in FS mode before the suspend: then the PIE leaves the FS terminations enabled
 -- If the device was in HS mode before the suspend: then the PIE must switch to the HS terminations before
--- the SE0 expires ( < 1.25 �s). ===> TAKEN INTO ACCOUNT via BUS EVENT FSM & debounced LINESTATE (K detection) &
+-- the SE0 expires ( < 1.25 us). ===> TAKEN INTO ACCOUNT via BUS EVENT FSM & debounced LINESTATE (K detection) &
 -- & filtered LINESTATE  (SEO detection)
 
 -- DEVICE ATTACH
@@ -4343,9 +4357,7 @@ set_ulpi_req_low_power_mode <= '1' when suspendm_nxt = '0' and (ulpi_suspendm_r 
                                    else  '0';
 
 clear_ulpi_req_low_power_mode <= '1' when (ulpi_dir_int = '0' and ulpi_dir_r = '1') and
-                                       (usbreg_remotewakeup='1' or -- from register interface
-                                       ulpi_pwrctrl_wakeup = '1' or -- from suspend control module at toplevel structure
-                                       ulpi_suspendm_r= '1' or
+                                       (ulpi_suspendm_r= '1' or
                                        ulpi_oper_state_r = ULPI_OPER_EXIT_LOW_POWER
                                        ) else
                              '0';
@@ -4531,8 +4543,7 @@ ulpi_packet_idle <= '1' when packet_handling_state_r = USB_PROT_IDLE or (packet_
 ulpi_oper_fsm_comb_proc: process (ulpi_oper_state_r,ulpi_dir_r,ulpi_dir_int,ulpi_nxt_r,ulpi_reg_access_req,
 set_ulpi_tx_nopid_req,ulpi_reg_access_wr_i,txvalid_nxt,ulpi_turnaround,ulpi_pwrst_det_r,ulpi_ext_reg,
 ulpi_tx_nopid_req_r,ulpi_arb_reg_nxt,clear_ulpi_tx_nopid_req,phy_mode,ulpi_dir_r_s,ulpi_nxt_int,ulpi_packet_idle,
-suspendm_nxt,ulpi_pwrctrl_wakeup,ulpi_req_low_power_mode_r,ulpi_arb_reg_pending_r,ulpi_arb_reg_r,
-ulpi_req_txcmd_fct_ctrl_susp_r )
+ulpi_req_low_power_mode_r,ulpi_arb_reg_pending_r,ulpi_arb_reg_r,ulpi_req_txcmd_fct_ctrl_susp_r, ulpi_wakeup_sync )
 
 begin
 -- default values
@@ -4823,8 +4834,8 @@ else
       ulpi_oper_state_nxt <= ULPI_OPER_IDLE;
 
    when ULPI_OPER_LOW_POWER =>
-      if (suspendm_nxt = '1' or ulpi_pwrctrl_wakeup = '1') and ulpi_dir_r = '1' then
-         ulpi_oper_state_nxt <=  ULPI_OPER_EXIT_LOW_POWER;
+     if ulpi_wakeup_sync = '1' then
+          ulpi_oper_state_nxt <=  ULPI_OPER_EXIT_LOW_POWER;
       end if;
    when ULPI_OPER_EXIT_LOW_POWER =>
       if ulpi_dir_r = '0' and ulpi_dir_r_s = '1' then   -- falling edge of ulpi_dir_r
@@ -4847,8 +4858,12 @@ ulpi_oper_fsm_clk_proc : process (pie_clk, reset_n)
 begin
    if reset_n = '0' then
       ulpi_oper_state_r <= ULPI_OPER_RESET_PWR_INIT;
-
+      ulpi_wakeup_sync <= '0';
    elsif pie_clk'event and pie_clk='1' then
+      ulpi_wakeup_sync <= '0';
+      if ulpi_pwrctrl_wakeup = '1' and ulpi_dir_r = '1' then
+        ulpi_wakeup_sync <= '1';
+      end if;
       ulpi_oper_state_r <= ulpi_oper_state_nxt;
    end if;
 end process ulpi_oper_fsm_clk_proc;
@@ -4859,7 +4874,7 @@ ulpi_oper_decod_nxt_comb_proc: process (ulpi_oper_state_nxt,ulpi_reg_tx_addr,ulp
 begin
 -- default values
    ulpi_txdata_nxt_i <= (others => '0');
-   ulpi_stp_async <= '0';
+   --ulpi_stp_async <= '0';
    case ulpi_oper_state_nxt is
    when ULPI_OPER_RESET_PWR_INIT =>
 
@@ -4914,9 +4929,7 @@ begin
    when ULPI_OPER_LOW_POWER =>
 
    when ULPI_OPER_EXIT_LOW_POWER =>
-    --  if (suspendm_nxt = '1' or ulpi_pwrctrl_wakeup = '1') and ulpi_dir_r = '1' then
-         ulpi_stp_async <= '1';
-    --  end if;
+     --     ulpi_stp_async <= '1';
    when others =>
       ulpi_txdata_nxt_i <= (others => '0') ;
 
