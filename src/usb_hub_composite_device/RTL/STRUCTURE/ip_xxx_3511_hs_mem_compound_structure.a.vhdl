@@ -2535,10 +2535,10 @@ usb_app_hw_hub_1 : usb_app_hw_hub
        end if;
        if pie_vbusvalid_r = '1' then
           DebounceTimer <= VBUS_DEBOUNCE_TIME;
+       elsif DebounceTimer = 0 then
+          DebounceTimer <= 0;
        elsif pie_isotoggle = '1' xor pie_isotoggle_r = '1'  then -- every toggling of isotoggle signal
-          if (DebounceTimer > 0) then
-             DebounceTimer <= DebounceTimer -1;
-          end if;
+          DebounceTimer <= DebounceTimer -1;
        end if;
     end if;
   end process vbus_debounc_proc;
