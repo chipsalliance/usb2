@@ -140,6 +140,9 @@ entity ip_xxx_3511_hs_mem_compound is
        -- OCP Recovery v1.1 Section 8.5 control-transfer surface
        rec_setup_pkt_vld        : out std_logic;
        rec_setup_pkt            : out std_logic_vector(63 downto 0);
+       rec_setup_generation     : out std_logic_vector(11 downto 0);
+       rec_setup_owner_ocp      : out std_logic;
+       rec_post_sync_arb_state  : out std_logic_vector(2 downto 0);
        rec_ctrl_out_data        : out std_logic_vector(31 downto 0);
        rec_ctrl_out_vld         : out std_logic;
        rec_ctrl_out_last        : out std_logic;

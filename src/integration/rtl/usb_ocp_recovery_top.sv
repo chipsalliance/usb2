@@ -33,6 +33,9 @@ module usb_ocp_recovery_top
   //----------------------------------------------------------------------------
   input  logic                    rec_setup_pkt_vld,
   input  logic [63:0]             rec_setup_pkt,
+  input  logic [11:0]             rec_setup_generation,
+  input  logic                    rec_setup_owner_ocp,
+  input  logic [2:0]              rec_post_sync_arb_state,
 
   input  logic [31:0]             rec_ctrl_out_data,
   input  logic                    rec_ctrl_out_vld,
@@ -146,11 +149,6 @@ module usb_ocp_recovery_top
   logic [3:0]                 cpuif_wr_strb;
   logic                       ext_fifo_ctrl_0_access;
   logic                       ext_fifo_ctrl_1_access;
-  logic                       ext_fifo_status_0_access;
-  logic                       ext_fifo_status_1_access;
-  logic                       ext_fifo_status_2_access;
-  logic                       ext_fifo_status_3_access;
-  logic                       ext_fifo_status_4_access;
   logic                       ext_fifo_data_read;
   logic                       ext_fifo_data_write;
 
@@ -622,11 +620,6 @@ module usb_ocp_recovery_top
 
   assign ext_fifo_ctrl_0_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_CTRL_0.CMS.swacc;
   assign ext_fifo_ctrl_1_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_CTRL_1.IMAGE_SIZE.swacc;
-  assign ext_fifo_status_0_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_0.EMPTY.swacc;
-  assign ext_fifo_status_1_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_1.WRITE_INDEX.swacc;
-  assign ext_fifo_status_2_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_2.READ_INDEX.swacc;
-  assign ext_fifo_status_3_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_3.FIFO_SIZE.swacc;
-  assign ext_fifo_status_4_access = cpuif_req && rb_hwif_out.INDIRECT_FIFO_STATUS_4.MAX_TRANSFER_SIZE.swacc;
   assign ext_fifo_data_read = cpuif_req
                             && !cpuif_req_is_wr
                             && rb_hwif_out.INDIRECT_FIFO_DATA.DATA.swacc;
@@ -705,6 +698,9 @@ module usb_ocp_recovery_top
     rb_hwif_in.CALIPTRA_STATUS.OVERFLOW.next     = fifo_overflow;
     rb_hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next   = image_push_done;
     rb_hwif_in.CALIPTRA_STATUS.BATCH_ABORTED.next = batch_aborted;
+    rb_hwif_in.CALIPTRA_STATUS.POST_SYNC_ARB_STATE.next = rec_post_sync_arb_state;
+    rb_hwif_in.CALIPTRA_SETUP_DEBUG.GENERATION.next = rec_setup_generation;
+    rb_hwif_in.CALIPTRA_SETUP_DEBUG.OWNER_OCP.next = rec_setup_owner_ocp;
 
     // INDIRECT_FIFO_CTRL read-back: cms_fifo is the live owner and drives the
     // mirrored regblock copy. CTRL_0 byte0 = CMS, byte1 bit0 = region-reset
@@ -803,11 +799,6 @@ module usb_ocp_recovery_top
 
      .ext_fifo_ctrl_0_access (ext_fifo_ctrl_0_access),
      .ext_fifo_ctrl_1_access (ext_fifo_ctrl_1_access),
-     .ext_fifo_status_0_access (ext_fifo_status_0_access),
-     .ext_fifo_status_1_access (ext_fifo_status_1_access),
-     .ext_fifo_status_2_access (ext_fifo_status_2_access),
-     .ext_fifo_status_3_access (ext_fifo_status_3_access),
-     .ext_fifo_status_4_access (ext_fifo_status_4_access),
      .ext_fifo_data_read (ext_fifo_data_read),
      .ext_fifo_data_write (ext_fifo_data_write),
      .ext_cpuif_req_is_wr (cpuif_req_is_wr),

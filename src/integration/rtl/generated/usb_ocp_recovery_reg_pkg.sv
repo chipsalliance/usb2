@@ -204,16 +204,34 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__CALIPTRA_STATUS__BATCH_ABORTED__in_t;
 
     typedef struct packed{
-        logic [27:0] next;
-    } usb_ocp_recovery_reg__CALIPTRA_STATUS__RESERVED_31_4__in_t;
+        logic [2:0] next;
+    } usb_ocp_recovery_reg__CALIPTRA_STATUS__POST_SYNC_ARB_STATE__in_t;
+
+    typedef struct packed{
+        logic [24:0] next;
+    } usb_ocp_recovery_reg__CALIPTRA_STATUS__RESERVED_31_7__in_t;
 
     typedef struct packed{
         usb_ocp_recovery_reg__CALIPTRA_STATUS__REGION_RESET__in_t REGION_RESET;
         usb_ocp_recovery_reg__CALIPTRA_STATUS__OVERFLOW__in_t OVERFLOW;
         usb_ocp_recovery_reg__CALIPTRA_STATUS__IMAGE_DONE__in_t IMAGE_DONE;
         usb_ocp_recovery_reg__CALIPTRA_STATUS__BATCH_ABORTED__in_t BATCH_ABORTED;
-        usb_ocp_recovery_reg__CALIPTRA_STATUS__RESERVED_31_4__in_t RESERVED_31_4;
+        usb_ocp_recovery_reg__CALIPTRA_STATUS__POST_SYNC_ARB_STATE__in_t POST_SYNC_ARB_STATE;
+        usb_ocp_recovery_reg__CALIPTRA_STATUS__RESERVED_31_7__in_t RESERVED_31_7;
     } usb_ocp_recovery_reg__CALIPTRA_STATUS__in_t;
+
+    typedef struct packed{
+        logic [11:0] next;
+    } usb_ocp_recovery_reg__CALIPTRA_SETUP_DEBUG__GENERATION__in_t;
+
+    typedef struct packed{
+        logic next;
+    } usb_ocp_recovery_reg__CALIPTRA_SETUP_DEBUG__OWNER_OCP__in_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__CALIPTRA_SETUP_DEBUG__GENERATION__in_t GENERATION;
+        usb_ocp_recovery_reg__CALIPTRA_SETUP_DEBUG__OWNER_OCP__in_t OWNER_OCP;
+    } usb_ocp_recovery_reg__CALIPTRA_SETUP_DEBUG__in_t;
 
     typedef struct packed{
         logic rst_ni;
@@ -232,6 +250,7 @@ package usb_ocp_recovery_reg_pkg;
         usb_ocp_recovery_reg__VENDOR__in_t VENDOR;
         usb_ocp_recovery_reg__CALIPTRA_CTRL__in_t CALIPTRA_CTRL;
         usb_ocp_recovery_reg__CALIPTRA_STATUS__in_t CALIPTRA_STATUS;
+        usb_ocp_recovery_reg__CALIPTRA_SETUP_DEBUG__in_t CALIPTRA_SETUP_DEBUG;
     } usb_ocp_recovery_reg__in_t;
 
     typedef struct packed{
