@@ -14,11 +14,11 @@
 //       single-clock synchronous FIFO reports occupancy exactly with no
 //       clock-domain-crossing pointer lag.
 //     - WRITE_INDEX increments only on actual primitive write acceptance.
-//       READ_INDEX is derived as (WRITE_INDEX - depth) mod 65 from the exact
+//       READ_INDEX is derived as (WRITE_INDEX - depth) mod 64 from the exact
 //       synchronous depth, so occupancy advertised through INDIRECT_FIFO_STATUS
 //       reflects a just-freed slot on the cycle after the pop.
-//     - USB accesses still use the direct fifo_rb_* path. EXT accesses arrive
-//       only through cpuif/hwif swacc events from the generated regblock.
+//     - USB accesses use the direct fifo_rb_* path. EXT control/data side
+//       effects use cpuif/hwif swacc events from the generated regblock.
 //     - EXT INDIRECT_FIFO_DATA reads return fifo_data_peek directly through the
 //       generated storage-less hwif read path. The read-qualified swacc event
 //       pops the FIFO on the following clock edge.
@@ -27,10 +27,10 @@
 //     - fifo_cms_q, image_size_q, write_index_q, accepted_push_count_q,
 //       overflow_q, region_reset_q, and image_done_q are the sole live owners
 //       of FIFO control, status, payload progress, and
-//       image-completion accounting. READ_INDEX is derived from write-domain
-//       depth rather than stored as an independent counter.
-//     - USB and EXT each capture an independent five-word status snapshot so a
-//       multiword INDIRECT_FIFO_STATUS read stays source-consistent.
+//       image-completion accounting. READ_INDEX is derived from synchronous
+//       FIFO occupancy rather than stored as an independent counter.
+//     - USB captures a five-word status snapshot for each multiword command.
+//       EXT status registers independently expose live values.
 //
 //   Arbitration:
 //     - usb_ocp_recovery_top.sv blocks EXT cpuif issue for INDIRECT_FIFO_CTRL
@@ -60,11 +60,6 @@ module usb_ocp_recovery_cms_fifo #(
   // EXT cpuif -> hwif access events.
   input  logic        ext_fifo_ctrl_0_access,
   input  logic        ext_fifo_ctrl_1_access,
-  input  logic        ext_fifo_status_0_access,
-  input  logic        ext_fifo_status_1_access,
-  input  logic        ext_fifo_status_2_access,
-  input  logic        ext_fifo_status_3_access,
-  input  logic        ext_fifo_status_4_access,
   input  logic        ext_fifo_data_read,
   input  logic        ext_fifo_data_write,
   input  logic        ext_cpuif_req_is_wr,
@@ -113,10 +108,7 @@ module usb_ocp_recovery_cms_fifo #(
 
   logic        usb_status_snapshot_vld_q;
   logic [2:0]  usb_status_snapshot_next_word_q;
-  logic        ext_status_snapshot_vld_q;
-  logic [2:0]  ext_status_snapshot_next_word_q;
   logic [31:0] usb_status_snapshot_q [0:4];
-  logic [31:0] ext_status_snapshot_q [0:4];
 
   logic                       fifo_flush;
   logic                       fifo_wvalid;
@@ -139,11 +131,6 @@ module usb_ocp_recovery_cms_fifo #(
   logic ext_ctrl_word0_wr;
   logic ext_ctrl_word1_wr;
   logic usb_status_rd;
-  logic ext_status_0_rd;
-  logic ext_status_1_rd;
-  logic ext_status_2_rd;
-  logic ext_status_3_rd;
-  logic ext_status_4_rd;
   logic usb_data_wr;
   logic usb_data_rd;
   logic ext_data_rd;
@@ -167,8 +154,6 @@ module usb_ocp_recovery_cms_fifo #(
 
   logic        usb_fifo_status_snapshot_start;
   logic        usb_fifo_status_snapshot_use;
-  logic        ext_fifo_status_snapshot_start;
-  logic        ext_fifo_status_snapshot_use;
 
   logic [31:0] fifo_status_live_word_0;
   logic [31:0] fifo_status_live_word_1;
@@ -245,11 +230,6 @@ module usb_ocp_recovery_cms_fifo #(
   assign ext_ctrl_word1_wr = ext_fifo_ctrl_1_access && ext_cpuif_req_is_wr;
 
   assign usb_status_rd = is_fifo_status && fifo_rb_rd;
-  assign ext_status_0_rd = ext_fifo_status_0_access && !ext_cpuif_req_is_wr;
-  assign ext_status_1_rd = ext_fifo_status_1_access && !ext_cpuif_req_is_wr;
-  assign ext_status_2_rd = ext_fifo_status_2_access && !ext_cpuif_req_is_wr;
-  assign ext_status_3_rd = ext_fifo_status_3_access && !ext_cpuif_req_is_wr;
-  assign ext_status_4_rd = ext_fifo_status_4_access && !ext_cpuif_req_is_wr;
 
   assign usb_data_wr = is_fifo_data && fifo_rb_wr;
   assign usb_data_rd = is_fifo_data && fifo_rb_rd;
@@ -315,9 +295,7 @@ module usb_ocp_recovery_cms_fifo #(
   end
 
   assign usb_fifo_status_snapshot_start = usb_status_rd && (word_idx == 3'd0);
-  assign ext_fifo_status_snapshot_start = ext_status_0_rd;
   assign usb_fifo_status_snapshot_use = usb_status_snapshot_vld_q;
-  assign ext_fifo_status_snapshot_use = ext_status_snapshot_vld_q;
 
   always_comb begin
     fifo_flush = 1'b0;
@@ -361,11 +339,8 @@ module usb_ocp_recovery_cms_fifo #(
       batch_aborted_q    <= 1'b0;
       usb_status_snapshot_vld_q <= 1'b0;
       usb_status_snapshot_next_word_q <= '0;
-      ext_status_snapshot_vld_q <= 1'b0;
-      ext_status_snapshot_next_word_q <= '0;
       for (int i = 0; i < 5; i++) begin
         usb_status_snapshot_q[i] <= '0;
-        ext_status_snapshot_q[i] <= '0;
       end
     end else begin
       region_reset_pulse_q <= 1'b0;
@@ -397,40 +372,6 @@ module usb_ocp_recovery_cms_fifo #(
         end
       end
 
-      if (ext_fifo_status_snapshot_start) begin
-        ext_status_snapshot_vld_q <= 1'b1;
-        ext_status_snapshot_next_word_q <= 3'd1;
-        ext_status_snapshot_q[0] <= fifo_status_live_word_0;
-        ext_status_snapshot_q[1] <= fifo_status_live_word_1;
-        ext_status_snapshot_q[2] <= fifo_status_live_word_2;
-        ext_status_snapshot_q[3] <= fifo_status_live_word_3;
-        ext_status_snapshot_q[4] <= fifo_status_live_word_4;
-      end else if (ext_status_1_rd) begin
-        if (ext_status_snapshot_vld_q && (ext_status_snapshot_next_word_q == 3'd1)) begin
-          ext_status_snapshot_next_word_q <= 3'd2;
-        end else begin
-          ext_status_snapshot_vld_q <= 1'b0;
-          ext_status_snapshot_next_word_q <= '0;
-        end
-      end else if (ext_status_2_rd) begin
-        if (ext_status_snapshot_vld_q && (ext_status_snapshot_next_word_q == 3'd2)) begin
-          ext_status_snapshot_next_word_q <= 3'd3;
-        end else begin
-          ext_status_snapshot_vld_q <= 1'b0;
-          ext_status_snapshot_next_word_q <= '0;
-        end
-      end else if (ext_status_3_rd) begin
-        if (ext_status_snapshot_vld_q && (ext_status_snapshot_next_word_q == 3'd3)) begin
-          ext_status_snapshot_next_word_q <= 3'd4;
-        end else begin
-          ext_status_snapshot_vld_q <= 1'b0;
-          ext_status_snapshot_next_word_q <= '0;
-        end
-      end else if (ext_status_4_rd) begin
-        ext_status_snapshot_vld_q <= 1'b0;
-        ext_status_snapshot_next_word_q <= '0;
-      end
-
       if (usb_ctrl_word0_wr) begin
         if (ctrl_word0_wstrb[0]) fifo_cms_q <= ctrl_word0_wdata[7:0];
         if (ctrl_word0_wstrb[2]) image_size_q[7:0] <= ctrl_word0_wdata[23:16];
@@ -444,8 +385,6 @@ module usb_ocp_recovery_cms_fifo #(
           image_done_q        <= 1'b0;
           usb_status_snapshot_vld_q <= 1'b0;
           usb_status_snapshot_next_word_q <= '0;
-          ext_status_snapshot_vld_q <= 1'b0;
-          ext_status_snapshot_next_word_q <= '0;
         end
       end else if (ext_ctrl_word0_wr) begin
         if (ctrl_word0_wstrb[0]) fifo_cms_q <= ctrl_word0_wdata[7:0];
@@ -458,8 +397,6 @@ module usb_ocp_recovery_cms_fifo #(
           image_done_q        <= 1'b0;
           usb_status_snapshot_vld_q <= 1'b0;
           usb_status_snapshot_next_word_q <= '0;
-          ext_status_snapshot_vld_q <= 1'b0;
-          ext_status_snapshot_next_word_q <= '0;
         end
       end
 
@@ -493,8 +430,6 @@ module usb_ocp_recovery_cms_fifo #(
         payload_available_q    <= 1'b0;
         usb_status_snapshot_vld_q <= 1'b0;
         usb_status_snapshot_next_word_q <= '0;
-        ext_status_snapshot_vld_q <= 1'b0;
-        ext_status_snapshot_next_word_q <= '0;
       end
       if (fifo_flush) begin
         batch_aborted_q <= 1'b0;
@@ -544,11 +479,11 @@ module usb_ocp_recovery_cms_fifo #(
     fifo_region_reset    = region_reset_q;
     fifo_ctrl_image_size = image_size_q;
 
-    fifo_status_word_0 = ext_fifo_status_snapshot_use ? ext_status_snapshot_q[0] : fifo_status_live_word_0;
-    fifo_status_word_1 = ext_fifo_status_snapshot_use ? ext_status_snapshot_q[1] : fifo_status_live_word_1;
-    fifo_status_word_2 = ext_fifo_status_snapshot_use ? ext_status_snapshot_q[2] : fifo_status_live_word_2;
-    fifo_status_word_3 = ext_fifo_status_snapshot_use ? ext_status_snapshot_q[3] : fifo_status_live_word_3;
-    fifo_status_word_4 = ext_fifo_status_snapshot_use ? ext_status_snapshot_q[4] : fifo_status_live_word_4;
+    fifo_status_word_0 = fifo_status_live_word_0;
+    fifo_status_word_1 = fifo_status_live_word_1;
+    fifo_status_word_2 = fifo_status_live_word_2;
+    fifo_status_word_3 = fifo_status_live_word_3;
+    fifo_status_word_4 = fifo_status_live_word_4;
     fifo_data_peek     = fifo_rvalid_int ? fifo_rdata_int : 32'h0;
   end
 
@@ -574,15 +509,15 @@ module usb_ocp_recovery_cms_fifo #(
                 && (ext_data_rd || ext_ctrl_word0_wr || ext_ctrl_word1_wr)))
         else $error("usb_ocp_recovery_cms_fifo: USB and EXT fifo control/data activity collided");
       assert (write_index_q <= FIFO_INDEX_MAX_DWORDS)
-        else $error("usb_ocp_recovery_cms_fifo: WRITE_INDEX exceeded 64");
+        else $error("usb_ocp_recovery_cms_fifo: WRITE_INDEX out of range");
       assert (read_index_derived <= FIFO_INDEX_MAX_DWORDS)
-        else $error("usb_ocp_recovery_cms_fifo: READ_INDEX exceeded 64");
+        else $error("usb_ocp_recovery_cms_fifo: READ_INDEX out of range");
       assert (fifo_occupancy == fifo_wdepth)
-        else $error("usb_ocp_recovery_cms_fifo: protocol occupancy mismatches write-domain depth");
+        else $error("usb_ocp_recovery_cms_fifo: protocol occupancy mismatches synchronous FIFO occupancy");
       assert (read_index_derived == fifo_index_sub_depth(write_index_q, fifo_wdepth))
         else $error("usb_ocp_recovery_cms_fifo: READ_INDEX derivation mismatch");
       assert (fifo_empty == (fifo_wdepth == FIFO_DEPTH_W'(0)))
-        else $error("usb_ocp_recovery_cms_fifo: EMPTY mismatches write-domain depth");
+        else $error("usb_ocp_recovery_cms_fifo: EMPTY mismatches synchronous FIFO occupancy");
       assert (fifo_full == (fifo_wdepth == FIFO_DEPTH_W'(FIFO_DEPTH)))
         else $error("usb_ocp_recovery_cms_fifo: FULL without physical depth");
       assert (!payload_available_q || !fifo_empty)

@@ -567,7 +567,7 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Indirect FIFO Status 0";
-        desc = "INDIRECT_FIFO_STATUS bytes 0-3. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_STATUS command summary, with USB-specific sticky status bits following usb_ocp_recovery_cms_fifo.sv.";
+        desc = "INDIRECT_FIFO_STATUS bytes 0-3: EMPTY, FULL, region type, and reserved bits. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_STATUS command summary.";
         field {
             name = "FIFO Empty";
             desc = "Byte 0 bit 0 indicates the FIFO is empty. OCP Recovery v1.1 Sec 9.2 INDIRECT_FIFO_STATUS command summary.";
@@ -747,7 +747,7 @@ addrmap usb_ocp_recovery_reg {
 
     reg {
         name = "Caliptra-specific status";
-        desc = "Caliptra/vendor-specific FIFO status bits outside the OCP Recovery command set, relocated from the non-spec INDIRECT_FIFO_STATUS byte-0 bits. Read-only; driven by usb_ocp_recovery_cms_fifo.sv.";
+        desc = "Caliptra/vendor-specific FIFO status and live registered post-sync arbiter state outside the OCP Recovery command set. Read-only and non-destructive.";
         field {
             name = "Region reset sticky status";
             desc = "Sticky: set when an INDIRECT_FIFO_CTRL region reset occurs; cleared on the next region reset. Driven by usb_ocp_recovery_cms_fifo.sv region_reset_q.";
@@ -781,14 +781,50 @@ addrmap usb_ocp_recovery_reg {
             reset = 1'b0;
         } BATCH_ABORTED[3:3];
         field {
+            name = "Live post-sync arbiter state";
+            desc = "Diagnostic registered FSM state: 0 IDLE, 1 MIRROR, 2 META_WAIT, 3 DATA, 4 STATUS, 5 PROT_STALL; 6-7 reserved. Explicit encoding independent of synthesis state encoding. Not a readiness or firmware dispatch indication; not atomic with CALIPTRA_SETUP_DEBUG.";
+            sw = r;
+            hw = w;
+            we = false;
+            reset = 3'h0;
+        } POST_SYNC_ARB_STATE[6:4];
+        field {
             name = "Reserved";
             desc = "Reserved for future Caliptra-specific status bits.";
             sw = r;
             hw = w;
             we = false;
-            reset = 28'h0;
-        } RESERVED_31_4[31:4];
+            reset = 25'h0;
+        } RESERVED_31_7[31:7];
     } CALIPTRA_STATUS @ 0x204;
+
+    reg {
+        name = "Accepted Device0 EP0 SETUP debug";
+        desc = "Last successfully accepted complete eight-byte Device0 EP0 SETUP. Generation and owner update atomically, independently of legacy SETUP notification forwarding. Debug only: neither a SRAM coherency/valid certificate nor a firmware dispatch indication. Reset on global reset, Device0 bus/port reset or disconnect; reset wins acceptance. Claim abort, protocol error, path disable and unrelated Hub/Device1 activity do not reset this word. Read-only and non-destructive.";
+        field {
+            name = "Accepted SETUP generation";
+            desc = "Increments modulo 4096 once per accepted complete successful eight-byte Device0 EP0 SETUP, both owner classes, including accepted retries and commands that subsequently STALL. Bad-CRC, incomplete, wrong-length and non-SETUP traffic do not advance it. The debug update need not wait for the legacy SRAM mirror write drain.";
+            sw = r;
+            hw = w;
+            we = false;
+            reset = 12'h0;
+        } GENERATION[11:0];
+        field {
+            name = "Accepted SETUP OCP ownership";
+            desc = "1 for an accepted SETUP claimed by OCP Recovery, 0 for legacy. Describes the current accepted classification, not the previous retained EP0 owner. With OCP disabled the existing legacy fallback applies. Updates atomically with GENERATION.";
+            sw = r;
+            hw = w;
+            we = false;
+            reset = 1'b0;
+        } OWNER_OCP[12:12];
+        field {
+            name = "Reserved";
+            desc = "Read zero.";
+            sw = r;
+            hw = na;
+            reset = 19'h0;
+        } RESERVED_31_13[31:13];
+    } CALIPTRA_SETUP_DEBUG @ 0x208;
 
     reg {
         name = "Window size pad";

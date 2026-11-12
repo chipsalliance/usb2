@@ -95,6 +95,7 @@ module usb_ocp_recovery_reg (
         logic VENDOR;
         logic CALIPTRA_CTRL;
         logic CALIPTRA_STATUS;
+        logic CALIPTRA_SETUP_DEBUG;
         logic WINDOW_PAD;
     } decoded_reg_strb_t;
     decoded_reg_strb_t decoded_reg_strb;
@@ -131,6 +132,7 @@ module usb_ocp_recovery_reg (
         decoded_reg_strb.VENDOR = cpuif_req_masked & (cpuif_addr == 11'h100);
         decoded_reg_strb.CALIPTRA_CTRL = cpuif_req_masked & (cpuif_addr == 11'h200);
         decoded_reg_strb.CALIPTRA_STATUS = cpuif_req_masked & (cpuif_addr == 11'h204);
+        decoded_reg_strb.CALIPTRA_SETUP_DEBUG = cpuif_req_masked & (cpuif_addr == 11'h208);
         decoded_reg_strb.WINDOW_PAD = cpuif_req_masked & (cpuif_addr == 11'h7fc);
     end
 
@@ -1657,7 +1659,7 @@ module usb_ocp_recovery_reg (
     logic [31:0] readback_data;
 
     // Assign readback values to a flattened array
-    logic [28-1:0][31:0] readback_array;
+    logic [29-1:0][31:0] readback_array;
     assign readback_array[0][31:0] = (decoded_reg_strb.PROT_CAP_0 && !decoded_req_is_wr) ? 32'h2050434f : '0;
     assign readback_array[1][31:0] = (decoded_reg_strb.PROT_CAP_1 && !decoded_req_is_wr) ? 32'h56434552 : '0;
     assign readback_array[2][15:0] = (decoded_reg_strb.PROT_CAP_2 && !decoded_req_is_wr) ? 16'h101 : '0;
@@ -1736,8 +1738,12 @@ module usb_ocp_recovery_reg (
     assign readback_array[26][1:1] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.OVERFLOW.next : '0;
     assign readback_array[26][2:2] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next : '0;
     assign readback_array[26][3:3] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.BATCH_ABORTED.next : '0;
-    assign readback_array[26][31:4] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.RESERVED_31_4.next : '0;
-    assign readback_array[27][31:0] = (decoded_reg_strb.WINDOW_PAD && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[26][6:4] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.POST_SYNC_ARB_STATE.next : '0;
+    assign readback_array[26][31:7] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.RESERVED_31_7.next : '0;
+    assign readback_array[27][11:0] = (decoded_reg_strb.CALIPTRA_SETUP_DEBUG && !decoded_req_is_wr) ? hwif_in.CALIPTRA_SETUP_DEBUG.GENERATION.next : '0;
+    assign readback_array[27][12:12] = (decoded_reg_strb.CALIPTRA_SETUP_DEBUG && !decoded_req_is_wr) ? hwif_in.CALIPTRA_SETUP_DEBUG.OWNER_OCP.next : '0;
+    assign readback_array[27][31:13] = (decoded_reg_strb.CALIPTRA_SETUP_DEBUG && !decoded_req_is_wr) ? 19'h0 : '0;
+    assign readback_array[28][31:0] = (decoded_reg_strb.WINDOW_PAD && !decoded_req_is_wr) ? 32'h0 : '0;
 
     // Reduce the array
     always_comb begin
@@ -1745,7 +1751,7 @@ module usb_ocp_recovery_reg (
         readback_done = decoded_req & ~decoded_req_is_wr;
         readback_err = '0;
         readback_data_var = '0;
-        for(int i=0; i<28; i++) readback_data_var |= readback_array[i];
+        for(int i=0; i<29; i++) readback_data_var |= readback_array[i];
         readback_data = readback_data_var;
     end
 

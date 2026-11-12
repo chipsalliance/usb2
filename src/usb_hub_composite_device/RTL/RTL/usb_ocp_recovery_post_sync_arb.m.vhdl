@@ -90,6 +90,9 @@ entity usb_ocp_recovery_post_sync_arb is
 
     setup_pkt_vld   : out std_logic;
     setup_pkt       : out std_logic_vector(63 downto 0);
+    setup_generation_o : out std_logic_vector(11 downto 0);
+    setup_owner_ocp_o : out std_logic;
+    post_sync_arb_state_o : out std_logic_vector(2 downto 0);
 
     ctrl_out_data   : out std_logic_vector(31 downto 0);
     ctrl_out_vld    : out std_logic;
@@ -252,6 +255,8 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal setup_complete_c : std_logic;
   signal setup_valid_c : std_logic;
   signal setup_claim_c : std_logic;
+  signal dev0_dbg_setup_generation_r : unsigned(11 downto 0);
+  signal dev0_dbg_setup_owner_ocp_r : std_logic;
 
   -- A FIFO-space reservation survives PING and CRC retry. It prevents
   -- firmware FIFO mutators from invalidating an advertised OUT acceptance.
@@ -389,6 +394,40 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         ((sync_sieint_rxdatavalid_i = '1') and
          (incoming_is_ocp_c = '1'))
       else '0';
+
+    setup_generation_o <= std_logic_vector(dev0_dbg_setup_generation_r);
+    setup_owner_ocp_o <= dev0_dbg_setup_owner_ocp_r;
+    with st select post_sync_arb_state_o <=
+      "000" when T_IDLE,
+      "001" when T_MIRROR,
+      "010" when T_META_WAIT,
+      "011" when T_DATA,
+      "100" when T_STATUS,
+      "101" when T_PROT_STALL;
+
+    setup_debug_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        dev0_dbg_setup_generation_r <= (others => '0');
+        dev0_dbg_setup_owner_ocp_r <= '0';
+      elsif rising_edge(hclk) then
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') then
+          dev0_dbg_setup_generation_r <= (others => '0');
+          dev0_dbg_setup_owner_ocp_r <= '0';
+        elsif (new_setup_c /= '0') or (ocp_claim_abort_i /= '0') or
+              ((fw_protocol_error_req_i = '1') and (ep0_ocp_owner_r = '1')) then
+          dev0_dbg_setup_generation_r <= dev0_dbg_setup_generation_r;
+          dev0_dbg_setup_owner_ocp_r <= dev0_dbg_setup_owner_ocp_r;
+        else
+          -- Leaving MIRROR counts the completed current SETUP only once.
+          if (st = T_MIRROR) and (setup_complete_c = '1') and
+             (setup_valid_c = '1') then
+            dev0_dbg_setup_generation_r <= dev0_dbg_setup_generation_r + 1;
+            dev0_dbg_setup_owner_ocp_r <= setup_claim_c;
+          end if;
+        end if;
+      end if;
+    end process setup_debug_clk_proc;
 
     -- setup_pkt to the SV recovery stack: pulse once per claimed SETUP.
     setup_pkt_vld_c <= '1' when (st = T_MIRROR) and (cap_done = '1')
@@ -1367,6 +1406,35 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- Safety properties (simulation-only).
     -- ------------------------------------------------------------------
     -- pragma translate_off
+    setup_debug_assertions_proc : process (hclk, hresetn)
+      variable expected_generation_v : unsigned(11 downto 0);
+      variable expected_owner_v : std_logic;
+    begin
+      if hresetn = '0' then
+        expected_generation_v := (others => '0');
+        expected_owner_v := '0';
+      elsif rising_edge(hclk) then
+        assert (dev0_dbg_setup_generation_r = expected_generation_v) and
+               (dev0_dbg_setup_owner_ocp_r = expected_owner_v)
+          report "post_sync_arb: accepted SETUP debug update/reset/retention mismatch"
+          severity failure;
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') then
+          expected_generation_v := (others => '0');
+          expected_owner_v := '0';
+        elsif (st = T_MIRROR) and (new_setup_c = '0') and
+              (setup_complete_c = '1') and (setup_valid_c = '1') and
+              (ocp_claim_abort_i = '0') and
+              not ((fw_protocol_error_req_i = '1') and
+                   (ep0_ocp_owner_r = '1')) then
+          assert st_next /= T_MIRROR
+            report "post_sync_arb: accepted SETUP did not retire MIRROR"
+            severity failure;
+          expected_generation_v := expected_generation_v + 1;
+          expected_owner_v := setup_claim_c;
+        end if;
+      end if;
+    end process setup_debug_assertions_proc;
+
     assertions_proc : process (hclk, hresetn)
       variable prev_st_v : t_trap_state;
       variable prev_non_ep0_end_v : boolean;
