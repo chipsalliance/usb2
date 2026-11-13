@@ -1340,11 +1340,20 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- SETUP and all legacy requests use DMA response metadata. Only retained
     -- OCP EP0 DATA/STATUS/PING transactions select the local response.
     -- ------------------------------------------------------------------
-    epinfo_sync_valid_o <=
-        rsp_live_valid_c      when (ocp_resp_sel_c = '1')
-                                   and (dev0_ep0_req_c = '1') else
-        rsp_snap_valid_r      when (ocp_resp_sel_c = '1') else
-        epinfo_sync_valid_dma;
+    epinfo_valid_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        epinfo_sync_valid_o <= '0';
+      elsif rising_edge(hclk) then
+        if (ocp_resp_sel_c = '1') and (dev0_ep0_req_c = '1') then
+          epinfo_sync_valid_o <= rsp_live_valid_c;
+        elsif ocp_resp_sel_c = '1' then
+          epinfo_sync_valid_o <= rsp_snap_valid_r;
+        else
+          epinfo_sync_valid_o <= epinfo_sync_valid_dma;
+        end if;
+      end if;
+    end process epinfo_valid_clk_proc;
 
     epinfo_sync_active_o <=
         rsp_live_active_c       when (ocp_resp_sel_c = '1')
@@ -1398,9 +1407,18 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         tx_curr_data_r when (ocp_resp_sel_c = '1') else
         epinfo_sync_txdata_dma;
 
-    epinfo_sync_txdata_valid_o <=
-        tx_beat_valid_c when (ocp_resp_sel_c = '1') else
-        epinfo_sync_txdata_valid_dma;
+    tx_valid_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        epinfo_sync_txdata_valid_o <= '0';
+      elsif rising_edge(hclk) then
+        if ocp_resp_sel_c = '1' then
+          epinfo_sync_txdata_valid_o <= tx_beat_valid_c;
+        else
+          epinfo_sync_txdata_valid_o <= epinfo_sync_txdata_valid_dma;
+        end if;
+      end if;
+    end process tx_valid_clk_proc;
 
     -- ------------------------------------------------------------------
     -- Safety properties (simulation-only).
