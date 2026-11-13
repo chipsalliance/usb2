@@ -2501,7 +2501,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
       sync_s_reset_n  <= '0';
       sync_ss_reset_n <= '0';
     elsif pie_clk'event and pie_clk = '1' then
-      sync_s_reset_n  <= '1';
+      sync_s_reset_n  <= sync_s_reset_n or not(sync_s_reset_n);
       sync_ss_reset_n <= sync_s_reset_n;
     end if;
   end process proc_pie_reset_gen;
@@ -2662,7 +2662,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
   -- Only relevant for UTMI:
   utmi_suspendm <= clock_on when phy_mode = '0' else '0';
 
-  ulpi_pwrctrl_wakeup <= pwrctrl_wakeup_int;
+  ulpi_pwrctrl_wakeup <= set_clock_on when phy_mode = '1' else '0'; --This is the asynchronous wakeup trigger for the ULPI PHY
 
   --ULPI OR UTMI
   set_clock_on <= '1' when (sys_donotwakeup_n = '1') and
