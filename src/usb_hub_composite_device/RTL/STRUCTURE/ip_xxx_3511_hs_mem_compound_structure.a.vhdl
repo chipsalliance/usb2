@@ -2672,7 +2672,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
                         (dm_s         /= dm and sync_usbreg_dev_connect = '1') or
                         (sync_usbreg_dev_connect /= usb_dev_connect)      or
                         (usbreg_phy_mode /= phy_mode)                     or
-                        pie_lowpower_n = '1'                              or
+                        (pie_lowpower_n = '1' and phy_mode = '0')         or
                         sys_dev_wakeup_n = '0'                            or
                         (ulpi_int_lp = '1' and phy_mode = '1')            or
                         usbreg_phy_start = '1'                            or
