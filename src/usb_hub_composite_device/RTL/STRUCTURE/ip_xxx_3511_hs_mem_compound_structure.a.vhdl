@@ -1012,7 +1012,7 @@ signal DebounceTimer: S_DebounceTimer;
 signal pie_isotoggle_r : std_logic;
 signal sync_VBusDebounced : std_logic;
 signal pie_vbusvalid: std_logic;
-signal pie_vbusvalid_r: std_logic;
+signal pie_vbusvalid_s, pie_vbusvalid_r: std_logic;
 signal dp, dm: std_logic;
 signal ulpi_pwrctrl_wakeup: std_logic;
 signal ulpi_dir_s: std_logic;
@@ -1026,7 +1026,6 @@ constant CLOCK_COUNTER_USB_MAX         : integer := 15;
 signal clock_counter_usb : integer range 0 to CLOCK_COUNTER_USB_MAX;
 signal clock_counter_usb_msb,clock_counter_usb_msb_z,clock_counter_usb_msb_zz : std_logic;
 
-signal pwrctrl_wakeup_int : std_logic;
 signal ulpi_awake         : std_logic;
 signal ulpi_awake_s       : std_logic;
 signal ulpi_awake_ahb_s   : std_logic;
@@ -2516,17 +2515,17 @@ usb_app_hw_hub_1 : usb_app_hw_hub
 -- that it goes low only for a short time during normal
 -- operation.
 
--- GMA: BYPASS fix PR#55
-
   vbus_debounc_proc : process (pie_clk,reset_n)
   begin
     if reset_n = '0' then
        VBusDebounced             <= '0';
        DebounceTimer             <=  0;
        pie_isotoggle_r           <= '0';
+       pie_vbusvalid_s           <= '0';
        pie_vbusvalid_r           <= '0';
     elsif pie_clk'event and pie_clk = '1' then
-       pie_vbusvalid_r <= pie_vbusvalid;
+       pie_vbusvalid_s <= pie_vbusvalid;
+       pie_vbusvalid_r <= pie_vbusvalid_s;
        pie_isotoggle_r <= pie_isotoggle;
        if pie_vbusvalid_r = '1' or (DebounceTimer > 0) then
           VBusDebounced <= '1';
