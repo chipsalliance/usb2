@@ -67,7 +67,7 @@ type t_dev_array is array(0 to C_NBDEV-1) of t_dev;
 
 function FUNC_ASSIGN_DEV_ARRAY return t_dev_array;
 
-constant DEV_ARRAY : t_dev_array := FUNC_ASSIGN_DEV_ARRAY;
+constant DEV_ARRAY : t_dev_array;
 
 type t_epconfig_device is array(0 to 63) of std_logic_vector(31 downto 0);
 type t_epconfig_all is array (0 to C_NBDEV-1) of t_epconfig_device;
@@ -108,12 +108,59 @@ function func_epconfig_link(DEV_ARRAY : t_dev_array) return t_epconfig_link;
 
 function func_epconfig_link_reverse(bitnumber : integer range 0 to C_NBPHYSEP-1) return t_ep;
 
-constant C_EPCONFIG_LINK : t_epconfig_link := func_epconfig_link(DEV_ARRAY);
+constant C_EPCONFIG_LINK : t_epconfig_link;
 
 end usb_ep_config_pkg;
 
 
 package body usb_ep_config_pkg is
+
+-------------------------------------------------------
+-- Device and endpoint configuration
+-------------------------------------------------------
+function FUNC_ASSIGN_DEV_ARRAY return t_dev_array is
+variable var_nbdev  : integer;
+variable var_nbep   : integer;
+variable var_result : t_dev_array;
+begin
+
+  for i in 0 to C_NBDEV-1 loop
+    var_result(i).NBPHYSEP := 0;
+    for j in 0 to 29 loop
+      var_result(i).EP(j).EPNB     := 0;
+      var_result(i).EP(j).EPDIR    := EP_OUT;
+      var_result(i).EP(j).BUFF     := 0;
+      var_result(i).EP(j).EPTYPE   := NON_ISO;
+      var_result(i).EP(j).ISO_SIZE := 0;
+    end loop;
+  end loop;
+
+  var_nbdev := 0;
+
+  --------------------------------
+  --Definition for device 0 - HUB
+  --------------------------------
+  var_nbep  := 0;
+  var_result(var_nbdev).EP(var_nbep).EPNB     := 1;
+  var_result(var_nbdev).EP(var_nbep).EPDIR    := EP_IN;
+  var_result(var_nbdev).EP(var_nbep).BUFF     := 0; -- no buffer
+  var_result(var_nbdev).EP(var_nbep).EPTYPE   := NON_ISO; --0
+  var_result(var_nbdev).EP(var_nbep).ISO_SIZE := 64;
+  var_nbep := var_nbep + 1;
+  var_result(var_nbdev).NBPHYSEP              := var_nbep;
+  var_nbdev := var_nbdev + 1;
+
+  --------------------------------
+
+  --------------------------------
+  --End of definition for devices
+  --------------------------------
+
+
+  return var_result;
+end function FUNC_ASSIGN_DEV_ARRAY;
+
+constant DEV_ARRAY : t_dev_array := FUNC_ASSIGN_DEV_ARRAY;
 
 function func_epconfig_table_fs(ep0_out_active   : std_logic_vector(C_NBDEV-1 downto 0);
                                 ep0_in_active    : std_logic_vector(C_NBDEV-1 downto 0);
@@ -562,6 +609,8 @@ begin
   return var_result;
 end;
 
+constant C_EPCONFIG_LINK : t_epconfig_link := func_epconfig_link(DEV_ARRAY);
+
 -- This function determines device number, endpoint number and buffer based on the location in the bit map
 function func_epconfig_link_reverse(bitnumber : integer range 0 to C_NBPHYSEP-1) return t_ep is
 variable var_ep_search : integer range 0 to C_NBPHYSEP-1;
@@ -582,50 +631,5 @@ begin
   end loop;
   return var_result;
 end;
-
--------------------------------------------------------
--- Device and endpoint configuration
--------------------------------------------------------
-function FUNC_ASSIGN_DEV_ARRAY return t_dev_array is
-variable var_nbdev  : integer;
-variable var_nbep   : integer;
-variable var_result : t_dev_array;
-begin
-  
-  for i in 0 to C_NBDEV-1 loop
-    var_result(i).NBPHYSEP := 0;
-    for j in 0 to 29 loop
-      var_result(i).EP(j).EPNB     := 0;
-      var_result(i).EP(j).EPDIR    := EP_OUT;
-      var_result(i).EP(j).BUFF     := 0;
-      var_result(i).EP(j).EPTYPE   := NON_ISO;
-      var_result(i).EP(j).ISO_SIZE := 0;
-    end loop;
-  end loop;
-  
-  var_nbdev := 0;
-  
-  --------------------------------
-  --Definition for device 0 - HUB
-  --------------------------------
-  var_nbep  := 0;
-  var_result(var_nbdev).EP(var_nbep).EPNB     := 1;
-  var_result(var_nbdev).EP(var_nbep).EPDIR    := EP_IN;
-  var_result(var_nbdev).EP(var_nbep).BUFF     := 0; -- no buffer
-  var_result(var_nbdev).EP(var_nbep).EPTYPE   := NON_ISO; --0
-  var_result(var_nbdev).EP(var_nbep).ISO_SIZE := 64;
-  var_nbep := var_nbep + 1;
-  var_result(var_nbdev).NBPHYSEP              := var_nbep;
-  var_nbdev := var_nbdev + 1;
-
-  --------------------------------
-
-  --------------------------------
-  --End of definition for devices
-  --------------------------------
-      
-  
-  return var_result;
-end function FUNC_ASSIGN_DEV_ARRAY;
 
 end usb_ep_config_pkg;

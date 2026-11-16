@@ -567,8 +567,6 @@ begin
 
   sync_usbreg_phy_test_mode_change <= '1' when usbreg_phy_test_mode_toggle_ss /= usbreg_phy_test_mode_toggle_sss else '0';
 
-  -- <<< LAB to review those ones!!!
-
   sync_usbreg_pll_on      <= usbreg_pll_on;
   sync_usbreg_lpm_sup     <= usbreg_lpm_sup;
   sync_usbreg_lpm_hird_sw <= usbreg_lpm_hird_sw;

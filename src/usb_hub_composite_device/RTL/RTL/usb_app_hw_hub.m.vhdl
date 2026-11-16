@@ -89,10 +89,19 @@ signal data_index              : integer range 0 to C_HUB_NB_PORTS;
 type t_hub_status is array (0 to C_HUB_NB_PORTS) of std_logic_vector(C_DATAWIDTH-1 downto 0);
 signal hub_status              : t_hub_status;
 signal hub_l1_status           : t_hub_status;
-signal hub_port_lpm_hird_hw_int : std_logic_vector(C_HUB_NB_PORTS*4-1  downto 0);
+type t_hub_port_lpm_hird is array(C_HUB_NB_PORTS-1 downto 0) of std_logic_vector(3 downto 0);
+signal hub_port_lpm_hird_sw_array : t_hub_port_lpm_hird;
+signal hub_port_lpm_hird_hw_array : t_hub_port_lpm_hird;
 
 begin
 
+  GEN_HIRD_ARRAY: for i in 0 to C_HUB_NB_PORTS-1 generate
+  begin
+    hub_port_lpm_hird_sw_array(i)          <= hub_port_lpm_hird_sw(4*i+3 downto 4*i);
+    hub_port_lpm_hird_hw(4*i+3 downto 4*i) <= hub_port_lpm_hird_hw_array(i);
+    
+  end generate GEN_HIRD_ARRAY;
+  
   PROC_CLASS_STALL : process(ep0_request, ep0_setupdone, ep0_windex, ep0_wvalue)
   begin --CLASS STALL signal must be high together with ep0_setupdone to prevent active bit from being set.
       ep0_class_stall <= '0';
@@ -180,18 +189,18 @@ begin
   variable var_port : integer range 0 to C_HUB_NB_PORTS-1;
   begin
     if sys_rst_n = '0' then
-      hub_port_enable_int     <= (others => '0');
-      hub_port_suspend_int    <= (others => '0');
-      hub_port_suspend_change <= (others => '0');
-      hub_port_l1_int         <= (others => '0');
-      hub_port_l1_change      <= (others => '0');
-      hub_port_reset_int      <= (others => '0');
-      hub_port_reset_change   <= (others => '0');
-      hub_port_connect_change <= (others => '0');
-      hub_port_connect_d      <= (others => '0');
-      hub_port_lpm_rw_enable  <= (others => '0');
-      hub_port_lpm_hird_hw_int<= (others => '0');
-      data_index              <= 0;
+      hub_port_enable_int        <= (others => '0');
+      hub_port_suspend_int       <= (others => '0');
+      hub_port_suspend_change    <= (others => '0');
+      hub_port_l1_int            <= (others => '0');
+      hub_port_l1_change         <= (others => '0');
+      hub_port_reset_int         <= (others => '0');
+      hub_port_reset_change      <= (others => '0');
+      hub_port_connect_change    <= (others => '0');
+      hub_port_connect_d         <= (others => '0');
+      hub_port_lpm_rw_enable     <= (others => '0');
+      hub_port_lpm_hird_hw_array <= (others => (others => '0'));
+      data_index                 <= 0;
     
     elsif rising_edge(sys_clk) then
       
@@ -297,12 +306,12 @@ begin
                  hub_port_enable_int(var_port)    = '1' then -- Downstream port is enabled
                 if hub_lpm_sup(var_port) = '1' and
                    hub_lpm_data_pending(var_port) = '0' and
-                   ep0_windex(7 downto 4) >= hub_port_lpm_hird_sw(var_port*4+3 downto var_port*4) then
+                   ep0_windex(7 downto 4) >= hub_port_lpm_hird_sw_array(var_port) then
                   hub_port_l1_int(var_port)    <= '1';
                   hub_port_l1_change(var_port) <= '1';
                 end if;
-                hub_port_lpm_rw_enable(var_port) <= ep0_windex(15);
-                hub_port_lpm_hird_hw_int(var_port*4+3 downto var_port*4) <= ep0_windex(7 downto 4);
+                hub_port_lpm_rw_enable(var_port)     <= ep0_windex(15);
+                hub_port_lpm_hird_hw_array(var_port) <= ep0_windex(7 downto 4);
               end if;
             end if;
           
@@ -360,8 +369,6 @@ begin
     end if;
   end process PROC_REQUEST_HANDLING;
 
-hub_port_lpm_hird_hw <= hub_port_lpm_hird_hw_int;
-
 ----------------------------------
 -- HUB status
 ----------------------------------
@@ -397,7 +404,7 @@ GEN_HUB_L1_STATUS : for i in 0 to C_HUB_NB_PORTS-1 generate
 begin
   hub_l1_status(i+1)(C_DATAWIDTH-1 downto 8)   <= (others => '0');
   hub_l1_status(i+1)(7 downto 0) <= C_LPM_STALL when hub_lpm_sup(i)          = '0' else
-                                    C_LPM_NYET  when (hub_port_lpm_hird_sw(4*i+3 downto 4*i) > hub_port_lpm_hird_hw_int(4*i+3 downto 4*i)) or hub_lpm_data_pending(i) = '1' else
+                                    C_LPM_NYET  when (hub_port_lpm_hird_sw_array(i) > hub_port_lpm_hird_hw_array(i)) or hub_lpm_data_pending(i) = '1' else
                                     C_LPM_SUCCESS;
 end generate GEN_HUB_L1_STATUS;
 
