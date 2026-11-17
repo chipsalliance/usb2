@@ -54,6 +54,7 @@ module usb_ocp_recovery_top
   input  logic                    rec_ctrl_xfer_done,
   input  logic                    rec_ctrl_xfer_abort,
   input  logic                    rec_ctrl_fifo_batch_abort,
+  input  logic                    rec_ctrl_fifo_batch_reset,
   input  logic                    rec_ctrl_length_error,
 
   // Emergency-fallback path-disable control: mirrors CALIPTRA_CTRL.OCP_PATH_DISABLE
@@ -191,7 +192,6 @@ module usb_ocp_recovery_top
   // identified here but selected only by the response mux below.
   logic        usb_hw_access;
   logic        usb_hw_supported_cmd;
-  logic        usb_hw_host_ro_cmd;
   logic [15:0] usb_hw_cmd_len;
   logic [15:0] usb_hw_byte_offset;
 
@@ -206,7 +206,6 @@ module usb_ocp_recovery_top
   //     storage-less live hwif views of cms_fifo. ---
   logic [7:0]                 fifo_ctrl_cms;
   logic                       fifo_ctrl_reset;
-  logic                       fifo_region_reset;
   logic [31:0]                fifo_ctrl_image_size;
   logic [31:0]                fifo_status_word_0;
   logic [31:0]                fifo_status_word_1;
@@ -260,8 +259,11 @@ module usb_ocp_recovery_top
   // USB FIFO commands connect directly to cms_fifo. Non-FIFO USB accesses are
   // served directly by the hardware-interface endpoint.
   assign usb_fifo_req = usb_is_fifo_cmd & (usb_rb_wr | usb_rb_rd);
+  // Hold EXT FIFO accesses through the actual storage/control clear edge.
+  // The explicit-reset pulse is registered, so this introduces no decode loop.
   assign usb_fifo_owned = usb_fifo_req || usb_fifo_packet_active_q
-                        || rec_fifo_reservation_active;
+                        || rec_fifo_reservation_active || fifo_ctrl_reset
+                        || rec_ctrl_fifo_batch_reset;
   assign usb_rb_rdata = usb_is_fifo_cmd ? fifo_rb_rdata : usb_hw_rdata;
   assign usb_rb_ack   = usb_is_fifo_cmd ? fifo_rb_ack   : usb_hw_ack;
   assign usb_rb_err   = usb_is_fifo_cmd ? fifo_rb_err   : usb_hw_err;
@@ -355,7 +357,6 @@ module usb_ocp_recovery_top
                         || ((usb_rb_cmd == OCP_CMD_INDIRECT_FIFO_STATUS) && usb_rb_rd)
                         ||  (usb_rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA);
     usb_hw_supported_cmd = 1'b1;
-    usb_hw_host_ro_cmd   = 1'b0;
     usb_hw_cmd_len       = '0;
     usb_hw_byte_offset   = {usb_rb_offset[13:0], 2'b00};
     usb_hw_rdata         = '0;
@@ -381,7 +382,6 @@ module usb_ocp_recovery_top
     unique case (usb_rb_cmd)
       OCP_CMD_PROT_CAP: begin
         usb_hw_cmd_len     = OCP_LEN_PROT_CAP;
-        usb_hw_host_ro_cmd = 1'b1;
         unique case (usb_rb_offset)
           16'd0: usb_hw_rdata = rb_hwif_out.PROT_CAP_0.REC_MAGIC_STRING_0.value;
           16'd1: usb_hw_rdata = rb_hwif_out.PROT_CAP_1.REC_MAGIC_STRING_1.value;
@@ -413,7 +413,6 @@ module usb_ocp_recovery_top
       end
       OCP_CMD_DEVICE_ID: begin
         usb_hw_cmd_len     = OCP_LEN_DEVICE_ID;
-        usb_hw_host_ro_cmd = 1'b1;
         unique case (usb_rb_offset)
           16'd0: usb_hw_rdata = {
             rb_hwif_out.DEVICE_ID_0.DATA_3_2.value,
@@ -430,7 +429,6 @@ module usb_ocp_recovery_top
       end
       OCP_CMD_DEVICE_STATUS: begin
         usb_hw_cmd_len     = OCP_LEN_DEVICE_STATUS;
-        usb_hw_host_ro_cmd = 1'b1;
         if (usb_rb_offset == 16'd0) begin
           usb_hw_rdata = {
             rb_hwif_out.DEVICE_STATUS_0.REC_REASON_CODE.value,
@@ -467,7 +465,6 @@ module usb_ocp_recovery_top
       end
       OCP_CMD_RECOVERY_STATUS: begin
         usb_hw_cmd_len     = OCP_LEN_RECOVERY_STATUS;
-        usb_hw_host_ro_cmd = 1'b1;
         usb_hw_rdata       = {
           16'h0,
           rb_hwif_out.RECOVERY_STATUS.VENDOR_SPECIFIC_STATUS.value,
@@ -477,7 +474,6 @@ module usb_ocp_recovery_top
       end
       OCP_CMD_HW_STATUS: begin
         usb_hw_cmd_len     = OCP_LEN_HW_STATUS;
-        usb_hw_host_ro_cmd = 1'b1;
         usb_hw_rdata       = {
           rb_hwif_out.HW_STATUS.VENDOR_HW_STATUS_LEN.value,
           rb_hwif_out.HW_STATUS.CTEMP.value,
@@ -523,12 +519,6 @@ module usb_ocp_recovery_top
       end
     endcase
 
-    if (usb_rb_wr && usb_hw_host_ro_cmd) begin
-      usb_protocol_error_set = 1'b1;
-    end
-    if (usb_hw_access && !usb_hw_supported_cmd) begin
-      usb_hw_err = 1'b0;
-    end
     if (usb_hw_access && !usb_is_fifo_cmd && usb_hw_supported_cmd
         && (usb_hw_byte_offset >= usb_hw_cmd_len)) begin
       usb_hw_err = 1'b1;
@@ -609,7 +599,11 @@ module usb_ocp_recovery_top
       && cpuif_wr_data[2];
   assign protocol_error_general_clear =
       rb_hwif_out.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value;
-  assign fw_protocol_error_accept = fw_protocol_error_req && batch_aborted;
+  // BATCH_ABORTED is sticky history, not evidence that the current decoder
+  // owner is cancelable. Do not let a firmware error preempt reserved RX
+  // capture or an irrevocable accepted-DATA drain.
+  assign fw_protocol_error_accept = fw_protocol_error_req && batch_aborted
+                                  && !rec_fifo_reservation_active;
   assign rec_fw_protocol_error_req = fw_protocol_error_accept;
   assign rec_fifo_free_dwords = fifo_free_dwords;
 
@@ -690,13 +684,13 @@ module usb_ocp_recovery_top
     rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.next = 1'b0;
     rb_hwif_in.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.we = protocol_error_general_clear;
 
-    // CALIPTRA_STATUS (read-only, hw=w): Caliptra-specific sticky FIFO status
-    // relocated out of the non-spec INDIRECT_FIFO_STATUS byte-0 bits. Driven
-    // from the live cms_fifo sticky signals (region_reset_q via fifo_ctrl_reset,
-    // overflow_q via fifo_overflow, image_done_q via image_push_done).
-    rb_hwif_in.CALIPTRA_STATUS.REGION_RESET.next = fifo_region_reset;
-    rb_hwif_in.CALIPTRA_STATUS.OVERFLOW.next     = fifo_overflow;
-    rb_hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next   = image_push_done;
+    // OCP Recovery v1.1 Sec 9.2 reserves INDIRECT_FIFO_STATUS bits 7:2.
+    // Local history lives outside that command aperture. REGION_RESET uses
+    // only generated storage; its hwset wins W1C at the actual FIFO flush.
+    // Other fields remain live CMS/arbiter readback.
+    rb_hwif_in.CALIPTRA_STATUS.REGION_RESET.hwset = fifo_ctrl_reset;
+    rb_hwif_in.CALIPTRA_STATUS.OVERFLOW.next = fifo_overflow;
+    rb_hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next = image_push_done;
     rb_hwif_in.CALIPTRA_STATUS.BATCH_ABORTED.next = batch_aborted;
     rb_hwif_in.CALIPTRA_STATUS.POST_SYNC_ARB_STATE.next = rec_post_sync_arb_state;
     rb_hwif_in.CALIPTRA_SETUP_DEBUG.GENERATION.next = rec_setup_generation;
@@ -811,9 +805,9 @@ module usb_ocp_recovery_top
       .batch_aborted     (batch_aborted),
       .fifo_free_dwords  (fifo_free_dwords),
       .fifo_abort_i      (rec_ctrl_fifo_batch_abort),
+      .fifo_reset_i      (rec_ctrl_fifo_batch_reset),
       .fifo_ctrl_cms        (fifo_ctrl_cms),
       .fifo_ctrl_reset      (fifo_ctrl_reset),
-      .fifo_region_reset    (fifo_region_reset),
      .fifo_ctrl_image_size (fifo_ctrl_image_size),
      .fifo_status_word_0   (fifo_status_word_0),
      .fifo_status_word_1   (fifo_status_word_1),
@@ -840,19 +834,45 @@ module usb_ocp_recovery_top
         assert (!cpuif_req)
           else $error("usb_ocp_recovery_top: overlapping ACK issued an EXT CPUif request");
       end
-      if (usb_fifo_req) begin
-        assert (usb_rb_ack)
-          else $error("usb_ocp_recovery_top: USB FIFO command stalled");
+      if (usb_rb_wr && (usb_rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA)) begin
+        assert (rec_fifo_reservation_active && rec_ctrl_out_vld
+                && !rec_ctrl_xfer_abort && !rec_setup_pkt_vld)
+          else $error("usb_ocp_recovery_top: FIFO drain lost exclusive decoder/reservation ownership");
+      end
+      if ($past(rst_ni) &&
+          $past(usb_rb_wr && (usb_rb_cmd == OCP_CMD_INDIRECT_FIFO_DATA)
+                && !usb_rb_ack && !rec_ctrl_xfer_abort)
+          && !rec_ctrl_xfer_abort) begin
+        assert (usb_rb_wr &&
+                $stable({usb_rb_cmd, usb_rb_offset, usb_rb_wdata, usb_rb_wstrb}))
+          else $error("usb_ocp_recovery_top: committed FIFO command changed under backpressure");
+      end
+      if (rec_fifo_reservation_active) begin
+        assert (!(ext_fifo_ctrl_0_access || ext_fifo_ctrl_1_access
+                  || ext_fifo_data_read || ext_fifo_data_write))
+          else $error("usb_ocp_recovery_top: CPUif mutated/stole reserved FIFO capacity");
+        assert (!rec_fw_protocol_error_req)
+          else $error("usb_ocp_recovery_top: sticky abort history preempted reserved drain");
+      end
+      if (fifo_ctrl_reset || rec_ctrl_fifo_batch_reset) begin
+        assert (!(ext_fifo_ctrl_0_access || ext_fifo_ctrl_1_access
+                  || ext_fifo_data_read || ext_fifo_data_write))
+          else $error("usb_ocp_recovery_top: EXT FIFO access crossed the flush boundary");
+      end
+      if ($past(rst_ni) && $past(fifo_ctrl_reset)) begin
+        assert (rb_hwif_out.CALIPTRA_STATUS.REGION_RESET.value)
+          else $error("usb_ocp_recovery_top: explicit FIFO reset lost REGION_RESET history");
       end
       if ($past(rst_ni) && $past(proto_err_rd_pulse)) begin
         assert (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)
           else $error("usb_ocp_recovery_top: protocol error did not clear on completed USB DEVICE_STATUS read");
       end
       if (fw_protocol_error_accept) begin
-        assert (batch_aborted)
+        assert (batch_aborted && !rec_fifo_reservation_active)
           else $error("usb_ocp_recovery_top: firmware general error accepted without an aborted FIFO batch");
       end
-      if (fw_protocol_error_req && !batch_aborted) begin
+      if (fw_protocol_error_req &&
+          (!batch_aborted || rec_fifo_reservation_active)) begin
         assert (!rec_fw_protocol_error_req)
           else $error("usb_ocp_recovery_top: invalid firmware general error request reached USB");
       end

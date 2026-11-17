@@ -188,7 +188,7 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__in_t;
 
     typedef struct packed{
-        logic next;
+        logic hwset;
     } usb_ocp_recovery_reg__CALIPTRA_STATUS__REGION_RESET__in_t;
 
     typedef struct packed{
@@ -627,6 +627,14 @@ package usb_ocp_recovery_reg_pkg;
     } usb_ocp_recovery_reg__CALIPTRA_CTRL__out_t;
 
     typedef struct packed{
+        logic value;
+    } usb_ocp_recovery_reg__CALIPTRA_STATUS__REGION_RESET__out_t;
+
+    typedef struct packed{
+        usb_ocp_recovery_reg__CALIPTRA_STATUS__REGION_RESET__out_t REGION_RESET;
+    } usb_ocp_recovery_reg__CALIPTRA_STATUS__out_t;
+
+    typedef struct packed{
         usb_ocp_recovery_reg__PROT_CAP_0__out_t PROT_CAP_0;
         usb_ocp_recovery_reg__PROT_CAP_1__out_t PROT_CAP_1;
         usb_ocp_recovery_reg__PROT_CAP_2__out_t PROT_CAP_2;
@@ -652,6 +660,7 @@ package usb_ocp_recovery_reg_pkg;
         usb_ocp_recovery_reg__INDIRECT_FIFO_DATA__out_t INDIRECT_FIFO_DATA;
         usb_ocp_recovery_reg__VENDOR__out_t VENDOR;
         usb_ocp_recovery_reg__CALIPTRA_CTRL__out_t CALIPTRA_CTRL;
+        usb_ocp_recovery_reg__CALIPTRA_STATUS__out_t CALIPTRA_STATUS;
     } usb_ocp_recovery_reg__out_t;
 
     localparam USB_OCP_RECOVERY_REG_ADDR_WIDTH = 32'd11;

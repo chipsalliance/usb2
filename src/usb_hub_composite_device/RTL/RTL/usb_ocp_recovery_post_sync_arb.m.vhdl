@@ -111,6 +111,7 @@ entity usb_ocp_recovery_post_sync_arb is
     ctrl_xfer_done  : out std_logic;
     ctrl_xfer_abort : out std_logic;
     fifo_batch_abort : out std_logic;
+    fifo_batch_reset : out std_logic;
     ctrl_length_error : out std_logic;
 
     ocp_path_disable_i : in  std_logic;
@@ -137,8 +138,17 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   -- completion and selects OCP ownership for later EP0 stages.
   --
   -- Claimed OUT data uses an eight-beat packet store. The store commits one
-  -- DWORD per hclk only after successful exact-length EOP validation, preventing
-  -- failed USB packets from modifying recovery state. EP0 response metadata is
+  -- DWORD per handshake after successful exact-length accepted OUT DATA,
+  -- including HS NYET (USB 2.0 Sec 8.5.1; OCP Recovery v1.1 Sec 8.5.1).
+  -- All OUT drains own the store and decoder independently of ordinary SETUP
+  -- supersession. Firmware claim-abort is an emergency cancellation of unread
+  -- RX, not a CMS flush; bus/device reset retains its separate reset policy.
+  -- Complete SETUP publication needs no gate: at the supported >=60 MHz hclk
+  -- and 60 MHz PHY, its conservative bound is 28 PHY periods - 1 hclk,
+  -- beyond the maximum 16 drain edges plus decoder completion (safe at +18).
+  -- Early SETUP tokens can still overlap drain and cannot reset the decoder.
+  -- This reuses the packet store and decoder command/offset; no rollback RAM
+  -- or duplicate command/cursor registers are needed. EP0 response metadata is
   -- snapped per transaction while TX payload remains streaming. Transaction
   -- identity keeps non-EP0 DMA traffic independent of retained EP0 ownership.
   -- FIFO writes reserve the exact requested DWORD capacity across PING/retry.
@@ -221,6 +231,8 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal rx_total_words_r    : unsigned(4 downto 0);
   signal rx_total_bytes_r    : unsigned(6 downto 0);
   signal rx_validated_r      : std_logic;
+  signal rx_backend_busy_c   : std_logic;
+  signal rx_data_good_c      : std_logic;
   signal rx_drain_done_r     : std_logic;
   signal rx_expected_beats_c : unsigned(3 downto 0);
   signal rx_expected_words_c : unsigned(4 downto 0);
@@ -232,6 +244,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal ctrl_out_data_c     : std_logic_vector(31 downto 0);
   signal ctrl_out_vld_c      : std_logic;
   signal ctrl_out_last_c     : std_logic;
+  signal ctrl_xfer_abort_c   : std_logic;
 
   -- Control-IN cut-through queue (SV 32b words -> SIE 64b beats).
   signal tx_curr_data_r       : std_logic_vector(USB_DATAWIDTH-1 downto 0);
@@ -252,20 +265,25 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal tx_remaining_bytes_c : unsigned(6 downto 0);
 
   signal setup_pkt_vld_c : std_logic;
+  signal setup_pkt_ready_c : std_logic;
   signal setup_complete_c : std_logic;
   signal setup_valid_c : std_logic;
   signal setup_claim_c : std_logic;
   signal dev0_dbg_setup_generation_r : unsigned(11 downto 0);
   signal dev0_dbg_setup_owner_ocp_r : std_logic;
 
-  -- A FIFO-space reservation survives PING and CRC retry. It prevents
-  -- firmware FIFO mutators from invalidating an advertised OUT acceptance.
+  -- A FIFO-space reservation survives PING and CRC retry. It also tags the
+  -- packet store's FIFO owner through RX capture and accepted drain, avoiding
+  -- a duplicate command tag. Firmware cannot mutate reserved FIFO capacity.
   signal fifo_reservation_r : std_logic;
   signal fifo_words_needed_c : unsigned(6 downto 0);
   signal fifo_capacity_ok_c : std_logic;
   signal fifo_admission_ok_c : std_logic;
   signal fifo_out_request_c : std_logic;
+  signal fifo_out_context_c : std_logic;
+  signal fifo_rx_pending_c : std_logic;
   signal fifo_batch_abort_c : std_logic;
+  signal fifo_batch_reset_c : std_logic;
   signal setup_received_c : std_logic;
 
   -- Non-streaming EP0 response ownership is transaction-scoped. Streaming
@@ -430,7 +448,8 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     end process setup_debug_clk_proc;
 
     -- setup_pkt to the SV recovery stack: pulse once per claimed SETUP.
-    setup_pkt_vld_c <= '1' when (st = T_MIRROR) and (cap_done = '1')
+    setup_pkt_ready_c <= '1' when ((st = T_MIRROR) or (st = T_META_WAIT))
+                             and (cap_done = '1')
                              and (is_ocp = '1') and (sp_sent = '0')
                              and ((end_seen = '1') or
                                   (sync_sieint_endtransfer_i = '1'))
@@ -453,8 +472,11 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                              and (unsigned(sync_sieint_rx_nbytes_i) =
                                   to_unsigned(8, sync_sieint_rx_nbytes_i'length))
                          else '0';
+    setup_pkt_vld_c <= setup_pkt_ready_c and not new_setup_c and not ocp_teardown_c
+                       and not sync_busreset;
     setup_pkt <= sync_sieint_rxdata_i
-      when sync_sieint_rxdatavalid_i = '1' else cap_rxdata;
+      when (st = T_MIRROR) and (sync_sieint_rxdatavalid_i = '1')
+      else cap_rxdata;
     setup_pkt_vld <= setup_pkt_vld_c;
 
     -- ------------------------------------------------------------------
@@ -466,10 +488,14 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                                to_unsigned(3, nbytes_r'length), 2), 5);
     rx_capture_c <= '1' when (st = T_DATA) and (xfer_dir_in_r = '0')
                             and (wire_ocp_r = '1')
+                            and (sync_sieint_epinfo_epdir_i = '0')
+                            and (sync_sieint_epinfo_setup_i = '0')
                             and (sync_sieint_rxdatavalid_i = '1')
-                            and (rx_validated_r = '0')
+                            and (rx_backend_busy_c = '0')
                        else '0';
-    rx_drain_active_c <= rx_validated_r;
+    rx_backend_busy_c <= rx_validated_r or rx_drain_done_r;
+    rx_drain_active_c <= rx_validated_r and not sync_busreset
+                         and not dev0_local_reset_c and not ocp_claim_abort_i;
 
     rxstream_comb_proc : process (rx_drain_active_c, rx_word_index_r,
                                   rx_total_bytes_r, rx_total_words_r, rx_buf_r)
@@ -497,7 +523,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     end process rxstream_comb_proc;
 
     ctrl_out_data <= ctrl_out_data_c;
-    ctrl_out_vld  <= ctrl_out_vld_c when (st = T_DATA) else '0';
+    ctrl_out_vld  <= ctrl_out_vld_c;
     ctrl_out_last <= ctrl_out_last_c;
 
     -- ------------------------------------------------------------------
@@ -554,19 +580,22 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                                   and (dev0_ep0_req_c = '1')
                                   and (sync_sieint_epinfo_setup_i = '0')
                               else '0';
-    fifo_reservation_active_o <= fifo_reservation_r or
-                                 (fifo_out_request_c and fifo_admission_ok_c);
-    -- OUT requests cannot be clamped because doing so would make a partial
-    -- packet visible downstream. IN requests retain full wLength for the
-    -- terminating-ZLP decision while advertising only the known response size.
+    fifo_reservation_active_o <= (fifo_reservation_r or
+                                 (fifo_out_request_c and fifo_admission_ok_c))
+                                 and not ocp_claim_abort_i;
+    -- Reject oversized OUT requests rather than forwarding a truncated payload.
+    -- IN responses may be shorter than wLength. Preserve the requested length
+    -- and actual response size to determine whether a terminating ZLP is needed.
     setup_length_error_c <= '1' when (st = T_META_WAIT) and
+                                      (sp_sent = '1') and
+                                      (rx_backend_busy_c = '0') and
                                       (xfer_dir_in_r = '0') and
                                       (nbytes_r >
                                        to_unsigned(TX_MAXBYTES, nbytes_r'length))
                               else '0';
 
-    -- These values are snapped on each claimed EP0 request. A write STATUS
-    -- request remains inactive until post-EOP validation and commit complete.
+    -- These values are snapped on each claimed EP0 request. OUT STATUS can
+    -- wait for backend completion, but cannot cancel accepted DATA.
     rsp_live_valid_c <= '1';
     rsp_live_stall_c <= '1' when ((st = T_PROT_STALL) or
                                   (ctrl_set_stall = '1') or
@@ -576,6 +605,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         '0' when (rsp_live_stall_c = '1') else
         '1' when (sync_sieint_epinfo_setup_i = '1') else
         '0' when (st = T_META_WAIT) else
+        '0' when (rx_backend_busy_c = '1') else
         '0' when (st = T_DATA) and (xfer_dir_in_r = '1')
                  and (tx_launch_ready_c = '0') else
         '0' when (st = T_DATA) and (xfer_dir_in_r = '0')
@@ -586,6 +616,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                  and ((rx_captured_beats_r /= to_unsigned(0, rx_captured_beats_r'length))
                       or (rx_validated_r = '1')) else
         '0' when (st = T_STATUS) and (xfer_dir_in_r = '0')
+                 and (fifo_reservation_r = '0')
                  and ((rx_captured_beats_r /= to_unsigned(0, rx_captured_beats_r'length))
                       or (rx_validated_r = '1')) else
         '1';
@@ -608,33 +639,90 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- End-of-stage pulse to the SV decoder (OUT: after RX drain; IN: on the
     -- endtransfer once the launch contract is met so an early-IN NAK edge does
     -- not trip the decoder's early-termination escape).
-    ctrl_xfer_done <= rx_drain_done_r when (xfer_dir_in_r = '0') else
+    ctrl_xfer_done <= rx_drain_done_r when (rx_backend_busy_c = '1') or
+                                           (xfer_dir_in_r = '0') else
                        (st_end_c and tx_launch_ready_c)
                          when ((st = T_DATA) or (st = T_STATUS))
                               and (wire_ocp_r = '1') else '0';
-    ctrl_xfer_abort <= '1' when (dev0_local_reset_c = '1')
+    ctrl_xfer_abort_c <= '1' when (dev0_local_reset_c = '1')
+                                 or (sync_busreset = '1')
                                  or (ocp_claim_abort_i = '1')
                                  or (rx_length_error_r = '1')
                                  or (setup_length_error_c = '1')
-                                  or ((ep0_ocp_owner_r = '1') and (new_setup_c = '1'))
-                                  or (((st = T_META_WAIT) or (st = T_DATA)
-                                       or (st = T_STATUS)
-                                       or (st = T_PROT_STALL))
-                                     and (sync_busreset = '1'))
+                                 or ((ep0_ocp_owner_r = '1') and
+                                     (new_setup_c = '1') and
+                                     (rx_backend_busy_c = '0'))
                         else '0';
-    fifo_batch_abort_c <= '1' when (ep0_ocp_owner_r = '1')
-                                     and (xfer_dir_in_r = '0')
-                                     and (cap_rxdata(23 downto 16) =
-                                          OCP_INDIRECT_FIFO_DATA)
-                                     and ((st = T_META_WAIT) or (st = T_DATA)
-                                          or (st = T_STATUS))
-                                     and (rx_drain_done_r = '0')
-                                     and ((sync_busreset = '1')
-                                          or (dev0_local_reset_c = '1')
-                                          or (ocp_claim_abort_i = '1')
-                                          or (new_setup_c = '1'))
-                            else '0';
+    ctrl_xfer_abort <= ctrl_xfer_abort_c;
+    -- Physical reset clears CMS independently of the current RX lifecycle.
+    fifo_batch_reset_c <= sync_busreset or dev0_local_reset_c;
+    fifo_out_context_c <= '1' when (ep0_ocp_owner_r = '1') and
+                                  (xfer_dir_in_r = '0') and
+                                  (cap_rxdata(23 downto 16) =
+                                   OCP_INDIRECT_FIFO_DATA) else '0';
+    fifo_rx_pending_c <= '1' when (fifo_out_context_c = '1') and
+                                 ((st = T_META_WAIT) or (st = T_DATA)) and
+                                 (rx_backend_busy_c = '0') else '0';
+    -- BATCH_ABORTED diagnoses pending FIFO cancellation, including zero DATA
+    -- without a reservation. STATUS cannot cancel an already completed drain.
+    -- A reservation identifies an older FIFO drain even while SETUP is mirrored.
+    fifo_batch_abort_c <= '0' when fifo_batch_reset_c = '1' else
+                         '1' when
+                          ((new_setup_c = '1') and (fifo_rx_pending_c = '1')) or
+                          ((ocp_claim_abort_i = '1') and
+                           ((fifo_rx_pending_c = '1') or
+                            ((fifo_reservation_r = '1') and (rx_validated_r = '1'))))
+                          else '0';
     fifo_batch_abort <= fifo_batch_abort_c;
+    fifo_batch_reset <= fifo_batch_reset_c;
+
+    -- rx_data_good_c indicates that a complete, accepted OCP Control-OUT
+    -- payload is eligible to drain from RX storage, without waiting for STATUS.
+    -- This signal qualifies RX validation/drain startup and FIFO reservation
+    -- retention; consumer reset/abort branches take priority over eligibility.
+    -- rx_data_good_c is driven based on:
+    -- - st_end_c: successful EOP for the OCP-owned transaction. PIE success
+    --   means DATA accepted and ACK/NYET selected, not handshake completion
+    --   (USB 2.0 Sec 8.5.1); PING does not report success.
+    -- - st and xfer_dir_in_r: require the original request's OUT DATA stage.
+    -- - sync_sieint_epinfo_epdir_i and sync_sieint_epinfo_setup_i: require
+    --   physical OUT, not SETUP. At supported hclk >= PHY, accepted EOP
+    --   crosses within 1 PHY + 3 hclk; ACK/NYET plus turnaround take at least
+    --   7 PHY periods, so these bundled pins still identify that EOP
+    --   (USB 2.0 Sec 7.1.18.2).
+    -- - rx_validated_r: reject duplicate acceptance while a payload drains.
+    -- - nbytes_r: require a nonzero request that fits the packet store.
+    -- - sync_sieint_rx_nbytes_i: require the received byte count to match
+    --   the original request exactly.
+    -- - rx_captured_beats_r, rx_capture_c and rx_expected_beats_c: require
+    --   exactly the expected beats, including a final beat arriving at EOP.
+    --   Missing/excess beats fail; fresh capture also excludes stale IN
+    --   completion, since IN captures no beats and failed OUT clears the count.
+    rx_data_good_comb_proc : process (st_end_c, st, xfer_dir_in_r,
+                                      sync_sieint_epinfo_epdir_i,
+                                      sync_sieint_epinfo_setup_i,
+                                      rx_validated_r, nbytes_r,
+                                      sync_sieint_rx_nbytes_i, rx_capture_c,
+                                      rx_captured_beats_r, rx_expected_beats_c)
+      variable effective_beats_v : unsigned(rx_captured_beats_r'length downto 0);
+    begin
+      rx_data_good_c <= '0';
+      effective_beats_v := resize(rx_captured_beats_r, effective_beats_v'length);
+      if rx_capture_c = '1' then
+        effective_beats_v := effective_beats_v + 1;
+      end if;
+      if (st_end_c = '1') and
+         (st = T_DATA) and (xfer_dir_in_r = '0') and
+         (sync_sieint_epinfo_epdir_i = '0') and
+         (sync_sieint_epinfo_setup_i = '0') and
+         (rx_validated_r = '0') and
+         (nbytes_r > to_unsigned(0, nbytes_r'length)) and
+         (nbytes_r <= to_unsigned(TX_MAXBYTES, nbytes_r'length)) and
+         (resize(unsigned(sync_sieint_rx_nbytes_i), nbytes_r'length) = nbytes_r) and
+         (effective_beats_v = resize(rx_expected_beats_c, effective_beats_v'length)) then
+        rx_data_good_c <= '1';
+      end if;
+    end process rx_data_good_comb_proc;
 
     ctrl_length_error <= rx_length_error_r or setup_length_error_c;
 
@@ -651,7 +739,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                              setup_length_error_c, nbytes_r,
                              rx_length_error_r, xfer_dir_in_r,
                              rx_drain_done_r, st_end_c, zlp_phase_r,
-                             zlp_owed_c)
+                             zlp_owed_c, sp_sent)
     begin
       st_next <= st;
       case st is
@@ -684,6 +772,8 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
             st_next <= T_MIRROR;
           elsif (fw_protocol_error_req_i = '1') and (ep0_ocp_owner_r = '1') then
             st_next <= T_PROT_STALL;
+          elsif sp_sent = '0' then
+            st_next <= T_META_WAIT;
           elsif (ctrl_set_stall = '1') or
                 (setup_length_error_c = '1') then
             st_next <= T_PROT_STALL;
@@ -866,14 +956,18 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
            (ocp_claim_abort_i = '1') then
           fifo_reservation_r <= '0';
+        elsif (rx_backend_busy_c = '1') or (rx_data_good_c = '1') then
+          if rx_drain_done_r = '1' then
+            fifo_reservation_r <= '0';
+          end if;
         else
           if (fifo_out_request_c = '1') and (fifo_reservation_r = '0') and
-             (fifo_admission_ok_c = '1') and (rx_validated_r = '0') and
+             (fifo_admission_ok_c = '1') and
              (rx_captured_beats_r =
               to_unsigned(0, rx_captured_beats_r'length)) then
             fifo_reservation_r <= '1';
           end if;
-          if (rx_drain_done_r = '1') or (rx_length_error_r = '1') or
+          if (rx_length_error_r = '1') or
              (new_setup_c = '1') then
             fifo_reservation_r <= '0';
           end if;
@@ -1105,7 +1199,6 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- Complete Control-OUT packet store (clocked).
     -- ------------------------------------------------------------------
     rxbuf_clk_proc : process (hclk, hresetn)
-      variable effective_beats_v : unsigned(3 downto 0);
     begin
       if hresetn = '0' then
         for i in 0 to RX_PACKET_BEATS-1 loop
@@ -1121,26 +1214,20 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
       elsif rising_edge(hclk) then
         rx_drain_done_r <= '0';
         rx_length_error_r <= '0';
-        if (ep0_ocp_owner_r = '0') or (new_setup_c = '1')
-           or (ocp_claim_abort_i = '1') or (sync_busreset = '1')
-           or (dev0_local_reset_c = '1') then
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
+           (ocp_claim_abort_i = '1') then
           rx_captured_beats_r <= (others => '0');
           rx_word_index_r     <= (others => '0');
           rx_total_words_r    <= (others => '0');
           rx_total_bytes_r    <= (others => '0');
           rx_validated_r      <= '0';
-        else
-          effective_beats_v := rx_captured_beats_r;
-          if (rx_capture_c = '1') and
-             (rx_captured_beats_r < to_unsigned(RX_PACKET_BEATS,
-                                                rx_captured_beats_r'length)) then
-            rx_buf_r(to_integer(rx_captured_beats_r)) <= sync_sieint_rxdata_i;
-            rx_captured_beats_r <= rx_captured_beats_r + 1;
-            effective_beats_v := rx_captured_beats_r + 1;
-          end if;
-          if (rx_validated_r = '1') and (ctrl_out_rdy = '1') then
+        elsif rx_validated_r = '1' then
+          -- Ordinary wire supersession cannot alter accepted payload/cursor.
+          -- Emergency abort above suppresses valid and wins even on last word.
+          if ctrl_out_rdy = '1' then
             if rx_last_word_c = '1' then
               rx_drain_done_r <= '1';
+              -- Retain the completed packet totals until teardown/publication.
               rx_validated_r <= '0';
               rx_captured_beats_r <= (others => '0');
               rx_word_index_r <= (others => '0');
@@ -1148,27 +1235,33 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
               rx_word_index_r <= rx_word_index_r + 1;
             end if;
           end if;
+        elsif (ep0_ocp_owner_r = '0') or (new_setup_c = '1') or
+              (setup_pkt_vld_c = '1') then
+          rx_captured_beats_r <= (others => '0');
+          rx_word_index_r     <= (others => '0');
+          rx_total_words_r    <= (others => '0');
+          rx_total_bytes_r    <= (others => '0');
+          rx_validated_r      <= '0';
+        else
+          -- One capture/accept path for every OUT destination, including a
+          -- final partial beat delivered on the successful EOP edge.
+          if (rx_capture_c = '1') and
+             (rx_captured_beats_r < to_unsigned(RX_PACKET_BEATS,
+                                                rx_captured_beats_r'length)) then
+            rx_buf_r(to_integer(rx_captured_beats_r)) <= sync_sieint_rxdata_i;
+            rx_captured_beats_r <= rx_captured_beats_r + 1;
+          end if;
           if (sync_sieint_endtransfer_i = '1') and (wire_ocp_r = '1')
              and (st = T_DATA) and (xfer_dir_in_r = '0') then
-            if sync_sieint_success_i = '1' then
-              if (resize(unsigned(sync_sieint_rx_nbytes_i), nbytes_r'length) =
-                  nbytes_r)
-                 and (effective_beats_v = rx_expected_beats_c) then
-                rx_total_bytes_r <= resize(nbytes_r, rx_total_bytes_r'length);
-                rx_total_words_r <= rx_expected_words_c;
-                rx_word_index_r <= (others => '0');
-                if nbytes_r = to_unsigned(0, nbytes_r'length) then
-                  rx_drain_done_r <= '1';
-                  rx_captured_beats_r <= (others => '0');
-                else
-                  rx_validated_r <= '1';
-                end if;
-              else
-                rx_length_error_r <= '1';
-                rx_captured_beats_r <= (others => '0');
-                rx_validated_r <= '0';
-              end if;
+            if rx_data_good_c = '1' then
+              rx_total_bytes_r <= resize(nbytes_r, rx_total_bytes_r'length);
+              rx_total_words_r <= rx_expected_words_c;
+              rx_word_index_r <= (others => '0');
+              rx_validated_r <= '1';
             else
+              if sync_sieint_success_i = '1' then
+                rx_length_error_r <= '1';
+              end if;
               rx_captured_beats_r <= (others => '0');
               rx_validated_r <= '0';
             end if;
@@ -1326,10 +1419,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
 
     -- A link-valid SETUP retains all firmware-visible USB side effects for both
     -- owner classes. Only the claimed DMA success is suppressed.
-    setup_received_c <= sync_sieint_setup_received_i
-      when (sync_busreset = '0') and
-           not ((dev0_selected_c = '1') and
-                (dev0_local_reset_c = '1')) else '0';
+    setup_received_c <= sync_sieint_setup_received_i;
     sync_sieint_setup_received_o <= setup_received_c;
 
     sync_sieint_error_o     <= sync_sieint_error_i;
@@ -1507,6 +1597,22 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         prev_setup_dma_owner_v       := (others => '0');
         expect_dma_owner_v           := false;
       elsif rising_edge(hclk) then
+          if (st = T_META_WAIT) or (st = T_DATA) or (st = T_STATUS) then
+            assert ep0_ocp_owner_r = '1'
+              report "post_sync_arb: claimed stage without OCP owner"
+              severity failure;
+          end if;
+          if st = T_DATA then
+            assert sp_sent = '1'
+              report "post_sync_arb: DATA before SETUP publication"
+              severity failure;
+          end if;
+          if (st = T_STATUS) and (xfer_dir_in_r = '0') and
+             (cap_rxdata(23 downto 16) = OCP_INDIRECT_FIFO_DATA) then
+            assert nbytes_r /= to_unsigned(0, nbytes_r'length)
+              report "post_sync_arb: zero-length FIFO request escaped decoder STALL"
+              severity failure;
+          end if;
           if expect_drop_clear_v then
             assert drop_setup_success_r = '0'
               report "post_sync_arb: claimed SETUP mask survived first valid fall after valid_seen"
@@ -1555,7 +1661,6 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
           end if;
           if expect_local_cleanup_v then
             assert (st = T_IDLE) and (ep0_ocp_owner_r = '0') and
-                   (fifo_reservation_r = '0') and
                    (wire_ocp_r = '0')
               report "post_sync_arb: local abort cleanup was incomplete"
               severity failure;
@@ -1621,7 +1726,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
              (unsigned(pie_dev_selected_i) = to_unsigned(C_DEV1_SEL, 2)) then
             if sync_sieint_epinfo_req_i = '1' then
               assert (dma_req_forward_c = '1') and (ocp_resp_sel_c = '0') and
-                     (setup_pkt_vld_c = '0')
+                     ((setup_pkt_vld_c = '0') or (st = T_META_WAIT))
                 report "post_sync_arb: unrelated device traffic entered recovery"
                 severity failure;
             end if;
@@ -1665,15 +1770,17 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                  to_unsigned(RX_PACKET_BEATS, rx_captured_beats_r'length)
             report "post_sync_arb: RX packet staging overflow"
             severity failure;
-          assert not ((rx_capture_c = '1') and
-                      (rx_captured_beats_r =
-                       to_unsigned(RX_PACKET_BEATS, rx_captured_beats_r'length)))
-            report "post_sync_arb: RX packet staging write past final beat"
-            severity failure;
+          if (rx_capture_c = '1') and
+             (rx_captured_beats_r =
+              to_unsigned(RX_PACKET_BEATS, rx_captured_beats_r'length)) then
+            assert rx_data_good_c = '0'
+              report "post_sync_arb: excess RX beat accepted as a complete payload"
+              severity failure;
+          end if;
           assert not ((ctrl_out_vld_c = '1') and (rx_validated_r = '0'))
             report "post_sync_arb: downstream write before successful validation"
             severity failure;
-          if rx_validated_r = '1' then
+          if rx_drain_active_c = '1' then
             assert ctrl_out_vld_c = '1'
               report "post_sync_arb: internal bubble while draining packet"
               severity failure;
@@ -1695,7 +1802,8 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
               report "post_sync_arb: exact-length 64-byte IN incorrectly owes ZLP"
               severity failure;
           end if;
-          if (nbytes_r(15) = '1') and (xfer_dir_in_r = '0') then
+          if (nbytes_r(15) = '1') and (xfer_dir_in_r = '0') and
+             (rx_backend_busy_c = '0') then
             assert ctrl_out_vld_c = '0'
               report "post_sync_arb: oversized OUT request reached downstream"
               severity failure;
@@ -1749,24 +1857,19 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
           end if;
           if (ep0_ocp_owner_r = '1') and (xfer_dir_in_r = '0') and
              (cap_rxdata(23 downto 16) = OCP_INDIRECT_FIFO_DATA) and
-             ((st = T_META_WAIT) or (st = T_DATA) or (st = T_STATUS)) and
-             (rx_drain_done_r = '0') and
-             ((sync_busreset = '1') or (dev0_local_reset_c = '1') or
-              (ocp_claim_abort_i = '1') or (new_setup_c = '1')) then
+             ((st = T_META_WAIT) or (st = T_DATA)) and
+             ((rx_total_words_r = to_unsigned(0, rx_total_words_r'length)) or
+              ((st = T_META_WAIT) and (sp_sent = '0'))) and
+             (rx_validated_r = '0') and (rx_drain_done_r = '0') and
+             ((ocp_claim_abort_i = '1') or (new_setup_c = '1')) and
+             (fifo_batch_reset_c = '0') then
             assert fifo_batch_abort_c = '1'
-              report "post_sync_arb: incomplete FIFO command missed batch abort"
+              report "post_sync_arb: incomplete FIFO cancellation missed notification"
               severity failure;
           end if;
-          if (sync_busreset = '1') or
-             ((dev0_selected_c = '1') and (dev0_local_reset_c = '1')) then
-            assert setup_received_c = '0'
-              report "post_sync_arb: SETUP notification escaped reset/disconnect gate"
-              severity failure;
-          else
-            assert setup_received_c = sync_sieint_setup_received_i
-              report "post_sync_arb: valid connected SETUP notification was not forwarded"
-              severity failure;
-          end if;
+          assert setup_received_c = sync_sieint_setup_received_i
+            report "post_sync_arb: SETUP notification was not forwarded"
+            severity failure;
 
           -- Single-MaxPacket scope (advertised wMaxRd/WrTransferSize = 64, OCP
           -- Recovery v1.1 Sec 8.5): the captured IN response length and the OUT
@@ -1799,7 +1902,10 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
           prev_snap_hold_v := (rsp_snap_valid_r = '1') and
                               (wire_ocp_r = '1') and
                               (sync_sieint_epinfo_req_i = '0') and
-                              (sync_sieint_endtransfer_i = '0');
+                              (sync_sieint_endtransfer_i = '0') and
+                              (sync_busreset = '0') and
+                              (dev0_local_reset_c = '0') and
+                              (ocp_claim_abort_i = '0');
           expect_drop_clear_v := (drop_setup_success_r = '1') and
                                  (drop_dma_valid_seen_r = '1') and
                                  (epinfo_sync_valid_dma = '0') and
@@ -1849,6 +1955,232 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
             (sync_busreset = '0') and (dev0_selected_c = '0');
       end if;
     end process assertions_proc;
+
+    out_lifecycle_assertions_proc : process (hclk, hresetn)
+      variable expect_hold_v : boolean;
+      variable expect_advance_v : boolean;
+      variable expect_done_v : boolean;
+      variable expect_accept_v : boolean;
+      variable expect_discard_v : boolean;
+      variable expect_reset_v : boolean;
+      variable expect_excess_beat_v : boolean;
+      variable saved_buf_v : t_rx_buf;
+      variable saved_index_v : unsigned(4 downto 0);
+      variable saved_words_v : unsigned(4 downto 0);
+      variable saved_bytes_v : unsigned(6 downto 0);
+      variable saved_fifo_v : boolean;
+      variable words_left_v : natural range 0 to 16;
+      variable outstanding_v : boolean;
+    begin
+      if hresetn = '0' then
+        expect_hold_v := false;
+        expect_advance_v := false;
+        expect_done_v := false;
+        expect_accept_v := false;
+        expect_discard_v := false;
+        expect_reset_v := false;
+        expect_excess_beat_v := false;
+        saved_buf_v := (others => (others => '0'));
+        saved_index_v := (others => '0');
+        saved_words_v := (others => '0');
+        saved_bytes_v := (others => '0');
+        saved_fifo_v := false;
+        words_left_v := 0;
+        outstanding_v := false;
+      elsif rising_edge(hclk) then
+        if expect_excess_beat_v then
+          assert (rx_buf_r = saved_buf_v) and (rx_validated_r = '0')
+            report "post_sync_arb: excess RX beat changed staging or began a drain"
+            severity failure;
+        end if;
+        if expect_hold_v or expect_advance_v or expect_accept_v then
+          assert (rx_validated_r = '1') and
+                 (rx_buf_r = saved_buf_v) and
+                 (rx_total_words_r = saved_words_v) and
+                 (rx_total_bytes_r = saved_bytes_v)
+            report "post_sync_arb: committed payload/length/reservation changed"
+            severity failure;
+          if saved_fifo_v then
+            assert fifo_reservation_r = '1'
+              report "post_sync_arb: accepted FIFO packet lost reservation"
+              severity failure;
+          end if;
+        end if;
+        if expect_hold_v then
+          assert rx_word_index_r = saved_index_v
+            report "post_sync_arb: committed cursor advanced without handshake"
+            severity failure;
+        end if;
+        if expect_advance_v then
+          assert rx_word_index_r = saved_index_v + 1
+            report "post_sync_arb: committed cursor did not advance exactly once"
+            severity failure;
+        end if;
+        if expect_accept_v then
+          assert rx_word_index_r = to_unsigned(0, rx_word_index_r'length)
+            report "post_sync_arb: accepted DATA started at nonzero cursor"
+            severity failure;
+          if (sync_busreset = '0') and (dev0_local_reset_c = '0') and
+             (ocp_claim_abort_i = '0') then
+            assert ctrl_out_vld_c = '1'
+              report "post_sync_arb: accepted DATA drain waited for wire STATUS"
+              severity failure;
+          end if;
+        end if;
+        if expect_done_v then
+          assert (rx_validated_r = '0') and (rx_drain_done_r = '1') and
+                 (rx_total_words_r = saved_words_v)
+            report "post_sync_arb: final committed handshake did not retire once"
+            severity failure;
+          if saved_fifo_v then
+            assert fifo_reservation_r = '1'
+              report "post_sync_arb: FIFO reservation released before completion"
+              severity failure;
+            if (sync_busreset = '0') and (dev0_local_reset_c = '0') then
+              assert fifo_batch_abort_c = '0'
+                report "post_sync_arb: retired FIFO DATA reported canceled"
+                severity failure;
+            end if;
+          end if;
+        end if;
+        if expect_discard_v or expect_reset_v then
+          assert (rx_validated_r = '0') and
+                 (rx_total_words_r = to_unsigned(0, rx_total_words_r'length)) and
+                 (fifo_reservation_r = '0')
+            report "post_sync_arb: pending discard/reset did not release ownership"
+            severity failure;
+        end if;
+        if (ctrl_out_vld_c = '1') and (fifo_reservation_r = '1') then
+          assert rx_validated_r = '1'
+            report "post_sync_arb: FIFO word published without accepted DATA"
+            severity failure;
+        end if;
+        if (rx_backend_busy_c = '1') or (rx_data_good_c = '1') then
+          assert (rx_capture_c = '0') or (rx_data_good_c = '1')
+            report "post_sync_arb: committed decoder/store ownership overlapped"
+            severity failure;
+          if (sync_busreset = '0') and (dev0_local_reset_c = '0') and
+             (ocp_claim_abort_i = '0') then
+            -- Check the ungated classification event, not a gate-derived valid.
+            assert (setup_pkt_ready_c = '0') and (setup_pkt_vld_c = '0')
+              report "post_sync_arb: SETUP violated drain/completion timing bound"
+              severity failure;
+            assert ctrl_xfer_abort_c = '0'
+              report "post_sync_arb: wire teardown reset committed decoder"
+              severity failure;
+          end if;
+        end if;
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') then
+          assert (fifo_batch_reset_c = '1') and (fifo_batch_abort_c = '0')
+            report "post_sync_arb: physical reset missed clear or reported batch abort"
+            severity failure;
+        else
+          assert fifo_batch_reset_c = '0'
+            report "post_sync_arb: pending cancellation destructively reset FIFO"
+            severity failure;
+          if (st = T_STATUS) and (xfer_dir_in_r = '0') and
+             (cap_rxdata(23 downto 16) = OCP_INDIRECT_FIFO_DATA) and
+             (rx_validated_r = '0') then
+            assert fifo_batch_abort_c = '0'
+              report "post_sync_arb: missing STATUS canceled completed FIFO DATA"
+              severity failure;
+          end if;
+          if (ocp_claim_abort_i = '0') and
+             (((rx_total_words_r /= to_unsigned(0, rx_total_words_r'length)) and
+               (sp_sent = '1')) or (rx_data_good_c = '1')) then
+            assert fifo_batch_abort_c = '0'
+              report "post_sync_arb: committed batch reported canceled"
+              severity failure;
+          end if;
+        end if;
+        if (ocp_claim_abort_i = '1') or (sync_busreset = '1') or
+           (dev0_local_reset_c = '1') then
+          assert (ctrl_out_vld_c = '0') and (ctrl_xfer_abort_c = '1')
+            report "post_sync_arb: emergency/reset did not stop RX on its edge"
+            severity failure;
+          if (ocp_claim_abort_i = '1') and (fifo_batch_reset_c = '0') and
+             (fifo_reservation_r = '1') and
+             (rx_validated_r = '1') then
+            assert fifo_batch_abort_c = '1'
+              report "post_sync_arb: emergency FIFO discard missed notification"
+              severity failure;
+          end if;
+        end if;
+
+        -- Count only decoder ready/valid handshakes, never wire retries. This
+        -- scoreboard has one credit per accepted full DATA and no replay path.
+        if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
+           (ocp_claim_abort_i = '1') then
+          outstanding_v := false;
+          words_left_v := 0;
+        else
+          if rx_data_good_c = '1' then
+            assert not outstanding_v
+              report "post_sync_arb: duplicate accepted DATA credit"
+              severity failure;
+            outstanding_v := true;
+            words_left_v := to_integer(rx_expected_words_c);
+          end if;
+          if rx_validated_r = '1' then
+            assert outstanding_v and (words_left_v > 0)
+              report "post_sync_arb: OUT drain without accepted DATA credit"
+              severity failure;
+            assert to_integer(rx_word_index_r) + words_left_v =
+                   to_integer(rx_total_words_r)
+              report "post_sync_arb: OUT committed words duplicated/skipped"
+              severity failure;
+            -- Integrated writes ACK every cycle: direct registers or reserved
+            -- synchronous CMS capacity (OCP Recovery v1.1 Sec 9.2). A backend
+            -- error still enters decoder STALL; it must not be hidden here.
+            assert (ctrl_out_vld_c = '1') and (ctrl_out_rdy = '1')
+              report "post_sync_arb: integrated OUT backend broke consecutive drain"
+              severity failure;
+            if ctrl_out_rdy = '1' then
+              assert (rx_last_word_c = '1') = (words_left_v = 1)
+                report "post_sync_arb: committed last word mismatch"
+                severity failure;
+              if words_left_v > 0 then
+                words_left_v := words_left_v - 1;
+              end if;
+              if rx_last_word_c = '1' then
+                outstanding_v := false;
+              end if;
+            end if;
+          end if;
+        end if;
+        expect_reset_v := (sync_busreset = '1') or (dev0_local_reset_c = '1') or
+                          (ocp_claim_abort_i = '1');
+        expect_hold_v := (rx_validated_r = '1') and
+                         (ctrl_out_rdy = '0')
+                         and not expect_reset_v;
+        expect_advance_v := (rx_validated_r = '1') and
+                            (ctrl_out_rdy = '1')
+                            and (rx_last_word_c = '0') and not expect_reset_v;
+        expect_done_v := (rx_validated_r = '1') and
+                         (ctrl_out_rdy = '1')
+                         and (rx_last_word_c = '1') and not expect_reset_v;
+        expect_accept_v := (rx_data_good_c = '1') and not expect_reset_v;
+        expect_discard_v := (new_setup_c = '1')
+                            and (rx_backend_busy_c = '0') and
+                            (rx_data_good_c = '0') and not expect_reset_v;
+        expect_excess_beat_v := (rx_capture_c = '1') and
+                               (rx_captured_beats_r =
+                                to_unsigned(RX_PACKET_BEATS, rx_captured_beats_r'length));
+        saved_buf_v := rx_buf_r;
+        saved_index_v := rx_word_index_r;
+        saved_words_v := rx_total_words_r;
+        saved_bytes_v := rx_total_bytes_r;
+        saved_fifo_v := fifo_reservation_r = '1';
+        if expect_accept_v then
+          if rx_capture_c = '1' then
+            saved_buf_v(to_integer(rx_captured_beats_r)) := sync_sieint_rxdata_i;
+          end if;
+          saved_index_v := (others => '0');
+          saved_words_v := rx_expected_words_c;
+          saved_bytes_v := resize(nbytes_r, saved_bytes_v'length);
+        end if;
+      end if;
+    end process out_lifecycle_assertions_proc;
     -- pragma translate_on
 
 end architecture rtl;

@@ -360,6 +360,7 @@ component usb_ocp_recovery_post_sync_arb
     ctrl_xfer_done : out std_logic;
     ctrl_xfer_abort : out std_logic;
     fifo_batch_abort : out std_logic;
+    fifo_batch_reset : out std_logic;
     ctrl_length_error : out std_logic;
     ocp_path_disable_i : in std_logic;
     ocp_claim_abort_i : in std_logic;
@@ -1756,6 +1757,7 @@ usb_ocp_recovery_post_sync_arb_1 : usb_ocp_recovery_post_sync_arb
     ctrl_xfer_done => rec_ctrl_xfer_done,
     ctrl_xfer_abort => rec_ctrl_xfer_abort,
     fifo_batch_abort => rec_ctrl_fifo_batch_abort,
+    fifo_batch_reset => rec_ctrl_fifo_batch_reset,
     ctrl_length_error => rec_ctrl_length_error,
     ocp_path_disable_i => rec_ocp_path_disable,
     ocp_claim_abort_i => rec_ocp_claim_abort,

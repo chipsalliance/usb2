@@ -361,6 +361,7 @@ module ip_xxx_3511_hs_mem_compound_wrapper
   logic rec_ctrl_xfer_done_w;
   logic rec_ctrl_xfer_abort_w;
   logic rec_ctrl_fifo_batch_abort_w;
+  logic rec_ctrl_fifo_batch_reset_w;
   logic rec_ctrl_length_error_w;
   logic rec_ocp_path_disable_w;
   logic rec_ocp_claim_abort_w;
@@ -560,6 +561,7 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .rec_ctrl_xfer_done(rec_ctrl_xfer_done_w),
     .rec_ctrl_xfer_abort(rec_ctrl_xfer_abort_w),
     .rec_ctrl_fifo_batch_abort(rec_ctrl_fifo_batch_abort_w),
+    .rec_ctrl_fifo_batch_reset(rec_ctrl_fifo_batch_reset_w),
     .rec_ctrl_length_error(rec_ctrl_length_error_w),
     .rec_ocp_path_disable(rec_ocp_path_disable_w),
     .rec_ocp_claim_abort(rec_ocp_claim_abort_w),
@@ -720,6 +722,7 @@ module ip_xxx_3511_hs_mem_compound_wrapper
     .rec_ctrl_xfer_done(rec_ctrl_xfer_done_w),
     .rec_ctrl_xfer_abort(rec_ctrl_xfer_abort_w),
     .rec_ctrl_fifo_batch_abort(rec_ctrl_fifo_batch_abort_w),
+    .rec_ctrl_fifo_batch_reset(rec_ctrl_fifo_batch_reset_w),
     .rec_ctrl_length_error(rec_ctrl_length_error_w),
     .rec_ocp_path_disable(rec_ocp_path_disable_w),
     .rec_ocp_claim_abort(rec_ocp_claim_abort_w),
