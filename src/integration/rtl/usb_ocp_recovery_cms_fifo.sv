@@ -25,12 +25,15 @@
 //
 //   Control plane:
 //     - fifo_cms_q, image_size_q, write_index_q, accepted_push_count_q,
-//       overflow_q, region_reset_q, and image_done_q are the sole live owners
+//       overflow_q, batch_aborted_q, and image_done_q are the sole live owners
 //       of FIFO control, status, payload progress, and
 //       image-completion accounting. READ_INDEX is derived from synchronous
 //       FIFO occupancy rather than stored as an independent counter.
 //     - USB captures a five-word status snapshot for each multiword command.
 //       EXT status registers independently expose live values.
+//     - A registered explicit-reset pulse clears storage and all progress on
+//       the same edge. The pulse also hardware-sets the generated REGION_RESET
+//       W1C field; physical reset does not generate that explicit-reset event.
 //
 //   Arbitration:
 //     - usb_ocp_recovery_top.sv blocks EXT cpuif issue for INDIRECT_FIFO_CTRL
@@ -72,12 +75,14 @@ module usb_ocp_recovery_cms_fifo #(
   output logic        batch_aborted,
   output logic [$clog2(FIFO_DEPTH+1)-1:0] fifo_free_dwords,
 
+  // Cancellation is sticky notification only. Bus/device teardown uses the
+  // separate destructive reset; explicit INDIRECT_FIFO_CTRL reset is local.
   input  logic        fifo_abort_i,
+  input  logic        fifo_reset_i,
 
   // Regblock control/status values and live FIFO head.
   output logic [7:0]  fifo_ctrl_cms,
   output logic        fifo_ctrl_reset,
-  output logic        fifo_region_reset,
   output logic [31:0] fifo_ctrl_image_size,
   output logic [31:0] fifo_status_word_0,
   output logic [31:0] fifo_status_word_1,
@@ -100,7 +105,6 @@ module usb_ocp_recovery_cms_fifo #(
   logic [31:0] write_index_q;
   logic [31:0] accepted_push_count_q;
   logic        overflow_q;
-  logic        region_reset_q;
   logic        region_reset_pulse_q;
   logic        image_done_q;
   logic        payload_available_q;
@@ -297,13 +301,8 @@ module usb_ocp_recovery_cms_fifo #(
   assign usb_fifo_status_snapshot_start = usb_status_rd && (word_idx == 3'd0);
   assign usb_fifo_status_snapshot_use = usb_status_snapshot_vld_q;
 
-  always_comb begin
-    fifo_flush = 1'b0;
-    if (usb_ctrl_word0_wr || ext_ctrl_word0_wr) begin
-      fifo_flush = ctrl_word0_wstrb[1] && ctrl_word0_wdata[8];
-    end
-  end
-  assign fifo_clear = fifo_flush || fifo_abort_i;
+  assign fifo_flush = region_reset_pulse_q;
+  assign fifo_clear = fifo_flush || fifo_reset_i;
 
   caliptra_prim_fifo_sync #(
     .Width            (FIFO_WIDTH),
@@ -332,7 +331,6 @@ module usb_ocp_recovery_cms_fifo #(
       write_index_q       <= '0;
       accepted_push_count_q <= '0;
       overflow_q          <= 1'b0;
-      region_reset_q      <= 1'b0;
       region_reset_pulse_q <= 1'b0;
       image_done_q        <= 1'b0;
       payload_available_q <= 1'b0;
@@ -343,7 +341,10 @@ module usb_ocp_recovery_cms_fifo #(
         usb_status_snapshot_q[i] <= '0;
       end
     end else begin
-      region_reset_pulse_q <= 1'b0;
+      // OCP Recovery v1.1 Sec 9.2: RESET is write-one, device-cleared.
+      // Destructive side effects activate on the pulse edge.
+      region_reset_pulse_q <= (usb_ctrl_word0_wr || ext_ctrl_word0_wr)
+                             && ctrl_word0_wstrb[1] && ctrl_word0_wdata[8];
       if (fifo_clear || fifo_becomes_empty || (fifo_empty && !push_accept)) begin
         payload_available_q <= 1'b0;
       end else if (fifo_becomes_full || terminal_image_push) begin
@@ -376,28 +377,8 @@ module usb_ocp_recovery_cms_fifo #(
         if (ctrl_word0_wstrb[0]) fifo_cms_q <= ctrl_word0_wdata[7:0];
         if (ctrl_word0_wstrb[2]) image_size_q[7:0] <= ctrl_word0_wdata[23:16];
         if (ctrl_word0_wstrb[3]) image_size_q[15:8] <= ctrl_word0_wdata[31:24];
-        if (ctrl_word0_wstrb[1] && ctrl_word0_wdata[8]) begin
-          write_index_q       <= '0;
-          accepted_push_count_q <= '0;
-          overflow_q          <= 1'b0;
-          region_reset_q      <= 1'b1;
-          region_reset_pulse_q <= 1'b1;
-          image_done_q        <= 1'b0;
-          usb_status_snapshot_vld_q <= 1'b0;
-          usb_status_snapshot_next_word_q <= '0;
-        end
       end else if (ext_ctrl_word0_wr) begin
         if (ctrl_word0_wstrb[0]) fifo_cms_q <= ctrl_word0_wdata[7:0];
-        if (ctrl_word0_wstrb[1] && ctrl_word0_wdata[8]) begin
-          write_index_q       <= '0;
-          accepted_push_count_q <= '0;
-          overflow_q          <= 1'b0;
-          region_reset_q      <= 1'b1;
-          region_reset_pulse_q <= 1'b1;
-          image_done_q        <= 1'b0;
-          usb_status_snapshot_vld_q <= 1'b0;
-          usb_status_snapshot_next_word_q <= '0;
-        end
       end
 
       if (usb_ctrl_word1_wr) begin
@@ -422,7 +403,7 @@ module usb_ocp_recovery_cms_fifo #(
         overflow_q <= 1'b1;
       end
 
-      if (fifo_abort_i) begin
+      if (fifo_clear) begin
         write_index_q          <= '0;
         accepted_push_count_q  <= '0;
         overflow_q             <= 1'b0;
@@ -476,7 +457,6 @@ module usb_ocp_recovery_cms_fifo #(
     end
     fifo_ctrl_cms        = fifo_cms_q;
     fifo_ctrl_reset      = region_reset_pulse_q;
-    fifo_region_reset    = region_reset_q;
     fifo_ctrl_image_size = image_size_q;
 
     fifo_status_word_0 = fifo_status_live_word_0;
@@ -497,12 +477,12 @@ module usb_ocp_recovery_cms_fifo #(
       end
       assert (!(push_req && pop_req))
         else $error("usb_ocp_recovery_cms_fifo: USB and EXT sources must serialize push and pop requests");
-      assert (!(fifo_flush && (push_req || pop_req)))
-        else $error("usb_ocp_recovery_cms_fifo: FIFO flush (INDIRECT_FIFO_CTRL reset) collided with a data push/pop; clr_i and the synchronous control-plane reset assume mutual exclusivity");
-      assert (!(fifo_abort_i && (push_accept || pop_accept)))
-        else $error("usb_ocp_recovery_cms_fifo: abort accepted a FIFO transfer");
-      assert (!(fifo_abort_i && fifo_flush))
-        else $error("usb_ocp_recovery_cms_fifo: batch abort collided with FIFO reset");
+      assert (!(fifo_clear && (push_accept || pop_accept)))
+        else $error("usb_ocp_recovery_cms_fifo: reset accepted a FIFO transfer");
+      if (fifo_abort_i && !fifo_reset_i && !fifo_flush) begin
+        assert (!fifo_clear)
+          else $error("usb_ocp_recovery_cms_fifo: notification cleared committed storage");
+      end
       assert (!(usb_data_rd && ext_data_rd))
         else $error("usb_ocp_recovery_cms_fifo: both sources attempted DATA pop");
       assert (!((usb_data_wr || usb_data_rd || usb_ctrl_word0_wr || usb_ctrl_word1_wr)
@@ -522,8 +502,6 @@ module usb_ocp_recovery_cms_fifo #(
         else $error("usb_ocp_recovery_cms_fifo: FULL without physical depth");
       assert (!payload_available_q || !fifo_empty)
         else $error("usb_ocp_recovery_cms_fifo: payload available while FIFO empty");
-      assert (!batch_aborted_q || !payload_available_q)
-        else $error("usb_ocp_recovery_cms_fifo: aborted batch remains available");
       assert (!ext_data_rd || payload_available_q)
         else $error("usb_ocp_recovery_cms_fifo: EXT read before payload available");
       if (push_accept) begin
@@ -534,11 +512,31 @@ module usb_ocp_recovery_cms_fifo #(
           end
         end
       end
-      if ($past(rst_ni) && $past(batch_aborted_q) && !fifo_flush) begin
+      if ($past(rst_ni) && $past(batch_aborted_q && !fifo_flush)) begin
         assert (batch_aborted_q)
           else $error("usb_ocp_recovery_cms_fifo: batch aborted cleared without reset");
       end
-      if ($past(rst_ni) && $past(payload_available_q) && !fifo_clear && !fifo_empty) begin
+      if ($past(rst_ni)) begin
+        assert (batch_aborted_q == ($past(fifo_flush) ? 1'b0 :
+                                    ($past(batch_aborted_q) || $past(fifo_abort_i))))
+          else $error("usb_ocp_recovery_cms_fifo: abort history source/priority mismatch");
+        if ($past(fifo_clear)) begin
+          assert ({write_index_q, accepted_push_count_q, fifo_wdepth,
+                   overflow_q, image_done_q, payload_available_q,
+                   usb_status_snapshot_vld_q, usb_status_snapshot_next_word_q} == '0)
+            else $error("usb_ocp_recovery_cms_fifo: storage/control flush boundary mismatch");
+        end
+      end
+      if ($past(rst_ni) &&
+          $past(fifo_abort_i && !fifo_clear && !push_accept && !pop_accept
+                && !usb_ctrl_word0_wr && !ext_ctrl_word0_wr
+                && !usb_ctrl_word1_wr && !ext_ctrl_word1_wr)) begin
+        assert ($stable({write_index_q, accepted_push_count_q, image_size_q,
+                         image_done_q, payload_available_q, fifo_wdepth,
+                         fifo_cms_q, overflow_q}))
+          else $error("usb_ocp_recovery_cms_fifo: cancellation changed committed state");
+      end
+      if ($past(rst_ni) && $past(payload_available_q && !fifo_clear) && !fifo_empty) begin
         assert (payload_available_q)
           else $error("usb_ocp_recovery_cms_fifo: payload available dropped before FIFO empty");
       end
@@ -555,10 +553,6 @@ module usb_ocp_recovery_cms_fifo #(
       if (usb_data_wr && fifo_rb_ack && !fifo_rb_err) begin
         assert (push_accept)
           else $error("usb_ocp_recovery_cms_fifo: successful USB DATA write did not enter FIFO");
-      end
-      if (usb_data_wr) begin
-        assert (push_accept)
-          else $error("usb_ocp_recovery_cms_fifo: preaccepted USB push was rejected");
       end
       if (usb_data_rd) begin
         assert (!pop_accept)

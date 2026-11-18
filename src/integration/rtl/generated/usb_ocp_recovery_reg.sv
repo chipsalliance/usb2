@@ -376,6 +376,12 @@ module usb_ocp_recovery_reg (
                 logic load_next;
             } OCP_PROTOCOL_ERROR_GENERAL;
         } CALIPTRA_CTRL;
+        struct packed{
+            struct packed{
+                logic next;
+                logic load_next;
+            } REGION_RESET;
+        } CALIPTRA_STATUS;
     } field_combo_t;
     field_combo_t field_combo;
 
@@ -561,6 +567,11 @@ module usb_ocp_recovery_reg (
                 logic value;
             } OCP_PROTOCOL_ERROR_GENERAL;
         } CALIPTRA_CTRL;
+        struct packed{
+            struct packed{
+                logic value;
+            } REGION_RESET;
+        } CALIPTRA_STATUS;
     } field_storage_t;
     field_storage_t field_storage;
 
@@ -1642,6 +1653,30 @@ module usb_ocp_recovery_reg (
     end
     assign hwif_out.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value = field_storage.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value;
     assign hwif_out.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.swmod = decoded_reg_strb.CALIPTRA_CTRL && decoded_req_is_wr;
+    // Field: usb_ocp_recovery_reg.CALIPTRA_STATUS.REGION_RESET
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.CALIPTRA_STATUS.REGION_RESET.value;
+        load_next_c = '0;
+        if(hwif_in.CALIPTRA_STATUS.REGION_RESET.hwset) begin // HW Set
+            next_c = '1;
+            load_next_c = '1;
+        end else if(decoded_reg_strb.CALIPTRA_STATUS && decoded_req_is_wr) begin // SW write 1 clear
+            next_c = field_storage.CALIPTRA_STATUS.REGION_RESET.value & ~(decoded_wr_data[0:0] & decoded_wr_biten[0:0]);
+            load_next_c = '1;
+        end
+        field_combo.CALIPTRA_STATUS.REGION_RESET.next = next_c;
+        field_combo.CALIPTRA_STATUS.REGION_RESET.load_next = load_next_c;
+    end
+    always_ff @(posedge clk or negedge hwif_in.rst_ni) begin
+        if(~hwif_in.rst_ni) begin
+            field_storage.CALIPTRA_STATUS.REGION_RESET.value <= 1'h0;
+        end else if(field_combo.CALIPTRA_STATUS.REGION_RESET.load_next) begin
+            field_storage.CALIPTRA_STATUS.REGION_RESET.value <= field_combo.CALIPTRA_STATUS.REGION_RESET.next;
+        end
+    end
+    assign hwif_out.CALIPTRA_STATUS.REGION_RESET.value = field_storage.CALIPTRA_STATUS.REGION_RESET.value;
 
     //--------------------------------------------------------------------------
     // Write response
@@ -1734,7 +1769,7 @@ module usb_ocp_recovery_reg (
     assign readback_array[25][1:1] = (decoded_reg_strb.CALIPTRA_CTRL && !decoded_req_is_wr) ? field_storage.CALIPTRA_CTRL.OCP_CLAIM_ABORT.value : '0;
     assign readback_array[25][2:2] = (decoded_reg_strb.CALIPTRA_CTRL && !decoded_req_is_wr) ? field_storage.CALIPTRA_CTRL.OCP_PROTOCOL_ERROR_GENERAL.value : '0;
     assign readback_array[25][31:3] = (decoded_reg_strb.CALIPTRA_CTRL && !decoded_req_is_wr) ? 29'h0 : '0;
-    assign readback_array[26][0:0] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.REGION_RESET.next : '0;
+    assign readback_array[26][0:0] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? field_storage.CALIPTRA_STATUS.REGION_RESET.value : '0;
     assign readback_array[26][1:1] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.OVERFLOW.next : '0;
     assign readback_array[26][2:2] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.IMAGE_DONE.next : '0;
     assign readback_array[26][3:3] = (decoded_reg_strb.CALIPTRA_STATUS && !decoded_req_is_wr) ? hwif_in.CALIPTRA_STATUS.BATCH_ABORTED.next : '0;
