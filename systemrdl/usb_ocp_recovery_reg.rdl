@@ -776,7 +776,7 @@ addrmap usb_ocp_recovery_reg {
         } IMAGE_DONE[2:2];
         field {
             name = "FIFO batch aborted sticky status";
-            desc = "Sticky abort-notification history owned by usb_ocp_recovery_cms_fifo.sv batch_aborted_q. Only fifo_abort_i sets it; notification does not discard committed FIFO contents. Physical bus/port reset and disconnect clear payload but neither set nor clear this history. Explicit INDIRECT_FIFO_CTRL.RESET and core reset clear it, with explicit FIFO reset winning coincident abort. Firmware writes have no effect.";
+            desc = "Sticky abort-notification history. Indicates an OUT payload towards INDIRECT_FIFO_DATA was discarded upon partial reception; notification does not discard committed FIFO contents. Physical bus/port reset and disconnect clear payload but neither set nor clear this history. Explicit INDIRECT_FIFO_CTRL.RESET and core reset clear it, with explicit FIFO reset winning coincident abort. Firmware writes have no effect.";
             sw = r;
             hw = w;
             we = false;
