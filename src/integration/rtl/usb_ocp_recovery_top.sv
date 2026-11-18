@@ -146,6 +146,8 @@ module usb_ocp_recovery_top
   logic                       fifo_rb_err;
   logic                       usb_fifo_req;
   logic                       usb_fifo_packet_active_q;
+  logic                       fifo_batch_reset_q;
+  logic                       fifo_batch_reset_start;
   logic                       usb_fifo_owned;
   logic [3:0]                 cpuif_wr_strb;
   logic                       ext_fifo_ctrl_0_access;
@@ -259,11 +261,17 @@ module usb_ocp_recovery_top
   // USB FIFO commands connect directly to cms_fifo. Non-FIFO USB accesses are
   // served directly by the hardware-interface endpoint.
   assign usb_fifo_req = usb_is_fifo_cmd & (usb_rb_wr | usb_rb_rd);
-  // Hold EXT FIFO accesses through the actual storage/control clear edge.
-  // The explicit-reset pulse is registered, so this introduces no decode loop.
+  always_ff @(posedge clk or negedge rst_ni) begin
+    if (!rst_ni) fifo_batch_reset_q <= 1'b0;
+    else         fifo_batch_reset_q <= rec_ctrl_fifo_batch_reset;
+  end
+  assign fifo_batch_reset_start = rec_ctrl_fifo_batch_reset && !fifo_batch_reset_q;
+  // Hold EXT FIFO accesses through explicit flush and physical-reset entry.
+  // Sustained disconnect must not block firmware FIFO control/status access.
+  // The explicit-reset pulse is registered, avoiding a decode loop.
   assign usb_fifo_owned = usb_fifo_req || usb_fifo_packet_active_q
                         || rec_fifo_reservation_active || fifo_ctrl_reset
-                        || rec_ctrl_fifo_batch_reset;
+                        || fifo_batch_reset_start;
   assign usb_rb_rdata = usb_is_fifo_cmd ? fifo_rb_rdata : usb_hw_rdata;
   assign usb_rb_ack   = usb_is_fifo_cmd ? fifo_rb_ack   : usb_hw_ack;
   assign usb_rb_err   = usb_is_fifo_cmd ? fifo_rb_err   : usb_hw_err;
@@ -854,7 +862,7 @@ module usb_ocp_recovery_top
         assert (!rec_fw_protocol_error_req)
           else $error("usb_ocp_recovery_top: sticky abort history preempted reserved drain");
       end
-      if (fifo_ctrl_reset || rec_ctrl_fifo_batch_reset) begin
+      if (fifo_ctrl_reset || fifo_batch_reset_start) begin
         assert (!(ext_fifo_ctrl_0_access || ext_fifo_ctrl_1_access
                   || ext_fifo_data_read || ext_fifo_data_write))
           else $error("usb_ocp_recovery_top: EXT FIFO access crossed the flush boundary");
