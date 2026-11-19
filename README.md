@@ -94,6 +94,12 @@ Use separate build output/library directories for the following alternatives:
 | Standalone 3516 | VHDL: `src/cfg/rtl_base_filelist.f`, `src/cfg/usb_ip_3511_filelist.f`, `src/cfg/usb_ip_3515_filelist.f`, `src/cfg/usb_ip_3516_filelist.f`; SystemVerilog: `src/cfg/usb_verilog_top_filelist.f` |
 | Compound Hub and two devices | VHDL: `src/cfg/usb_ip_hub_composite_device.f`; SystemVerilog: `src/cfg/usb_compound_verilog_filelist.f` |
 
+The compound SystemVerilog pulse receiver uses `caliptra_prim_flop_2sync` with `Width=1`
+for the control bit; the bundled data is still captured in the USB destination
+domain. The compound SV file list includes Caliptra's generic flop implementation.
+In a `SIMULATION` build, `+cdc_instrumentation_enabled=1` enables Caliptra's
+random one-cycle sampling delay on control transitions.
+
 Do not combine the alternative VHDL source sets in one library: several
 packages and entities have identical names but different implementations. The
 standalone set selects
