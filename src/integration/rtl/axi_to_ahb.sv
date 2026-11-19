@@ -27,7 +27,8 @@
 //   - Local SLVERR completion for denied bursts; denied reads return zero.
 //   - Per-beat R responses and one B response with accumulated write errors.
 //
-//   Limits: legal burst geometry required; no WSTRB masking or unaligned conversion.
+//   Unaligned start addresses and non-DWORD transfer sizes are rejected locally.
+//   Legal burst geometry is still required; no WSTRB masking.
 //   WUSER is ignored; the fabric must preserve AW/W transaction association.
 //   RUSER/BUSER are zero.
 //
@@ -98,7 +99,7 @@ module axi_to_ahb
     // Request context (ctx): one AXI burst's address, geometry, ID, and permission decision.
     // Queued in AR/AW FIFOs, then held in ap_ctx_q with addr tracking the current beat.
     typedef struct packed {
-        logic                          reject; // Acceptance-time USER decision.
+        logic                          reject; // Acceptance-time address, size and USER decision.
         logic [AW-1:0]                 addr;
         logic [$bits(axi_burst_e)-1:0] burst;
         logic [2:0]                    size;
@@ -109,7 +110,7 @@ module axi_to_ahb
     localparam int unsigned REQ_CTX_W = $bits(req_ctx_t);
 
     // Data-phase context (ctx): one beat's direction, final-beat flag, ID, and held write data.
-    // Captured in dp_ctx_q on ap_accept; reject means permission denial, not an AHB response error.
+    // Captured in dp_ctx_q on ap_accept; reject means local rejection, not an AHB response error.
     typedef struct packed {
         logic          write;
         logic          reject;
@@ -127,6 +128,7 @@ module axi_to_ahb
     logic                          aw_fifo_rvalid, aw_fifo_rready;
     req_ctx_t                      ar_req, aw_req, ar_head, aw_head;
     logic [NUM_PRIV_AXI_USERS-1:0] ar_user_match, aw_user_match;
+    logic                          ar_dword_ok, aw_dword_ok;
     logic                          ar_reject, aw_reject;
 
     logic                          w_fifo_wvalid, w_fifo_wready;
@@ -190,20 +192,27 @@ module axi_to_ahb
         assign aw_user_match[user_idx] = (axi_w.awuser == priv_axi_users_i[user_idx]);
     end
 
-    // USER authorization.
+    // Bypassing the USER filter does not bypass the aligned-DWORD requirement.
+    assign ar_dword_ok = (axi_r.araddr[1:0] == 2'b00) && (axi_r.arsize == 3'd2);
+    assign aw_dword_ok = (axi_w.awaddr[1:0] == 2'b00) && (axi_w.awsize == 3'd2);
+
     always_comb begin
         ar_reject = 1'b1;
         aw_reject = 1'b1;
         unique case (enable_axi_user_filtering_i)
             1'b0: begin
-                ar_reject = 1'b0;
-                aw_reject = 1'b0;
-            end
-            1'b1: begin
-                if (|ar_user_match) begin
+                if (ar_dword_ok) begin
                     ar_reject = 1'b0;
                 end
-                if (|aw_user_match) begin
+                if (aw_dword_ok) begin
+                    aw_reject = 1'b0;
+                end
+            end
+            1'b1: begin
+                if (ar_dword_ok && (|ar_user_match)) begin
+                    ar_reject = 1'b0;
+                end
+                if (aw_dword_ok && (|aw_user_match)) begin
                     aw_reject = 1'b0;
                 end
             end
@@ -380,7 +389,7 @@ module axi_to_ahb
                 // The final beat enters the data phase; release the sequencer, not the pending data/response.
                 ap_busy_d = 1'b0;
             end else begin
-                // More beats remain: prepare the next address even after an AHB error or permission denial.
+                // More beats remain: prepare the next address even after an AHB error or local rejection.
                 ap_beat_cnt_d = ap_beat_cnt_q - 8'd1;
                 ap_ctx_d.addr = ap_next_addr;
             end
