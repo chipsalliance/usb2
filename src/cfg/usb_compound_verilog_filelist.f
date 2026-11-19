@@ -20,10 +20,18 @@
 // Caliptra AXI package and primitives
 ${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/axi/rtl/axi_pkg.sv
 ${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_util_pkg.sv
+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_pkg.sv
+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim_generic/rtl/caliptra_prim_generic_flop.sv
+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_flop.sv
+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_cdc_rand_delay.sv
+${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_flop_2sync.sv
 ${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_fifo_sync_cnt.sv
 ${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_fifo_sync.sv
 ${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/axi/rtl/axi_if.sv
 ${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/axi/rtl/axi_addr.v
+
+// Bundled-data receiver instantiated by the compound VHDL synchronizer
+${USB_COMPILE_DIR}/../../src/usb_hub_composite_device/RTL/RTL/usb_pulse_synchronizer.sv
 
 // AXI-to-AHB converters
 ${USB_COMPILE_DIR}/../../src/integration/rtl/axilite_to_ahb.sv
