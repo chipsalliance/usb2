@@ -104,8 +104,6 @@ module usb_compound_ahb_decoder
 
   // Transfer qualification.
   logic addr_phase_active;
-  logic addr_phase_word_valid;
-  logic addr_phase_endpoint_enable;
 
   // Prepared address-phase metadata.
   ahb_select_t addr_phase_select;
@@ -128,12 +126,10 @@ module usb_compound_ahb_decoder
   assign addr_phase_recovery_hit = (addr_phase_byte_addr >= RECOVERY_BASE_ADDR) && (addr_phase_byte_addr < RECOVERY_ADDR_LIMIT);
   assign addr_phase_hits         = {addr_phase_hub_hit, addr_phase_dev0_csr_hit, addr_phase_recovery_hit};
 
-  // Control endpoints accept aligned 32-bit accesses only.
+  // The upstream AXI-to-AHB bridge rejects unaligned and non-DWORD requests.
   // During reset, the AHB manager must drive HTRANS to IDLE.
   // Endpoint selection is independent of the ready-qualified register capture.
-  assign addr_phase_active          = combo_hsel && combo_htrans[1];
-  assign addr_phase_word_valid      = (combo_hsize == 3'd2) && (combo_haddr[1:0] == '0);
-  assign addr_phase_endpoint_enable = addr_phase_active && addr_phase_word_valid;
+  assign addr_phase_active = combo_hsel && combo_htrans[1];
 
   always_comb begin : prepare_address_phase
     // IDLE/BUSY, deselection, and non-CSR transfers carry no CSR address.
@@ -154,24 +150,24 @@ module usb_compound_ahb_decoder
     // The complete HUB/recovery apertures include endpoint-owned padding and holes.
     case (addr_phase_hits)
       3'b100: begin
-        hub_hsel = addr_phase_endpoint_enable;
-        if (addr_phase_endpoint_enable) begin
+        hub_hsel = addr_phase_active;
+        if (addr_phase_active) begin
           addr_phase_select        = RESP_HUB;
           addr_phase_csr_word_addr = HUB_WORD_ADDR_WIDTH'((addr_phase_byte_addr - HUB_BASE_ADDR) >> 2);
         end
       end
 
       3'b010: begin
-        dev0_csr_hsel = addr_phase_endpoint_enable;
-        if (addr_phase_endpoint_enable) begin
+        dev0_csr_hsel = addr_phase_active;
+        if (addr_phase_active) begin
           addr_phase_select        = RESP_DEV0_CSR;
           addr_phase_csr_word_addr = HUB_WORD_ADDR_WIDTH'(4'((addr_phase_byte_addr - DEV0_CSR_BASE_ADDR) >> 2));
         end
       end
 
       3'b001: begin
-        recovery_hsel = addr_phase_endpoint_enable;
-        if (addr_phase_endpoint_enable) begin
+        recovery_hsel = addr_phase_active;
+        if (addr_phase_active) begin
           addr_phase_select = RESP_RECOVERY;
           recovery_haddr    = RECOVERY_LOCAL_ADDR_WIDTH'(addr_phase_byte_addr - RECOVERY_BASE_ADDR);
         end
@@ -348,9 +344,9 @@ module usb_compound_ahb_decoder
                    clk, !rst_n,
                    "AHB address decode selected more than one downstream endpoint")
 
-  // Ensure invalid, inactive, or unsupported transfers select no endpoint.
+  // Inactive transfers must not select an endpoint.
   `CALIPTRA_ASSERT(UnqualifiedTransferSelectsNoEndpoint_A,
-                   !addr_phase_endpoint_enable |->
+                   !addr_phase_active |->
                      ({dev0_csr_hsel, hub_hsel, recovery_hsel} == '0),
                    clk, !rst_n,
                    "Unqualified AHB transfer selected a downstream endpoint")
