@@ -173,11 +173,22 @@ end usb_synchronizer;
 
 architecture RTL of usb_synchronizer is
 
+function owner_width(count : positive) return positive is
+  variable top_index : natural := count - 1;
+  variable width : positive := 1;
+begin
+  while top_index > 1 loop
+    top_index := top_index / 2;
+    width := width + 1;
+  end loop;
+  return width;
+end function;
+
+constant REQ_OWNER_BITS : positive := owner_width(C_NBDEV);
+signal req_payload_pie, req_payload_hclk : std_logic_vector(REQ_OWNER_BITS + 5 downto 0);
 signal sieint_rxdatavalid_toggle                                   : std_logic;
 signal sieint_txdatafetched_toggle                                 : std_logic;
-signal epinfo_valid_s, epinfo_valid_ss                             : std_logic;
-signal sync_sieint_epinfo_req_s, sync_sieint_epinfo_req_ss         : std_logic;
-signal sync_sieint_epinfo_req_sss                                  : std_logic;
+signal epinfo_metadata_in, epinfo_metadata_q : std_logic_vector(TXNBYTES_BITS+5 downto 0);
 signal epinfo_txdata_valid_s, epinfo_txdata_valid_ss               : std_logic;
 signal sync_sieint_txdatafetched_s, sync_sieint_txdatafetched_ss   : std_logic;
 signal sync_sieint_txdatafetched_sss                               : std_logic;
@@ -217,15 +228,24 @@ signal LPM_TM_Suspend_s  : boolean;
 signal TM_Suspend_s      : boolean;
 signal pie_lowpower_n_s  : std_logic;
 
+component usb_pulse_synchronizer is
+  generic (DATA_WIDTH : positive := 1);
+  port (
+    dst_clk   : in  std_logic;
+    dst_rst_n : in  std_logic;
+    ctrl_i    : in  std_logic;
+    data_i    : in  std_logic_vector(DATA_WIDTH-1 downto 0);
+    data_o    : out std_logic_vector(DATA_WIDTH-1 downto 0);
+    valid_o   : out std_logic;
+    pulse_o   : out std_logic
+  );
+end component;
 
 begin
 
   proc_sync_usb : process (FsClk, Reset_N)
   begin
     if Reset_N = '0' then
-
-      epinfo_valid_s         <= '0';
-      epinfo_valid_ss        <= '0';
 
       epinfo_txdata_valid_s  <= '0';
       epinfo_txdata_valid_ss <= '0';
@@ -264,9 +284,6 @@ begin
 
 
     elsif FsClk'event and FsClk = '1' then
-      epinfo_valid_s         <= epinfo_sync_valid;
-      epinfo_valid_ss        <= epinfo_valid_s;
-
       epinfo_txdata_valid_s  <= epinfo_sync_txdata_valid;
       epinfo_txdata_valid_ss <= epinfo_txdata_valid_s;
 
@@ -320,10 +337,6 @@ begin
   proc_sync_ahb : process (hclk, hrstn)
   begin
     if hrstn = '0' then
-      sync_sieint_epinfo_req_s      <= '0';
-      sync_sieint_epinfo_req_ss     <= '0';
-      sync_sieint_epinfo_req_sss    <= '0';
-
       sync_sieint_txdatafetched_s   <= '0';
       sync_sieint_txdatafetched_ss  <= '0';
       sync_sieint_txdatafetched_sss <= '0';
@@ -398,10 +411,6 @@ begin
          sync_sessend_s  <= sessend;
          sync_sessend_ss <= sync_sessend_s;
       end if;
-
-      sync_sieint_epinfo_req_s      <= sieint_epinfo_req;
-      sync_sieint_epinfo_req_ss     <= sync_sieint_epinfo_req_s;
-      sync_sieint_epinfo_req_sss    <= sync_sieint_epinfo_req_ss;
 
       sync_sieint_txdatafetched_s   <= sieint_txdatafetched_toggle;
       sync_sieint_txdatafetched_ss  <= sync_sieint_txdatafetched_s;
@@ -481,12 +490,38 @@ begin
     end if;
   end process proc_sync_ahb;
 
-  epinfo_valid             <= epinfo_valid_ss;
+  -- Capture only the metadata held for the transaction; toggle and TX data
+  -- have separate update rules. PIE may consult the valid level after capture.
+  epinfo_metadata_in <= epinfo_sync_nbytes & epinfo_sync_maxpacket & epinfo_sync_iso &
+                        epinfo_sync_stall & epinfo_sync_disabled & epinfo_sync_active;
+
+  u_epinfo_capture : usb_pulse_synchronizer
+    generic map (DATA_WIDTH => epinfo_metadata_in'length)
+    port map (
+      dst_clk   => FsClk,
+      dst_rst_n => Reset_N,
+      ctrl_i    => epinfo_sync_valid,
+      data_i    => epinfo_metadata_in,
+      data_o    => epinfo_metadata_q,
+      valid_o   => epinfo_valid,
+      pulse_o   => open
+    );
 
 
-  sync_sieint_epinfo_req   <= '1' when (sync_sieint_epinfo_req_ss   = '1') and
-                                       (sync_sieint_epinfo_req_sss  = '0') else
-                              '0';
+  -- The HCLK pulse and the snapshot of the accepted token are registered together.
+  req_payload_pie <= std_logic_vector(to_unsigned(pie_dev_selected, REQ_OWNER_BITS)) &
+                     sieint_epinfo_epnr & sieint_epinfo_epdir & sieint_epinfo_setup;
+  u_epinfo_req_capture : usb_pulse_synchronizer
+    generic map (DATA_WIDTH => req_payload_pie'length)
+    port map (
+      dst_clk   => hclk,
+      dst_rst_n => hrstn,
+      ctrl_i    => sieint_epinfo_req,
+      data_i    => req_payload_pie,
+      data_o    => req_payload_hclk,
+      valid_o   => open,
+      pulse_o   => sync_sieint_epinfo_req
+    );
 
   epinfo_txdata_valid      <= epinfo_txdata_valid_ss;
   sync_sieint_txdatafetched<= '1' when (sync_sieint_txdatafetched_ss /=
@@ -501,22 +536,23 @@ begin
                                         sync_sieint_endtransfer_sss       ) else
                               '0';
 
-  sync_sieint_epinfo_epnr  <= sieint_epinfo_epnr;
-  sync_sieint_epinfo_epdir <= sieint_epinfo_epdir;
-  sync_sieint_epinfo_setup <= sieint_epinfo_setup;
+  sync_pie_dev_selected    <= to_integer(unsigned(req_payload_hclk(req_payload_hclk'high downto 6)));
+  sync_sieint_epinfo_epnr  <= req_payload_hclk(5 downto 2);
+  sync_sieint_epinfo_epdir <= req_payload_hclk(1);
+  sync_sieint_epinfo_setup <= req_payload_hclk(0);
 
   sync_sieint_setup_received <= '1' when (sync_sieint_setup_received_ss  = '1') and
                                          (sync_sieint_setup_received_sss = '0') else
                                 '0';
 
-  epinfo_active            <= epinfo_sync_active;
-  epinfo_disabled          <= epinfo_sync_disabled;
+  epinfo_active            <= epinfo_metadata_q(0);
+  epinfo_disabled          <= epinfo_metadata_q(1);
   epinfo_toggle            <= epinfo_sync_toggle;
-  epinfo_stall             <= epinfo_sync_stall;
-  epinfo_iso               <= epinfo_sync_iso;
+  epinfo_stall             <= epinfo_metadata_q(2);
+  epinfo_iso               <= epinfo_metadata_q(3);
   epinfo_ratefeedbackmode  <= epinfo_sync_ratefeedbackmode;
-  epinfo_nbytes            <= epinfo_sync_nbytes;
-  epinfo_maxpacket         <= epinfo_sync_maxpacket;
+  epinfo_nbytes            <= epinfo_metadata_q(epinfo_metadata_q'high downto 6);
+  epinfo_maxpacket         <= epinfo_metadata_q(5 downto 4);
 
   epinfo_txdata            <= epinfo_sync_txdata;
 
@@ -574,6 +610,5 @@ begin
 
   sync_pie_speed          <= pie_speed;
   sync_sieint_lpm_hird_hw <= sieint_lpm_hird_hw;
-  sync_pie_dev_selected   <= pie_dev_selected;
 
 end RTL;
