@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+`include "caliptra_prim_assert.sv"
+
 // Open-loop bundled-data receiver: hold ctrl_i low through reset. Both the
 // high and low levels must be sampled for each word, and data_i must remain
 // stable from publication through destination capture. There is no acknowledgement.
@@ -38,4 +40,10 @@ module usb_pulse_synchronizer #(
       end
     end
   end
+`ifdef CLP_ASSERT_ON
+ // The source may publish on the request edge and release after capture.
+ `CALIPTRA_ASSERT(SourceHoldsWordUntilCapture_A,
+                 $rose(ctrl_i) |=> ((ctrl_i && $stable(data_i)) until pulse_o),
+                 dst_clk, !dst_rst_n)
+`endif
 endmodule

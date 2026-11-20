@@ -32,6 +32,7 @@ ${USB_COMPILE_DIR}/../../submodules/caliptra-rtl/src/axi/rtl/axi_addr.v
 
 // Bundled-data receiver instantiated by the compound VHDL synchronizer
 ${USB_COMPILE_DIR}/../../src/usb_hub_composite_device/RTL/RTL/usb_pulse_synchronizer.sv
+${USB_COMPILE_DIR}/../../src/usb_hub_composite_device/RTL/RTL/usb_toggle_bus_synchronizer.sv
 
 // AXI-to-AHB converters
 ${USB_COMPILE_DIR}/../../src/integration/rtl/axilite_to_ahb.sv
