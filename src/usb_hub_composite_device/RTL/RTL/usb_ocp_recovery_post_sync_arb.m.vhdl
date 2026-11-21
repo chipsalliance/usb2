@@ -149,14 +149,32 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   -- Early SETUP tokens can still overlap drain and cannot reset the decoder.
   -- This reuses the packet store and decoder command/offset; no rollback RAM
   -- or duplicate command/cursor registers are needed. EP0 response metadata is
-  -- snapped per transaction while TX payload remains streaming. Transaction
+  -- snapped per transaction while TX payload is retained for replay. Transaction
   -- identity keeps non-EP0 DMA traffic independent of retained EP0 ownership.
   -- FIFO writes reserve the exact requested DWORD capacity across PING/retry.
+  --
+  -- Control-IN captures the complete single-packet response before launch.
+  -- An eight-beat store retains the decoder's snapshot through DATA retries
+  -- and STATUS; only the per-attempt byte cursor advances on PIE fetches.
+  -- Failed owned IN DATA rewinds that cursor, never the producer, as required
+  -- by USB 2.0 Sec 8.5.3.3 and Sec 8.6.4 (retry without an ACK).
+  -- The fill count doubles as write position; existing half-word assembly,
+  -- response metadata and producer-done flag avoid another FSM/ready register.
+  --
+  -- Independent IN/OUT sequence bits start at DATA1 after SETUP. OUT advances
+  -- at packet acceptance, IN only at ACK-qualified completion (Sec 8.6.1-4).
+  -- In this single-packet profile the advanced OUT bit also marks accepted
+  -- DATA through drain/STATUS, so no additional duplicate/commit state is
+  -- needed. Physical request direction selects both live and snapped PID.
+  -- The unused direction stays DATA1 for STATUS (Sec 8.5.3). Duplicate OUT
+  -- requests remain active for PIE PID discard, never restart the RX store,
+  -- and cannot complete the opposite-direction STATUS.
   -- ======================================================================
 
   constant BYTES_PER_BEAT   : integer := USB_DATAWIDTH / 8;   -- 8 for 64b
   constant RX_PACKET_BEATS  : integer := 8;
   constant TX_MAXBYTES      : integer := 64;
+  constant TX_PACKET_BEATS  : integer := TX_MAXBYTES / BYTES_PER_BEAT;
   constant REC_IFACE_SLV    : std_logic_vector(7 downto 0)
            := std_logic_vector(to_unsigned(C_REC_IFACE_NUM, 8));
   constant OCP_BMRT_TYPE_CLASS : std_logic_vector(1 downto 0) := "01";
@@ -215,10 +233,11 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal tx_response_known_r : std_logic;
 
   signal in_data_toggle_r : std_logic;
+  signal out_data_toggle_r : std_logic;
   signal zlp_phase_r      : std_logic;
   signal zlp_owed_c       : std_logic;
 
-  -- Success-qualified end-of-stage pulse (hclk pulse; no edge detect needed).
+  -- Successful owned transaction pulse; stage consumers also check direction.
   signal st_end_c : std_logic;
 
   -- Control-OUT packet store. A packet is invisible downstream until the
@@ -233,6 +252,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal rx_validated_r      : std_logic;
   signal rx_backend_busy_c   : std_logic;
   signal rx_data_good_c      : std_logic;
+  signal rx_duplicate_window_c : std_logic;
   signal rx_drain_done_r     : std_logic;
   signal rx_expected_beats_c : unsigned(3 downto 0);
   signal rx_expected_words_c : unsigned(4 downto 0);
@@ -246,22 +266,20 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal ctrl_out_last_c     : std_logic;
   signal ctrl_xfer_abort_c   : std_logic;
 
-  -- Control-IN cut-through queue (SV 32b words -> SIE 64b beats).
-  signal tx_curr_data_r       : std_logic_vector(USB_DATAWIDTH-1 downto 0);
-  signal tx_curr_valid_r      : std_logic;
-  signal tx_next_data_r       : std_logic_vector(USB_DATAWIDTH-1 downto 0);
-  signal tx_next_valid_r      : std_logic;
+  -- Retained Control-IN packet (SV 32b words -> SIE 64b beats).
+  type t_tx_buf is array (0 to TX_PACKET_BEATS-1)
+                     of std_logic_vector(USB_DATAWIDTH-1 downto 0);
+  signal tx_buf_r             : t_tx_buf;
+  signal tx_fill_beats_r      : natural range 0 to TX_PACKET_BEATS;
   signal tx_half_word_r       : std_logic_vector(31 downto 0);
   signal tx_half_word_valid_r : std_logic;
   signal tx_producer_done_r   : std_logic;
   signal tx_bytes_sent_r      : unsigned(6 downto 0);
-  signal tx_packet_started_r  : std_logic;
   signal ctrl_in_rdy_c        : std_logic;
   signal tx_in_data_c         : std_logic;
   signal tx_launch_ready_c    : std_logic;
   signal tx_beat_valid_c      : std_logic;
-  signal tx_shift_c           : std_logic;
-  signal tx_slot_free_c       : std_logic;
+  signal tx_advance_c         : std_logic;
   signal tx_remaining_bytes_c : unsigned(6 downto 0);
 
   signal setup_pkt_vld_c : std_logic;
@@ -286,8 +304,8 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal fifo_batch_reset_c : std_logic;
   signal setup_received_c : std_logic;
 
-  -- Non-streaming EP0 response ownership is transaction-scoped. Streaming
-  -- TX data remains live so the SIE can fetch successive beats.
+  -- EP0 response ownership/metadata is transaction-scoped. The retained TX
+  -- store is indexed independently so the SIE can fetch successive beats.
   signal rsp_snap_valid_r : std_logic;
   signal rsp_snap_active_r : std_logic;
   signal rsp_snap_stall_r : std_logic;
@@ -325,6 +343,9 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   end function;
 
   begin
+    assert USB_DATAWIDTH = 64
+      report "post_sync_arb: packet assembly requires USB_DATAWIDTH = 64"
+      severity failure;
 
     -- ------------------------------------------------------------------
     -- Control decodes.
@@ -487,6 +508,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     rx_expected_words_c <= resize(shift_right(nbytes_r +
                                to_unsigned(3, nbytes_r'length), 2), 5);
     rx_capture_c <= '1' when (st = T_DATA) and (xfer_dir_in_r = '0')
+                            and (out_data_toggle_r = '1')
                             and (wire_ocp_r = '1')
                             and (sync_sieint_epinfo_epdir_i = '0')
                             and (sync_sieint_epinfo_setup_i = '0')
@@ -527,7 +549,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     ctrl_out_last <= ctrl_out_last_c;
 
     -- ------------------------------------------------------------------
-    -- Control-IN cut-through queue combinational (SV 32b words -> SIE beats).
+    -- Complete Control-IN capture and non-destructive per-attempt readout.
     -- ------------------------------------------------------------------
     tx_in_data_c <= '1' when (ep0_ocp_owner_r = '1') and (st = T_DATA)
                              and (xfer_dir_in_r = '1') and (zlp_phase_r = '0')
@@ -535,17 +557,25 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     tx_remaining_bytes_c <= tx_response_bytes_r - tx_bytes_sent_r
                             when tx_response_bytes_r >= tx_bytes_sent_r
                             else (others => '0');
-    tx_shift_c <= '1' when (tx_in_data_c = '1') and (tx_launch_ready_c = '1')
-                           and (wire_ocp_r = '1')
-                           and (sync_sieint_txdatafetched_i = '1')
-                           and (tx_remaining_bytes_c >
-                                to_unsigned(BYTES_PER_BEAT, tx_remaining_bytes_c'length))
-                           and (tx_next_valid_r = '1')
-                  else '0';
-    tx_slot_free_c <= '1' when (tx_shift_c = '1') or (tx_curr_valid_r = '0')
-                               or (tx_next_valid_r = '0')
-                      else '0';
-    ctrl_in_rdy_c <= '1' when (ep0_ocp_owner_r = '1') and (tx_slot_free_c = '1') else '0';
+    tx_advance_c <= '1' when (tx_beat_valid_c = '1')
+                             and (sync_sieint_txdatafetched_i = '1')
+                             and (sync_sieint_epinfo_epdir_i = '1')
+                             and (sync_sieint_epinfo_setup_i = '0')
+                             and (tx_remaining_bytes_c >
+                                  to_unsigned(BYTES_PER_BEAT, tx_remaining_bytes_c'length))
+                    else '0';
+    -- A zero-byte final terminator needs no storage, even after 64 bytes.
+    -- Cleanup suppresses handshakes so discarded data cannot reach the decoder.
+    ctrl_in_rdy_c <= '1' when (ep0_ocp_owner_r = '1')
+                              and (xfer_dir_in_r = '1')
+                              and ((st = T_META_WAIT) or (st = T_DATA))
+                              and (sp_sent = '1')
+                              and (tx_producer_done_r = '0')
+                              and ((tx_fill_beats_r < TX_PACKET_BEATS) or
+                                   ((ctrl_in_last = '1') and (ctrl_in_be = "0000")
+                                    and (tx_half_word_valid_r = '0')))
+                              and (new_setup_c = '0') and (sync_busreset = '0')
+                              and (ocp_teardown_c = '0') else '0';
     ctrl_in_rdy   <= ctrl_in_rdy_c;
 
     zlp_owed_c <= '1' when (xfer_dir_in_r = '1') and (tx_response_known_r = '1')
@@ -554,17 +584,26 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                             and (nbytes_r >
                                  resize(tx_response_bytes_r, nbytes_r'length))
                      else '0';
-    tx_launch_ready_c <=
-        '1' when (tx_response_bytes_r = to_unsigned(0, tx_response_bytes_r'length))
-                 and (tx_producer_done_r = '1') else
-        '1' when (tx_response_bytes_r <= to_unsigned(BYTES_PER_BEAT, tx_response_bytes_r'length))
-                 and (tx_curr_valid_r = '1') and (tx_producer_done_r = '1') else
-        '1' when (tx_curr_valid_r = '1') and (tx_packet_started_r = '1') else
-        '1' when (tx_curr_valid_r = '1') and (tx_next_valid_r = '1') else
-        '0';
-    tx_beat_valid_c <= '1' when (tx_launch_ready_c = '1') and (tx_curr_valid_r = '1')
-                               and (tx_response_bytes_r /=
-                                    to_unsigned(0, tx_response_bytes_r'length))
+    tx_launch_ready_c <= '1' when (tx_producer_done_r = '1')
+                                  and (tx_response_known_r = '1')
+                                  and (tx_half_word_valid_r = '0')
+                                  and (tx_response_bytes_r <=
+                                       to_unsigned(TX_MAXBYTES, tx_response_bytes_r'length))
+                                  and (resize(tx_response_bytes_r, nbytes_r'length) <= nbytes_r)
+                                  and (tx_fill_beats_r =
+                                       (to_integer(tx_response_bytes_r) + BYTES_PER_BEAT-1) /
+                                       BYTES_PER_BEAT) else '0';
+    -- Use the request snapshot, not live readiness: finishing capture after
+    -- an early IN was NAKed must not turn that transaction into DATA.
+    tx_beat_valid_c <= '1' when (tx_launch_ready_c = '1') and (tx_in_data_c = '1')
+                               and (wire_ocp_r = '1')
+                               and (sync_sieint_epinfo_req_i = '0')
+                               and (rsp_snap_valid_r = '1')
+                               and (rsp_snap_active_r = '1')
+                               and (rsp_snap_stall_r = '0')
+                               and (rsp_snap_disabled_r = '0')
+                               and (tx_remaining_bytes_c /=
+                                    to_unsigned(0, tx_remaining_bytes_c'length))
                        else '0';
 
     fifo_words_needed_c <= resize(shift_right(nbytes_r +
@@ -575,9 +614,11 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     fifo_admission_ok_c <= fifo_capacity_ok_c and
                            not fifo_payload_available_i;
     fifo_out_request_c <= '1' when (st = T_DATA) and (xfer_dir_in_r = '0')
+                                  and (out_data_toggle_r = '1')
                                   and (cap_rxdata(23 downto 16) =
                                        OCP_INDIRECT_FIFO_DATA)
                                   and (dev0_ep0_req_c = '1')
+                                  and (sync_sieint_epinfo_epdir_i = '0')
                                   and (sync_sieint_epinfo_setup_i = '0')
                               else '0';
     fifo_reservation_active_o <= (fifo_reservation_r or
@@ -594,8 +635,16 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                                        to_unsigned(TX_MAXBYTES, nbytes_r'length))
                               else '0';
 
-    -- These values are snapped on each claimed EP0 request. OUT STATUS can
-    -- wait for backend completion, but cannot cancel accepted DATA.
+    -- These values are snapped on each claimed EP0 request. IN STATUS waits
+    -- for a write drain, but duplicate OUT must reach PIE's PID-discard path.
+    -- PIE checks active before ignore_data at EOP, so busy cannot NAK these
+    -- requests (USB 2.0 Sec 8.6.4). The OUT sequence bit is the accepted marker
+    -- only within the supported single-packet write DATA/STATUS lifetime.
+    rx_duplicate_window_c <= '1' when
+        ((st = T_DATA) or (st = T_STATUS)) and
+        (xfer_dir_in_r = '0') and (out_data_toggle_r = '0') and
+        (sync_sieint_epinfo_epdir_i = '0') and
+        (sync_sieint_epinfo_setup_i = '0') else '0';
     rsp_live_valid_c <= '1';
     rsp_live_stall_c <= '1' when ((st = T_PROT_STALL) or
                                   (ctrl_set_stall = '1') or
@@ -604,6 +653,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     rsp_live_active_c <=
         '0' when (rsp_live_stall_c = '1') else
         '1' when (sync_sieint_epinfo_setup_i = '1') else
+        '1' when (rx_duplicate_window_c = '1') else
         '0' when (st = T_META_WAIT) else
         '0' when (rx_backend_busy_c = '1') else
         '0' when (st = T_DATA) and (xfer_dir_in_r = '1')
@@ -621,10 +671,16 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                       or (rx_validated_r = '1')) else
         '1';
     rsp_live_disabled_c <= '0';
-    rsp_live_toggle_c <= in_data_toggle_r when (st = T_DATA) else
-                         '1' when (st = T_STATUS) else '0';
+    rsp_live_toggle_c <= in_data_toggle_r
+                          when sync_sieint_epinfo_epdir_i = '1' else
+                         out_data_toggle_r;
+    -- Preserve the original nonzero DATA length for duplicate OUT, not the
+    -- opposite-direction STATUS ZLP. PIE handles ACK/discard by PID mismatch
+    -- (USB 2.0 Sec 8.6.4); this metadata does not advertise extra RX capacity.
     rsp_live_nbytes_c <=
         NBYTES8 when (sync_sieint_epinfo_setup_i = '1') else
+        std_logic_vector(resize(nbytes_r, TXNBYTES_BITS))
+          when (rx_duplicate_window_c = '1') else
         (others => '0') when (st = T_META_WAIT) or (st = T_PROT_STALL)
                               or (st = T_STATUS)
                               or (rx_drain_done_r = '1')
@@ -690,7 +746,8 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     --   crosses within 1 PHY + 3 hclk; ACK/NYET plus turnaround take at least
     --   7 PHY periods, so these bundled pins still identify that EOP
     --   (USB 2.0 Sec 7.1.18.2).
-    -- - rx_validated_r: reject duplicate acceptance while a payload drains.
+    -- - rx_backend_busy_c and out_data_toggle_r: reject another acceptance
+    --   both during drain and after it finishes; failed attempts retain DATA1.
     -- - nbytes_r: require a nonzero request that fits the packet store.
     -- - sync_sieint_rx_nbytes_i: require the received byte count to match
     --   the original request exactly.
@@ -701,7 +758,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     rx_data_good_comb_proc : process (st_end_c, st, xfer_dir_in_r,
                                       sync_sieint_epinfo_epdir_i,
                                       sync_sieint_epinfo_setup_i,
-                                      rx_validated_r, nbytes_r,
+                                      rx_backend_busy_c, out_data_toggle_r, nbytes_r,
                                       sync_sieint_rx_nbytes_i, rx_capture_c,
                                       rx_captured_beats_r, rx_expected_beats_c)
       variable effective_beats_v : unsigned(rx_captured_beats_r'length downto 0);
@@ -715,7 +772,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
          (st = T_DATA) and (xfer_dir_in_r = '0') and
          (sync_sieint_epinfo_epdir_i = '0') and
          (sync_sieint_epinfo_setup_i = '0') and
-         (rx_validated_r = '0') and
+         (rx_backend_busy_c = '0') and (out_data_toggle_r = '1') and
          (nbytes_r > to_unsigned(0, nbytes_r'length)) and
          (nbytes_r <= to_unsigned(TX_MAXBYTES, nbytes_r'length)) and
          (resize(unsigned(sync_sieint_rx_nbytes_i), nbytes_r'length) = nbytes_r) and
@@ -739,7 +796,8 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                              setup_length_error_c, nbytes_r,
                              rx_length_error_r, xfer_dir_in_r,
                              rx_drain_done_r, st_end_c, zlp_phase_r,
-                             zlp_owed_c, sp_sent)
+                             zlp_owed_c, sp_sent, sync_sieint_epinfo_epdir_i,
+                             sync_sieint_epinfo_setup_i)
     begin
       st_next <= st;
       case st is
@@ -792,10 +850,10 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
             st_next <= T_PROT_STALL;
           elsif (xfer_dir_in_r = '0') and (rx_drain_done_r = '1') then
             st_next <= T_STATUS;
-          elsif st_end_c = '1' then
-            if xfer_dir_in_r = '0' then
-              st_next <= T_DATA;
-            elsif (zlp_phase_r = '0') and (zlp_owed_c = '1') then
+          elsif (st_end_c = '1') and (xfer_dir_in_r = '1') and
+                (sync_sieint_epinfo_epdir_i = '1') and
+                (sync_sieint_epinfo_setup_i = '0') then
+            if (zlp_phase_r = '0') and (zlp_owed_c = '1') then
               st_next <= T_DATA;
             else
               st_next <= T_STATUS;
@@ -809,7 +867,16 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
             st_next <= T_PROT_STALL;
           elsif ctrl_set_stall = '1' then
             st_next <= T_PROT_STALL;
-          elsif st_end_c = '1' then
+          -- STATUS is opposite the DATA direction; without DATA it is IN.
+          -- In particular, even a successful repeated OUT completion cannot
+          -- retire a write's IN STATUS (USB 2.0 Sec 8.5.3/8.6.4).
+          elsif (st_end_c = '1') and (sync_sieint_epinfo_setup_i = '0') and
+                (((sync_sieint_epinfo_epdir_i = '1') and
+                  ((xfer_dir_in_r = '0') or
+                   (nbytes_r = to_unsigned(0, nbytes_r'length)))) or
+                 ((sync_sieint_epinfo_epdir_i = '0') and
+                  (xfer_dir_in_r = '1') and
+                  (nbytes_r /= to_unsigned(0, nbytes_r'length)))) then
             st_next <= T_IDLE;
           end if;
 
@@ -928,21 +995,34 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     begin
       if hresetn = '0' then
         in_data_toggle_r <= '1';
+        out_data_toggle_r <= '1';
         zlp_phase_r <= '0';
       elsif rising_edge(hclk) then
         if (sync_busreset = '1') or (dev0_local_reset_c = '1') or
            (ocp_claim_abort_i = '1') then
           in_data_toggle_r <= '1';
+          out_data_toggle_r <= '1';
           zlp_phase_r <= '0';
-        elsif ep0_ocp_owner_r = '0' then
+        elsif (new_setup_c = '1') or (ep0_ocp_owner_r = '0') then
           in_data_toggle_r <= '1';
+          out_data_toggle_r <= '1';
           zlp_phase_r <= '0';
-        elsif (st = T_DATA) and (st_end_c = '1') then
-          if (zlp_phase_r = '0') and (zlp_owed_c = '1') then
-            zlp_phase_r <= '1';
+        else
+          if rx_data_good_c = '1' then
+            out_data_toggle_r <= not out_data_toggle_r;
+          end if;
+          -- Non-iso PIE IN success is asserted only on a received valid ACK.
+          -- Neither a duplicate OUT nor an IN STATUS advances this DATA bit.
+          if (st = T_DATA) and (xfer_dir_in_r = '1') and
+             (sync_sieint_epinfo_epdir_i = '1') and
+             (sync_sieint_epinfo_setup_i = '0') and
+             (rsp_snap_active_r = '1') and (st_end_c = '1') then
             in_data_toggle_r <= not in_data_toggle_r;
-          else
-            zlp_phase_r <= '0';
+            if (zlp_phase_r = '0') and (zlp_owed_c = '1') then
+              zlp_phase_r <= '1';
+            else
+              zlp_phase_r <= '0';
+            end if;
           end if;
         end if;
       end if;
@@ -1252,7 +1332,10 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
             rx_captured_beats_r <= rx_captured_beats_r + 1;
           end if;
           if (sync_sieint_endtransfer_i = '1') and (wire_ocp_r = '1')
-             and (st = T_DATA) and (xfer_dir_in_r = '0') then
+             and (st = T_DATA) and (xfer_dir_in_r = '0')
+             and (out_data_toggle_r = '1')
+             and (sync_sieint_epinfo_epdir_i = '0')
+             and (sync_sieint_epinfo_setup_i = '0') then
             if rx_data_good_c = '1' then
               rx_total_bytes_r <= resize(nbytes_r, rx_total_bytes_r'length);
               rx_total_words_r <= rx_expected_words_c;
@@ -1271,111 +1354,73 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     end process rxbuf_clk_proc;
 
     -- ------------------------------------------------------------------
-    -- Control-IN cut-through buffer (clocked).
+    -- Retained Control-IN packet store and replay cursor (clocked).
     -- ------------------------------------------------------------------
     txbuf_clk_proc : process (hclk, hresetn)
-      variable curr_data_v  : std_logic_vector(USB_DATAWIDTH-1 downto 0);
-      variable curr_valid_v : std_logic;
-      variable next_data_v  : std_logic_vector(USB_DATAWIDTH-1 downto 0);
-      variable next_valid_v : std_logic;
-      variable half_word_v  : std_logic_vector(31 downto 0);
-      variable half_valid_v : std_logic;
-      variable producer_done_v : std_logic;
-      variable bytes_sent_v : unsigned(6 downto 0);
       variable beat_v       : std_logic_vector(USB_DATAWIDTH-1 downto 0);
     begin
       if hresetn = '0' then
-        tx_curr_data_r       <= (others => '0');
-        tx_curr_valid_r      <= '0';
-        tx_next_data_r       <= (others => '0');
-        tx_next_valid_r      <= '0';
+        tx_buf_r            <= (others => (others => '0'));
+        tx_fill_beats_r      <= 0;
         tx_half_word_r       <= (others => '0');
         tx_half_word_valid_r <= '0';
         tx_producer_done_r   <= '0';
         tx_bytes_sent_r      <= (others => '0');
-        tx_packet_started_r  <= '0';
       elsif rising_edge(hclk) then
         if (ep0_ocp_owner_r = '0') or (new_setup_c = '1')
            or (ocp_claim_abort_i = '1') or (sync_busreset = '1')
            or (dev0_local_reset_c = '1') then
-          tx_curr_data_r       <= (others => '0');
-          tx_curr_valid_r      <= '0';
-          tx_next_data_r       <= (others => '0');
-          tx_next_valid_r      <= '0';
+          tx_buf_r            <= (others => (others => '0'));
+          tx_fill_beats_r      <= 0;
           tx_half_word_r       <= (others => '0');
           tx_half_word_valid_r <= '0';
           tx_producer_done_r   <= '0';
           tx_bytes_sent_r      <= (others => '0');
-          tx_packet_started_r  <= '0';
         else
-          curr_data_v     := tx_curr_data_r;
-          curr_valid_v    := tx_curr_valid_r;
-          next_data_v     := tx_next_data_r;
-          next_valid_v    := tx_next_valid_r;
-          half_word_v     := tx_half_word_r;
-          half_valid_v    := tx_half_word_valid_r;
-          producer_done_v := tx_producer_done_r;
-          bytes_sent_v    := tx_bytes_sent_r;
-          if tx_shift_c = '1' then
-            curr_data_v  := tx_next_data_r;
-            curr_valid_v := '1';
-            next_data_v  := (others => '0');
-            next_valid_v := '0';
-            bytes_sent_v := tx_bytes_sent_r +
-                            to_unsigned(BYTES_PER_BEAT, tx_bytes_sent_r'length);
-          end if;
-          if (tx_in_data_c = '1') and (tx_launch_ready_c = '1') and
-             (wire_ocp_r = '1') and
-             (sync_sieint_txdatafetched_i = '1') then
-            tx_packet_started_r <= '1';
+          -- USB 2.0 Sec 8.5.3.3/8.6.4: no ACK retries the same DATA packet.
+          -- Never rewind on OUT/STATUS completion or alter the saved payload.
+          if (tx_in_data_c = '1') and (wire_ocp_r = '1') and
+             (sync_sieint_epinfo_epdir_i = '1') and
+             (sync_sieint_epinfo_setup_i = '0') and
+             (sync_sieint_endtransfer_i = '1') and
+             (sync_sieint_success_i = '0') then
+            tx_bytes_sent_r <= (others => '0');
+          elsif tx_advance_c = '1' then
+            tx_bytes_sent_r <= tx_bytes_sent_r +
+                               to_unsigned(BYTES_PER_BEAT, tx_bytes_sent_r'length);
           end if;
           if (ctrl_in_vld = '1') and (ctrl_in_rdy_c = '1') then
-            if ctrl_in_last = '1' then
+            if ctrl_in_be /= "0000" then
               beat_v := (others => '0');
-              if half_valid_v = '1' then
-                beat_v(31 downto 0)  := half_word_v;
+              if tx_half_word_valid_r = '1' then
+                beat_v(31 downto 0)  := tx_half_word_r;
                 beat_v(63 downto 32) := mask_word32(ctrl_in_data, ctrl_in_be);
-                half_word_v  := (others => '0');
-                half_valid_v := '0';
-              else
+                tx_buf_r(tx_fill_beats_r) <= beat_v;
+                tx_fill_beats_r <= tx_fill_beats_r + 1;
+                tx_half_word_r <= (others => '0');
+                tx_half_word_valid_r <= '0';
+              elsif ctrl_in_last = '1' then
                 beat_v(31 downto 0) := mask_word32(ctrl_in_data, ctrl_in_be);
-              end if;
-              if curr_valid_v = '0' then
-                curr_data_v  := beat_v;
-                curr_valid_v := '1';
-              elsif next_valid_v = '0' then
-                next_data_v  := beat_v;
-                next_valid_v := '1';
-              end if;
-              producer_done_v := '1';
-            else
-              if half_valid_v = '1' then
-                beat_v := (others => '0');
-                beat_v(31 downto 0)  := half_word_v;
-                beat_v(63 downto 32) := mask_word32(ctrl_in_data, ctrl_in_be);
-                half_word_v  := (others => '0');
-                half_valid_v := '0';
-                if curr_valid_v = '0' then
-                  curr_data_v  := beat_v;
-                  curr_valid_v := '1';
-                elsif next_valid_v = '0' then
-                  next_data_v  := beat_v;
-                  next_valid_v := '1';
-                end if;
+                tx_buf_r(tx_fill_beats_r) <= beat_v;
+                tx_fill_beats_r <= tx_fill_beats_r + 1;
               else
-                half_word_v  := mask_word32(ctrl_in_data, ctrl_in_be);
-                half_valid_v := '1';
+                tx_half_word_r <= mask_word32(ctrl_in_data, ctrl_in_be);
+                tx_half_word_valid_r <= '1';
               end if;
+            elsif (ctrl_in_last = '1') and (tx_half_word_valid_r = '1') then
+              -- The producer can terminate after an odd number of DWORDs.
+              -- Flush that half beat; an aligned terminator writes no entry.
+              beat_v := (others => '0');
+              beat_v(31 downto 0) := tx_half_word_r;
+              tx_buf_r(tx_fill_beats_r) <= beat_v;
+              tx_fill_beats_r <= tx_fill_beats_r + 1;
+              tx_half_word_r <= (others => '0');
+              tx_half_word_valid_r <= '0';
+            end if;
+            if ctrl_in_last = '1' then
+              tx_producer_done_r <= '1';
             end if;
           end if;
-          tx_curr_data_r       <= curr_data_v;
-          tx_curr_valid_r      <= curr_valid_v;
-          tx_next_data_r       <= next_data_v;
-          tx_next_valid_r      <= next_valid_v;
-          tx_half_word_r       <= half_word_v;
-          tx_half_word_valid_r <= half_valid_v;
-          tx_producer_done_r   <= producer_done_v;
-          tx_bytes_sent_r      <= bytes_sent_v;
         end if;
       end if;
     end process txbuf_clk_proc;
@@ -1494,7 +1539,9 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         epinfo_sync_maxpacket_dma;
 
     epinfo_sync_txdata_o <=
-        tx_curr_data_r when (ocp_resp_sel_c = '1') else
+        tx_buf_r(to_integer(tx_bytes_sent_r) / BYTES_PER_BEAT)
+          when (ocp_resp_sel_c = '1') and (tx_beat_valid_c = '1') else
+        (others => '0') when (ocp_resp_sel_c = '1') else
         epinfo_sync_txdata_dma;
 
     tx_valid_clk_proc : process (hclk, hresetn)
@@ -1514,6 +1561,187 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- Safety properties (simulation-only).
     -- ------------------------------------------------------------------
     -- pragma translate_off
+    data_sequence_assertions_proc : process (hclk, hresetn)
+      variable expected_in_v : std_logic;
+      variable expected_out_v : std_logic;
+      variable cleanup_v : boolean;
+    begin
+      if hresetn = '0' then
+        expected_in_v := '1';
+        expected_out_v := '1';
+      elsif rising_edge(hclk) then
+        assert (in_data_toggle_r = expected_in_v) and
+               (out_data_toggle_r = expected_out_v)
+          report "post_sync_arb: DATA sequence changed without acceptance/ACK or cleanup"
+          severity failure;
+        cleanup_v := (sync_busreset = '1') or (ocp_teardown_c = '1') or
+                     (new_setup_c = '1') or (ep0_ocp_owner_r = '0');
+        if cleanup_v then
+          expected_in_v := '1';
+          expected_out_v := '1';
+        else
+          if rx_data_good_c = '1' then
+            assert (out_data_toggle_r = '1') and
+                   (sync_sieint_epinfo_epdir_i = '0') and
+                   (sync_sieint_epinfo_setup_i = '0') and
+                   (rx_backend_busy_c = '0')
+              report "post_sync_arb: repeated or wrong-direction OUT acceptance"
+              severity failure;
+            expected_out_v := '0';
+          end if;
+          if (st = T_DATA) and (xfer_dir_in_r = '1') and
+             (st_end_c = '1') and (sync_sieint_epinfo_epdir_i = '1') and
+             (sync_sieint_epinfo_setup_i = '0') and (rsp_snap_active_r = '1') then
+            expected_in_v := not in_data_toggle_r;
+          end if;
+          if ocp_stage_accept_c = '1' then
+            if sync_sieint_epinfo_epdir_i = '1' then
+              assert rsp_live_toggle_c = in_data_toggle_r
+                report "post_sync_arb: IN request selected OUT sequence"
+                severity failure;
+            else
+              assert rsp_live_toggle_c = out_data_toggle_r
+                report "post_sync_arb: OUT request selected IN sequence"
+                severity failure;
+            end if;
+            if (st = T_STATUS) and
+               (((sync_sieint_epinfo_epdir_i = '1') and
+                 ((xfer_dir_in_r = '0') or (nbytes_r = 0))) or
+                ((sync_sieint_epinfo_epdir_i = '0') and
+                 (xfer_dir_in_r = '1') and (nbytes_r /= 0))) then
+              assert (rsp_live_toggle_c = '1') and
+                     (unsigned(rsp_live_nbytes_c) = 0)
+                report "post_sync_arb: STATUS did not retain DATA1 ZLP metadata"
+                severity failure;
+            end if;
+          end if;
+          if rx_duplicate_window_c = '1' then
+            assert (rx_capture_c = '0') and (rx_data_good_c = '0') and
+                   (fifo_out_request_c = '0')
+              report "post_sync_arb: duplicate OUT reopened capture/commit/reservation"
+              severity failure;
+            if rsp_live_stall_c = '0' then
+              assert (rsp_live_active_c = '1') and (rsp_live_toggle_c = '0') and
+                     (rsp_live_nbytes_c =
+                      std_logic_vector(resize(nbytes_r, TXNBYTES_BITS))) and
+                     (nbytes_r /= 0) and (rsp_live_maxpacket_c = "00")
+                report "post_sync_arb: duplicate OUT cannot reach PIE ACK/NYET discard"
+                severity failure;
+            end if;
+            if (st = T_STATUS) and (ctrl_set_stall = '0') and
+               (fw_protocol_error_req_i = '0') then
+              assert st_next = T_STATUS
+                report "post_sync_arb: repeated OUT completion retired IN STATUS"
+                severity failure;
+            end if;
+          end if;
+        end if;
+      end if;
+    end process data_sequence_assertions_proc;
+
+    in_replay_assertions_proc : process (hclk, hresetn)
+      variable captured_bytes_v : natural range 0 to TX_MAXBYTES+4;
+      variable expect_store_hold_v : boolean;
+      variable expect_cursor_v : boolean;
+      variable saved_buf_v : t_tx_buf;
+      variable saved_fill_v : natural range 0 to TX_PACKET_BEATS;
+      variable saved_done_v : std_logic;
+      variable saved_bytes_v : unsigned(6 downto 0);
+      variable saved_known_v : std_logic;
+      variable expected_cursor_v : unsigned(6 downto 0);
+      variable cleanup_v : boolean;
+    begin
+      if hresetn = '0' then
+        captured_bytes_v := 0;
+        expect_store_hold_v := false;
+        expect_cursor_v := false;
+        saved_buf_v := (others => (others => '0'));
+        saved_fill_v := 0;
+        saved_done_v := '0';
+        saved_bytes_v := (others => '0');
+        saved_known_v := '0';
+        expected_cursor_v := (others => '0');
+      elsif rising_edge(hclk) then
+        if expect_store_hold_v then
+          assert (tx_buf_r = saved_buf_v) and (tx_fill_beats_r = saved_fill_v)
+                 and (tx_producer_done_r = saved_done_v)
+                 and (tx_response_bytes_r = saved_bytes_v)
+                 and (tx_response_known_r = saved_known_v)
+            report "post_sync_arb: completed IN snapshot changed before cleanup"
+            severity failure;
+        end if;
+        if expect_cursor_v then
+          assert tx_bytes_sent_r = expected_cursor_v
+            report "post_sync_arb: IN cursor fetch/rewind/hold mismatch"
+            severity failure;
+        end if;
+        cleanup_v := (ep0_ocp_owner_r = '0') or (new_setup_c = '1') or
+                     (ocp_claim_abort_i = '1') or (sync_busreset = '1') or
+                     (dev0_local_reset_c = '1');
+        if not cleanup_v then
+          if tx_producer_done_r = '1' then
+            assert (captured_bytes_v = to_integer(tx_response_bytes_r)) and
+                   (tx_half_word_valid_r = '0')
+              report "post_sync_arb: captured IN byte count disagrees with metadata"
+              severity failure;
+            assert ctrl_in_rdy_c = '0'
+              report "post_sync_arb: completed IN producer was restarted"
+              severity failure;
+          end if;
+          if tx_beat_valid_c = '1' then
+            assert (tx_producer_done_r = '1') and (tx_response_known_r = '1')
+                   and (tx_launch_ready_c = '1')
+                   and (to_integer(tx_bytes_sent_r) / BYTES_PER_BEAT < tx_fill_beats_r)
+              report "post_sync_arb: IN read before complete capture or past payload"
+              severity failure;
+          end if;
+          if (wire_ocp_r = '1') and (rsp_snap_active_r = '0') then
+            assert (tx_beat_valid_c = '0') and (tx_advance_c = '0')
+              report "post_sync_arb: inactive IN snapshot became active mid-request"
+              severity failure;
+          end if;
+          if (ctrl_in_vld = '1') and (ctrl_in_rdy_c = '1') then
+            assert ((ctrl_in_last = '0') and (ctrl_in_be = "1111")) or
+                   ((ctrl_in_last = '1') and
+                    ((ctrl_in_be = "0000") or (ctrl_in_be = "0001") or
+                     (ctrl_in_be = "0011") or (ctrl_in_be = "0111") or
+                     (ctrl_in_be = "1111")))
+              report "post_sync_arb: IN producer supplied a noncontiguous/early partial word"
+              severity failure;
+            for idx in 0 to 3 loop
+              if ctrl_in_be(idx) = '1' then
+                captured_bytes_v := captured_bytes_v + 1;
+              end if;
+            end loop;
+            assert captured_bytes_v <= TX_MAXBYTES
+              report "post_sync_arb: IN capture exceeds packet capacity"
+              severity failure;
+          end if;
+        else
+          captured_bytes_v := 0;
+        end if;
+        expect_store_hold_v := not cleanup_v and (tx_producer_done_r = '1')
+                               and (st /= T_META_WAIT);
+        saved_buf_v := tx_buf_r;
+        saved_fill_v := tx_fill_beats_r;
+        saved_done_v := tx_producer_done_r;
+        saved_bytes_v := tx_response_bytes_r;
+        saved_known_v := tx_response_known_r;
+        expect_cursor_v := true;
+        expected_cursor_v := tx_bytes_sent_r;
+        if cleanup_v or
+           ((tx_in_data_c = '1') and (wire_ocp_r = '1') and
+            (sync_sieint_epinfo_epdir_i = '1') and
+            (sync_sieint_epinfo_setup_i = '0') and
+            (sync_sieint_endtransfer_i = '1') and (sync_sieint_success_i = '0')) then
+          expected_cursor_v := (others => '0');
+        elsif tx_advance_c = '1' then
+          expected_cursor_v := tx_bytes_sent_r +
+                               to_unsigned(BYTES_PER_BEAT, tx_bytes_sent_r'length);
+        end if;
+      end if;
+    end process in_replay_assertions_proc;
+
     setup_debug_assertions_proc : process (hclk, hresetn)
       variable expected_generation_v : unsigned(11 downto 0);
       variable expected_owner_v : std_logic;
