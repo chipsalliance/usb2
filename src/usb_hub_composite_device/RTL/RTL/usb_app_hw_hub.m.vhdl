@@ -222,7 +222,7 @@ begin
             if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
               null; -- A stall will be returned upon this request
             elsif to_integer(unsigned(ep0_windex)) /= 0 then  --ClearPortFeature
-              var_port := to_integer(unsigned(ep0_windex(7 downto 0))) - 1;
+              var_port := to_integer(unsigned(ep0_windex)) - 1;
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
                      3  | --Port_Overcurrent
@@ -267,7 +267,7 @@ begin
             if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
               null; -- A stall will be returned upon this request
             elsif to_integer(unsigned(ep0_windex)) /= 0 then --SetPortFeature
-              var_port := to_integer(unsigned(ep0_windex(7 downto 0))) - 1;
+              var_port := to_integer(unsigned(ep0_windex)) - 1;
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
                      3  | --Port_Overcurrent

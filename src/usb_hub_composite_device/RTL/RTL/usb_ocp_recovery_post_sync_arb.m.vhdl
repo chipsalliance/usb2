@@ -590,9 +590,10 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                                   and (tx_response_bytes_r <=
                                        to_unsigned(TX_MAXBYTES, tx_response_bytes_r'length))
                                   and (resize(tx_response_bytes_r, nbytes_r'length) <= nbytes_r)
-                                  and (tx_fill_beats_r =
-                                       (to_integer(tx_response_bytes_r) + BYTES_PER_BEAT-1) /
-                                       BYTES_PER_BEAT) else '0';
+                                  and (to_unsigned(tx_fill_beats_r, tx_response_bytes_r'length) =
+                                       to_unsigned((to_integer(tx_response_bytes_r) +
+                                                    BYTES_PER_BEAT-1) / BYTES_PER_BEAT,
+                                                   tx_response_bytes_r'length)) else '0';
     -- Use the request snapshot, not live readiness: finishing capture after
     -- an early IN was NAKed must not turn that transaction into DATA.
     tx_beat_valid_c <= '1' when (tx_launch_ready_c = '1') and (tx_in_data_c = '1')
@@ -1561,24 +1562,26 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- Safety properties (simulation-only).
     -- ------------------------------------------------------------------
     -- pragma translate_off
+    data_sequence_assertions_blk : block
+      signal expected_in_r : std_logic;
+      signal expected_out_r : std_logic;
+    begin
     data_sequence_assertions_proc : process (hclk, hresetn)
-      variable expected_in_v : std_logic;
-      variable expected_out_v : std_logic;
       variable cleanup_v : boolean;
     begin
       if hresetn = '0' then
-        expected_in_v := '1';
-        expected_out_v := '1';
+        expected_in_r <= '1';
+        expected_out_r <= '1';
       elsif rising_edge(hclk) then
-        assert (in_data_toggle_r = expected_in_v) and
-               (out_data_toggle_r = expected_out_v)
+        assert (in_data_toggle_r = expected_in_r) and
+               (out_data_toggle_r = expected_out_r)
           report "post_sync_arb: DATA sequence changed without acceptance/ACK or cleanup"
           severity failure;
         cleanup_v := (sync_busreset = '1') or (ocp_teardown_c = '1') or
                      (new_setup_c = '1') or (ep0_ocp_owner_r = '0');
         if cleanup_v then
-          expected_in_v := '1';
-          expected_out_v := '1';
+          expected_in_r <= '1';
+          expected_out_r <= '1';
         else
           if rx_data_good_c = '1' then
             assert (out_data_toggle_r = '1') and
@@ -1587,12 +1590,12 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                    (rx_backend_busy_c = '0')
               report "post_sync_arb: repeated or wrong-direction OUT acceptance"
               severity failure;
-            expected_out_v := '0';
+            expected_out_r <= not expected_out_r;
           end if;
           if (st = T_DATA) and (xfer_dir_in_r = '1') and
              (st_end_c = '1') and (sync_sieint_epinfo_epdir_i = '1') and
              (sync_sieint_epinfo_setup_i = '0') and (rsp_snap_active_r = '1') then
-            expected_in_v := not in_data_toggle_r;
+            expected_in_r <= not expected_in_r;
           end if;
           if ocp_stage_accept_c = '1' then
             if sync_sieint_epinfo_epdir_i = '1' then
@@ -1638,6 +1641,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         end if;
       end if;
     end process data_sequence_assertions_proc;
+    end block data_sequence_assertions_blk;
 
     in_replay_assertions_proc : process (hclk, hresetn)
       variable captured_bytes_v : natural range 0 to TX_MAXBYTES+4;
@@ -1691,7 +1695,9 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
           if tx_beat_valid_c = '1' then
             assert (tx_producer_done_r = '1') and (tx_response_known_r = '1')
                    and (tx_launch_ready_c = '1')
-                   and (to_integer(tx_bytes_sent_r) / BYTES_PER_BEAT < tx_fill_beats_r)
+                   and (to_unsigned(to_integer(tx_bytes_sent_r) / BYTES_PER_BEAT,
+                                    tx_bytes_sent_r'length) <
+                        to_unsigned(tx_fill_beats_r, tx_bytes_sent_r'length))
               report "post_sync_arb: IN read before complete capture or past payload"
               severity failure;
           end if;
