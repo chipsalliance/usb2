@@ -1562,24 +1562,24 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- Safety properties (simulation-only).
     -- ------------------------------------------------------------------
     -- pragma translate_off
+    signal expected_in_r : std_logic;
+    signal expected_out_r : std_logic;
     data_sequence_assertions_proc : process (hclk, hresetn)
-      variable expected_in_v : std_logic;
-      variable expected_out_v : std_logic;
       variable cleanup_v : boolean;
     begin
       if hresetn = '0' then
-        expected_in_v := '1';
-        expected_out_v := '1';
+        expected_in_r <= '1';
+        expected_out_r <= '1';
       elsif rising_edge(hclk) then
-        assert (in_data_toggle_r = expected_in_v) and
-               (out_data_toggle_r = expected_out_v)
+        assert (in_data_toggle_r = expected_in_r) and
+               (out_data_toggle_r = expected_out_r)
           report "post_sync_arb: DATA sequence changed without acceptance/ACK or cleanup"
           severity failure;
         cleanup_v := (sync_busreset = '1') or (ocp_teardown_c = '1') or
                      (new_setup_c = '1') or (ep0_ocp_owner_r = '0');
         if cleanup_v then
-          expected_in_v := '1';
-          expected_out_v := '1';
+          expected_in_r <= '1';
+          expected_out_r <= '1';
         else
           if rx_data_good_c = '1' then
             assert (out_data_toggle_r = '1') and
@@ -1588,12 +1588,12 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
                    (rx_backend_busy_c = '0')
               report "post_sync_arb: repeated or wrong-direction OUT acceptance"
               severity failure;
-            expected_out_v := not expected_out_v;
+            expected_out_r <= not expected_out_r;
           end if;
           if (st = T_DATA) and (xfer_dir_in_r = '1') and
              (st_end_c = '1') and (sync_sieint_epinfo_epdir_i = '1') and
              (sync_sieint_epinfo_setup_i = '0') and (rsp_snap_active_r = '1') then
-            expected_in_v := not expected_in_v;
+            expected_in_r <= not expected_in_r;
           end if;
           if ocp_stage_accept_c = '1' then
             if sync_sieint_epinfo_epdir_i = '1' then
