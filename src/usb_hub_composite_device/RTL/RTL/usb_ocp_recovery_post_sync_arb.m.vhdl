@@ -1562,8 +1562,10 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     -- Safety properties (simulation-only).
     -- ------------------------------------------------------------------
     -- pragma translate_off
-    signal expected_in_r : std_logic;
-    signal expected_out_r : std_logic;
+    data_sequence_assertions_blk : block
+      signal expected_in_r : std_logic;
+      signal expected_out_r : std_logic;
+    begin
     data_sequence_assertions_proc : process (hclk, hresetn)
       variable cleanup_v : boolean;
     begin
@@ -1639,6 +1641,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
         end if;
       end if;
     end process data_sequence_assertions_proc;
+    end block data_sequence_assertions_blk;
 
     in_replay_assertions_proc : process (hclk, hresetn)
       variable captured_bytes_v : natural range 0 to TX_MAXBYTES+4;
