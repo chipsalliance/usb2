@@ -30,6 +30,7 @@ port (
       sync_busreset          : in  std_logic;
 
       pie_speed              : in  std_logic_vector( 1 downto 0);
+      pie_sof                : in  std_logic;
 
       -- HUB Status IN endpoint
       hub_epin_req           : in  std_logic;
@@ -92,6 +93,7 @@ signal hub_l1_status           : t_hub_status;
 type t_hub_port_lpm_hird is array(C_HUB_NB_PORTS-1 downto 0) of std_logic_vector(3 downto 0);
 signal hub_port_lpm_hird_sw_array : t_hub_port_lpm_hird;
 signal hub_port_lpm_hird_hw_array : t_hub_port_lpm_hird;
+signal hub_epin_enable_buffer_lvl : std_logic;
 
 begin
 
@@ -436,8 +438,21 @@ begin
   for i in 0 to C_HUB_NB_PORTS-1 loop
     var_active := var_active or hub_port_status_change(i);
   end loop;
-  hub_epin_enable_buffer <= var_active;
+  hub_epin_enable_buffer_lvl <= var_active;
 end process PROC_EPIN_ACTIVE;
+
+-- Generate a pulse at the start of the microframe to reload the data in the IN endpoint
+PROC_EPIN_ACTIVE_PULSE : process(sys_clk, sys_rst_n)
+begin
+  if sys_rst_n = '0' then
+    hub_epin_enable_buffer <= '0';
+  elsif rising_edge(sys_clk) then
+    hub_epin_enable_buffer <= '0';
+    if pie_sof = '1' then
+      hub_epin_enable_buffer <= hub_epin_enable_buffer_lvl;
+    end if;
+  end if;
+end process PROC_EPIN_ACTIVE_PULSE;
 
 hub_epin_stall         <= '0';
 hub_epin_clear_buffer  <= '0';

@@ -740,6 +740,7 @@ component usb_app_hw_hub
         sys_rst_n                : in  std_logic;
         sync_busreset            : in  std_logic;
         pie_speed                : in  std_logic_vector( 1 downto 0);
+        pie_sof                  : in  std_logic;
         hub_epin_req             : in  std_logic;
         hub_epin_gnt             : out std_logic;
         hub_epin_addr            : in  std_logic_vector(2 downto 0);
@@ -2296,6 +2297,7 @@ usb_app_hw_hub_1 : usb_app_hw_hub
       sys_rst_n              => hresetn,
       sync_busreset          => sync_busreset,
       pie_speed              => sync_pie_speed,
+      pie_sof                => sync_set_frameint,
       hub_epin_req           => upd_dma_req_ep_hub,
       hub_epin_gnt           => upd_dma_gnt_ep_noram,
       hub_epin_addr          => upd_dma_addr(4 downto 2),
