@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Lint attestation
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+
+permissions: {}
+
+concurrency:
+  group: lint-attestation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint-attestation:
+    name: Lint attestation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check pull request attestation
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          body = os.environ.get("PR_BODY", "")
+          pattern = re.compile(
+              r"^ {0,3}- \[([ xX])\] I attest that lint results are clean "
+              r"in local testing on this branch[ \t]*\r?$",
+              re.MULTILINE,
+          )
+          matches = pattern.findall(body)
+          if len(matches) != 1 or matches[0].lower() != "x":
+              print("::error::Check the lint attestation checkbox in the pull request description.")
+              sys.exit(1)
+          print("Lint attestation is checked.")
+          PY
