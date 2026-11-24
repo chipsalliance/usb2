@@ -41,7 +41,7 @@ jobs:
           body = os.environ.get("PR_BODY", "")
           pattern = re.compile(
               r"^ {0,3}- \[([ xX])\] I attest that lint results are clean "
-              r"in local testing on this branch[ \t]*$",
+              r"in local testing on this branch[ \t]*\r?$",
               re.MULTILINE,
           )
           matches = pattern.findall(body)
