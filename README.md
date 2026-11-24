@@ -76,6 +76,12 @@ tracked source, script, workflow, filelist, and RDL files. The two
 PeakRDL-generated SystemVerilog modules are excluded because regeneration
 replaces their file headers.
 
+Pull request authors must check the lint attestation in the pull request
+description after confirming their local lint results are clean. The
+`Lint attestation` check verifies the checkbox, not the lint results themselves.
+To enforce it for `main`, configure `Lint attestation` as a required status
+check in the branch protection rules after the workflow is merged.
+
 ## VHDL source-set selection
 
 VHDL sources and configuration bindings use `work`, meaning the library into
