@@ -27,6 +27,8 @@
 //          synchronized ctrl_i goes low. A held-high level is still one word.
 // valid_pulse_o: Pulse. High for one dst_clk cycle when data_o captures a new
 //                word, even if valid_o stays high for several cycles.
+`include "caliptra_prim_assert.sv"
+
 module usb_pulse_synchronizer #(
   parameter int unsigned DATA_WIDTH = 1
 ) (
@@ -63,4 +65,10 @@ module usb_pulse_synchronizer #(
       end
     end
   end
+`ifdef CLP_ASSERT_ON
+ // The source may publish on the request edge and release after capture.
+ `CALIPTRA_ASSERT(SourceHoldsWordUntilCapture_A,
+                 $rose(ctrl_i) |=> ((ctrl_i && $stable(data_i)) until valid_pulse_o),
+                 dst_clk, !dst_rst_n)
+`endif
 endmodule

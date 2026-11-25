@@ -186,14 +186,11 @@ end function;
 
 constant REQ_OWNER_BITS : positive := owner_width(C_NBDEV);
 signal req_payload_pie, req_payload_hclk : std_logic_vector(REQ_OWNER_BITS + 5 downto 0);
-signal sieint_rxdatavalid_toggle                                   : std_logic;
 signal sieint_txdatafetched_toggle                                 : std_logic;
 signal epinfo_metadata_in, epinfo_metadata_q : std_logic_vector(TXNBYTES_BITS+5 downto 0);
 signal epinfo_txdata_valid_s, epinfo_txdata_valid_ss               : std_logic;
 signal sync_sieint_txdatafetched_s, sync_sieint_txdatafetched_ss   : std_logic;
 signal sync_sieint_txdatafetched_sss                               : std_logic;
-signal sync_sieint_rxdatavalid_s, sync_sieint_rxdatavalid_ss       : std_logic;
-signal sync_sieint_rxdatavalid_sss                                 : std_logic;
 signal sync_sieint_endtransfer_s, sync_sieint_endtransfer_ss       : std_logic;
 signal sync_sieint_endtransfer_sss                                 : std_logic;
 signal sieint_endtransfer_s,sieint_endtransfer_toggle              : std_logic;
@@ -241,6 +238,27 @@ component usb_pulse_synchronizer is
   );
 end component;
 
+component caliptra_prim_fifo_async is
+  generic (Width : positive := 16;
+           Depth : positive := 4;
+           OutputZeroIfEmpty : bit := '0';
+           OutputZeroIfInvalid : bit := '0');
+  port (
+    clk_wr_i  : in  std_logic;
+    rst_wr_ni : in  std_logic;
+    wvalid_i  : in  std_logic;
+    wready_o  : out std_logic;
+    wdata_i   : in  std_logic_vector(Width-1 downto 0);
+    wdepth_o  : out std_logic_vector(2 downto 0);
+    clk_rd_i  : in  std_logic;
+    rst_rd_ni : in  std_logic;
+    rvalid_o  : out std_logic;
+    rready_i  : in  std_logic;
+    rdata_o   : out std_logic_vector(Width-1 downto 0);
+    rdepth_o  : out std_logic_vector(2 downto 0)
+  );
+end component;
+
 begin
 
   proc_sync_usb : process (FsClk, Reset_N)
@@ -250,7 +268,6 @@ begin
       epinfo_txdata_valid_s  <= '0';
       epinfo_txdata_valid_ss <= '0';
 
-      sieint_rxdatavalid_toggle   <= '0';
       sieint_txdatafetched_toggle <= '0';
       sieint_endtransfer_s        <= '0';
       sieint_endtransfer_toggle   <= '0';
@@ -287,9 +304,6 @@ begin
       epinfo_txdata_valid_s  <= epinfo_sync_txdata_valid;
       epinfo_txdata_valid_ss <= epinfo_txdata_valid_s;
 
-      if sieint_rxdatavalid = '1' then
-        sieint_rxdatavalid_toggle  <= not(sieint_rxdatavalid_toggle);
-      end if;
       if sieint_txdatafetched = '1' then
         sieint_txdatafetched_toggle <= not(sieint_txdatafetched_toggle);
       end if;
@@ -329,9 +343,8 @@ begin
     end if;
   end process proc_sync_usb;
 
--- extend sieint_rxdatavalid and sieint_txdatafetched by one FsClk
+-- extend sieint_txdatafetched by one FsClk
 -- to be sure that rising edge can be detected in hclk clock domain
---  sieint_rxdatavalid_extended   <= sieint_rxdatavalid   or sieint_rxdatavalid_s;
 --  sieint_txdatafetched_extended <= sieint_txdatafetched or sieint_txdatafetched_s;
 
   proc_sync_ahb : process (hclk, hrstn)
@@ -340,10 +353,6 @@ begin
       sync_sieint_txdatafetched_s   <= '0';
       sync_sieint_txdatafetched_ss  <= '0';
       sync_sieint_txdatafetched_sss <= '0';
-
-      sync_sieint_rxdatavalid_s     <= '0';
-      sync_sieint_rxdatavalid_ss    <= '0';
-      sync_sieint_rxdatavalid_sss   <= '0';
 
       sync_sieint_endtransfer_s     <= '0';
       sync_sieint_endtransfer_ss    <= '0';
@@ -415,10 +424,6 @@ begin
       sync_sieint_txdatafetched_s   <= sieint_txdatafetched_toggle;
       sync_sieint_txdatafetched_ss  <= sync_sieint_txdatafetched_s;
       sync_sieint_txdatafetched_sss <= sync_sieint_txdatafetched_ss;
-
-      sync_sieint_rxdatavalid_s     <= sieint_rxdatavalid_toggle;
-      sync_sieint_rxdatavalid_ss    <= sync_sieint_rxdatavalid_s;
-      sync_sieint_rxdatavalid_sss   <= sync_sieint_rxdatavalid_ss;
 
       sync_sieint_endtransfer_s     <= sieint_endtransfer_toggle;
       sync_sieint_endtransfer_ss    <= sync_sieint_endtransfer_s;
@@ -528,9 +533,22 @@ begin
                                         sync_sieint_txdatafetched_sss     ) else
                               '0';
 
-  sync_sieint_rxdatavalid  <= '1' when (sync_sieint_rxdatavalid_ss   /=
-                                        sync_sieint_rxdatavalid_sss       ) else
-                              '0';
+  u_rx_fifo : caliptra_prim_fifo_async
+    generic map (Width => USB_DATAWIDTH, Depth => 4, OutputZeroIfEmpty => '0', OutputZeroIfInvalid => '1')
+    port map (
+      clk_wr_i  => FsClk,
+      rst_wr_ni => Reset_N,
+      wvalid_i  => sieint_rxdatavalid,
+      wready_o  => open,
+      wdata_i   => sieint_rxdata,
+      wdepth_o  => open,
+      clk_rd_i  => hclk,
+      rst_rd_ni => hrstn,
+      rvalid_o  => sync_sieint_rxdatavalid,
+      rready_i  => '1',
+      rdata_o   => sync_sieint_rxdata,
+      rdepth_o  => open
+    );
 
   sync_sieint_endtransfer  <= '1' when (sync_sieint_endtransfer_ss   /=
                                         sync_sieint_endtransfer_sss       ) else
@@ -557,7 +575,6 @@ begin
   epinfo_txdata            <= epinfo_sync_txdata;
 
   sync_sieint_rx_nbytes    <= sieint_rx_nbytes;
-  sync_sieint_rxdata       <= sieint_rxdata;
 
   sync_VBusDebounced       <= sync_VBusDebounced_ss;
   sync_avalid              <= sync_avalid_ss;
