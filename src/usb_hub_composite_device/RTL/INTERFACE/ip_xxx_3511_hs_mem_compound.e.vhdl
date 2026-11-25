@@ -160,6 +160,7 @@ entity ip_xxx_3511_hs_mem_compound is
        rec_ctrl_fifo_batch_abort: out std_logic;
        rec_ctrl_fifo_batch_reset: out std_logic;
        rec_ctrl_length_error    : out std_logic;
+       rec_ctrl_crc_error       : out std_logic;
        rec_ocp_path_disable     : in  std_logic;
        rec_ocp_claim_abort      : in  std_logic;
        rec_fw_protocol_error_req: in  std_logic;
