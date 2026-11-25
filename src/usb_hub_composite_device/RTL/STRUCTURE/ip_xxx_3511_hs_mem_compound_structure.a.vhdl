@@ -2695,10 +2695,10 @@ usb_app_hw_hub_1 : usb_app_hw_hub
                                  (sync_usbreg_dev_connect /= usb_dev_connect)   or
                                  (usbreg_phy_mode /= phy_mode)                  or
                                  (sys_dev_wakeup_n = '0')                       or
-                                 (ulpi_int_lp = '1')                            or
+                                 (ulpi_int_lp = '1' and phy_mode = '1')         or
                                  (usbreg_phy_start = '1')                       or
                                  (reset_n = '0')
-                                )                                    
+				)                                    
                            else '0';
 
 end structure;
