@@ -191,9 +191,8 @@ signal epinfo_metadata_in, epinfo_metadata_q : std_logic_vector(TXNBYTES_BITS+5 
 signal epinfo_txdata_valid_s, epinfo_txdata_valid_ss               : std_logic;
 signal sync_sieint_txdatafetched_s, sync_sieint_txdatafetched_ss   : std_logic;
 signal sync_sieint_txdatafetched_sss                               : std_logic;
-signal sync_sieint_endtransfer_s, sync_sieint_endtransfer_ss       : std_logic;
-signal sync_sieint_endtransfer_sss                                 : std_logic;
-signal sieint_endtransfer_s,sieint_endtransfer_toggle              : std_logic;
+signal endtransfer_launch, endtransfer_valid                     : std_logic;
+signal endtransfer_payload_pie, endtransfer_payload_hclk         : std_logic_vector(RXNBYTES_BITS+1 downto 0);
 signal sync_sieint_setup_received_s, sync_sieint_setup_received_ss : std_logic;
 signal sync_sieint_setup_received_sss                              : std_logic;
 signal sync_sieint_error_s, sync_sieint_error_ss                   : std_logic;
@@ -259,6 +258,22 @@ component caliptra_prim_fifo_async is
   );
 end component;
 
+component usb_toggle_bus_synchronizer is
+  generic (DATA_WIDTH : positive := 1;
+           SRC_RISE_ONLY : bit := '0');
+  port (
+    src_clk       : in  std_logic;
+    src_rst_n     : in  std_logic;
+    src_valid_i   : in  std_logic;
+    src_data_i    : in  std_logic_vector(DATA_WIDTH-1 downto 0);
+    dst_clk       : in  std_logic;
+    dst_rst_n     : in  std_logic;
+    valid_pulse_o : out std_logic;
+    dst_data_o    : out std_logic_vector(DATA_WIDTH-1 downto 0);
+    src_launch_o  : out std_logic
+  );
+end component;
+
 begin
 
   proc_sync_usb : process (FsClk, Reset_N)
@@ -269,8 +284,7 @@ begin
       epinfo_txdata_valid_ss <= '0';
 
       sieint_txdatafetched_toggle <= '0';
-      sieint_endtransfer_s        <= '0';
-      sieint_endtransfer_toggle   <= '0';
+      endtransfer_payload_pie    <= (others => '0');
 
       if (C_ULPI_SUPPORT or C_UTMI_SUPPORT) then
         sync_phy_start_s     <= '0';
@@ -308,9 +322,8 @@ begin
         sieint_txdatafetched_toggle <= not(sieint_txdatafetched_toggle);
       end if;
 
-      sieint_endtransfer_s <= sieint_endtransfer;
-      if sieint_endtransfer = '1' and sieint_endtransfer_s = '0' then
-        sieint_endtransfer_toggle  <= not(sieint_endtransfer_toggle);
+      if endtransfer_launch = '1' then
+        endtransfer_payload_pie <= sieint_success & sieint_sentNAK & sieint_rx_nbytes;
       end if;
 
       if (C_ULPI_SUPPORT or C_UTMI_SUPPORT) then
@@ -353,10 +366,6 @@ begin
       sync_sieint_txdatafetched_s   <= '0';
       sync_sieint_txdatafetched_ss  <= '0';
       sync_sieint_txdatafetched_sss <= '0';
-
-      sync_sieint_endtransfer_s     <= '0';
-      sync_sieint_endtransfer_ss    <= '0';
-      sync_sieint_endtransfer_sss   <= '0';
 
       sync_sieint_setup_received_s  <= '0';
       sync_sieint_setup_received_ss <= '0';
@@ -424,10 +433,6 @@ begin
       sync_sieint_txdatafetched_s   <= sieint_txdatafetched_toggle;
       sync_sieint_txdatafetched_ss  <= sync_sieint_txdatafetched_s;
       sync_sieint_txdatafetched_sss <= sync_sieint_txdatafetched_ss;
-
-      sync_sieint_endtransfer_s     <= sieint_endtransfer_toggle;
-      sync_sieint_endtransfer_ss    <= sync_sieint_endtransfer_s;
-      sync_sieint_endtransfer_sss   <= sync_sieint_endtransfer_ss;
 
       sync_sieint_setup_received_s  <= sieint_epinfo_setup_received;
       sync_sieint_setup_received_ss <= sync_sieint_setup_received_s;
@@ -550,9 +555,24 @@ begin
       rdepth_o  => open
     );
 
-  sync_sieint_endtransfer  <= '1' when (sync_sieint_endtransfer_ss   /=
-                                        sync_sieint_endtransfer_sss       ) else
-                              '0';
+  u_endtransfer_capture : usb_toggle_bus_synchronizer
+    generic map (DATA_WIDTH => endtransfer_payload_pie'length, SRC_RISE_ONLY => '1')
+    port map (
+      src_clk       => FsClk,
+      src_rst_n     => Reset_N,
+      src_valid_i   => sieint_endtransfer,
+      src_data_i    => endtransfer_payload_pie,
+      dst_clk       => hclk,
+      dst_rst_n     => hrstn,
+      valid_pulse_o => endtransfer_valid,
+      dst_data_o    => endtransfer_payload_hclk,
+      src_launch_o  => endtransfer_launch
+    );
+
+  sync_sieint_endtransfer <= endtransfer_valid;
+  sync_sieint_success     <= endtransfer_payload_hclk(RXNBYTES_BITS+1);
+  sync_sieint_sentNAK     <= endtransfer_valid and endtransfer_payload_hclk(RXNBYTES_BITS);
+  sync_sieint_rx_nbytes   <= endtransfer_payload_hclk(RXNBYTES_BITS-1 downto 0);
 
   sync_pie_dev_selected    <= to_integer(unsigned(req_payload_hclk(req_payload_hclk'high downto 6)));
   sync_sieint_epinfo_epnr  <= req_payload_hclk(5 downto 2);
@@ -574,8 +594,6 @@ begin
 
   epinfo_txdata            <= epinfo_sync_txdata;
 
-  sync_sieint_rx_nbytes    <= sieint_rx_nbytes;
-
   sync_VBusDebounced       <= sync_VBusDebounced_ss;
   sync_avalid              <= sync_avalid_ss;
   sync_sessend             <= sync_sessend_ss;
@@ -583,13 +601,8 @@ begin
   chrg_vbus                <= usbreg_chrg_vbus; -- no needed resynchronization as almost static signal.
   dischrg_vbus             <= usbreg_dischrg_vbus; -- no needed resynchronization as almost static signal.
 
-  sync_sieint_success   <= sieint_success;
   sync_sieint_error     <= sync_sieint_error_ss;
   sync_sieint_errortype <= sieint_errortype;
-  sync_sieint_sentNAK   <= '1' when (sieint_sentNAK = '1')           and
-                                    (sync_sieint_endtransfer_ss /=
-                                     sync_sieint_endtransfer_sss   ) else
-                           '0';
 
   sync_set_frameint     <= '1' when sync_isotoggle_ss  /=
                                     sync_isotoggle_sss else
