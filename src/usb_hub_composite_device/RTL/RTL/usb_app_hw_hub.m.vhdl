@@ -110,7 +110,7 @@ begin
           when C_CLASS_REQ_CLEAR_FEATURE =>
             if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
               ep0_class_stall <= '1';
-            elsif to_integer(unsigned(ep0_windex)) /= 0 then  --ClearPortFeature
+            elsif to_integer(unsigned(ep0_windex(7 downto 0))) /= 0 then  --ClearPortFeature
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
                      1  | --Port_Enable
@@ -145,7 +145,7 @@ begin
           when C_CLASS_REQ_SET_FEATURE =>
             if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
               ep0_class_stall <= '1';
-            elsif to_integer(unsigned(ep0_windex)) /= 0 then --SetPortFeature
+            elsif to_integer(unsigned(ep0_windex(7 downto 0))) /= 0 then --SetPortFeature
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
                      1  | --Port_Enable
@@ -221,8 +221,8 @@ begin
           when C_CLASS_REQ_CLEAR_FEATURE =>
             if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
               null; -- A stall will be returned upon this request
-            elsif to_integer(unsigned(ep0_windex)) /= 0 then  --ClearPortFeature
-              var_port := to_integer(unsigned(ep0_windex)) - 1;
+            elsif to_integer(unsigned(ep0_windex(7 downto 0))) /= 0 then  --ClearPortFeature
+              var_port := to_integer(unsigned(ep0_windex(7 downto 0))) - 1;
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
                      3  | --Port_Overcurrent
@@ -266,8 +266,8 @@ begin
           when C_CLASS_REQ_SET_FEATURE =>
             if to_integer(unsigned(ep0_windex(7 downto 0))) > C_HUB_NB_PORTS then --Port number is located in bits 7..0 of wIndex
               null; -- A stall will be returned upon this request
-            elsif to_integer(unsigned(ep0_windex)) /= 0 then --SetPortFeature
-              var_port := to_integer(unsigned(ep0_windex)) - 1;
+            elsif to_integer(unsigned(ep0_windex(7 downto 0))) /= 0 then --SetPortFeature
+              var_port := to_integer(unsigned(ep0_windex(7 downto 0))) - 1;
               case to_integer(unsigned(ep0_wvalue)) is
                 when 0  | --Port_Connect
                      3  | --Port_Overcurrent
