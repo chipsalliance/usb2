@@ -692,8 +692,10 @@ end component;
 
 component usb_ep0_hub_descr
     generic(
-        C_NWORDS     : integer := 196;
-        C_HIGH_SPEED : boolean := TRUE
+        C_NWORDS       : integer := 196;
+        C_HIGH_SPEED   : boolean := TRUE;
+	C_UTMI_SUPPORT : boolean := TRUE;
+	C_ULPI_SUPPORT : boolean := TRUE
     );
     port(
         sys_clk              : in  std_logic;
@@ -950,6 +952,7 @@ signal pie_lpm_suspend:        std_logic;
 signal pie_lpm_remotewake_enable: std_logic;
 signal pie_devicespeed:        std_logic;
 signal pie_busreset:        std_logic;
+signal pie_clk_sel :        std_logic;
 
 signal usbreg_phy_addr          : std_logic_vector(7 downto 0);
 signal usbreg_phy_wdata         : std_logic_vector(7 downto 0);
@@ -2240,8 +2243,10 @@ usb_ep_config_handler_1 : usb_ep_config_handler
                         upd_dma_rdata_ep0;
 
 usb_ep0_hub_descr_1 : usb_ep0_hub_descr
-  generic map(C_NWORDS     => C_HUB_FIFO_SIZE,
-              C_HIGH_SPEED => TRUE)
+  generic map(C_NWORDS       => C_HUB_FIFO_SIZE,
+              C_HIGH_SPEED   => TRUE,
+	      C_UTMI_SUPPORT => C_UTMI_SUPPORT,
+	      C_ULPI_SUPPORT => C_ULPI_SUPPORT)
   port map(
       sys_clk              => hclk,
       sys_rst_n            => hresetn,
@@ -2475,11 +2480,12 @@ usb_app_hw_hub_1 : usb_app_hw_hub
 -- end of insertion
 
   --UTMI/ULPI clock selection
+  -- Simplified clock selection. If UTMI is supported always select UTMI clock as test clock.
+  -- If UTMI clock is not supported, usbreg_phy_mode is always 1 selecting ULPI clock.
+  pie_clk_sel  <= '0' when (usbreg_phy_mode = '0') or (testmode = '1' and C_UTMI_SUPPORT) else '1'; 
   utmi_clk_int <= utmi_clk_not_ok_ss or utmi_clk;
-  pie_clk <= utmi_clk_int when (testmode = '1' and C_UTMI_SUPPORT) else
-             ulpi_clk     when (testmode = '1' and C_ULPI_SUPPORT) else
-             utmi_clk_int when phy_mode = '0'                      else
-             ulpi_clk;
+  
+  pie_clk <= utmi_clk_int when pie_clk_sel = '0' else ulpi_clk;
 
   utmi_reset_detect_proc : process(hclk,hresetn)
   begin
@@ -2689,10 +2695,10 @@ usb_app_hw_hub_1 : usb_app_hw_hub
                                  (sync_usbreg_dev_connect /= usb_dev_connect)   or
                                  (usbreg_phy_mode /= phy_mode)                  or
                                  (sys_dev_wakeup_n = '0')                       or
-                                 (ulpi_int_lp = '1' and phy_mode = '1')         or
+                                 (ulpi_int_lp = '1')                            or
                                  (usbreg_phy_start = '1')                       or
                                  (reset_n = '0')
-				)                                    
+                                )                                    
                            else '0';
 
 end structure;
