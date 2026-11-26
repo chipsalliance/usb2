@@ -56,6 +56,7 @@ module usb_ocp_recovery_top
   input  logic                    rec_ctrl_fifo_batch_abort,
   input  logic                    rec_ctrl_fifo_batch_reset,
   input  logic                    rec_ctrl_length_error,
+  input  logic                    rec_ctrl_crc_error,
 
   // Emergency-fallback path-disable control: mirrors CALIPTRA_CTRL.OCP_PATH_DISABLE
   // (regblock field, EXT/firmware write-only via cpuif_req/swwe gating -- see
@@ -202,6 +203,7 @@ module usb_ocp_recovery_top
   logic                       fifo_overflow;
   logic                       batch_aborted;
   logic [$clog2(FIFO_DEPTH_DWORDS+1)-1:0] fifo_free_dwords;
+  logic [$clog2(FIFO_DEPTH_DWORDS+1)-1:0] fifo_image_remaining_dwords;
 
   // --- INDIRECT_FIFO_* values from A4 (cms_fifo) into the A3 regblock.
   //     CTRL fields are stored read-back mirrors. STATUS and DATA are
@@ -298,7 +300,9 @@ module usb_ocp_recovery_top
   // A2 : USB control-endpoint request decoder -> reg-bus master
   //////////////////////////////////////////////////////////////////////////////
 
-  usb_ocp_recovery_ctrl_decode u_a2_ctrl_decode (
+  usb_ocp_recovery_ctrl_decode #(
+    .FIFO_DEPTH_DWORDS (FIFO_DEPTH_DWORDS)
+  ) u_a2_ctrl_decode (
     .clk             (clk),
     .rst_ni          (rst_ni),
 
@@ -321,6 +325,7 @@ module usb_ocp_recovery_top
     .device_id_cmd_enabled(device_id_cmd_enabled),
     .device_reset_cmd_enabled(device_reset_cmd_enabled),
     .vendor_cmd_enabled(vendor_cmd_enabled),
+    .fifo_image_remaining_dwords(fifo_image_remaining_dwords),
     .proto_err_rd_pulse (proto_err_rd_pulse),
     .protocol_error_vld (decode_protocol_error_vld),
     .protocol_error_code(decode_protocol_error_code),
@@ -576,6 +581,9 @@ module usb_ocp_recovery_top
       end else if (rec_ctrl_length_error
           && (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)) begin
         protocol_error_q <= OCP_PROTOCOL_ERROR_LENGTH;
+      end else if (rec_ctrl_crc_error
+          && (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)) begin
+        protocol_error_q <= OCP_PROTOCOL_ERROR_CRC;
       end else if (usb_protocol_error_set
           && (protocol_error_q == OCP_PROTOCOL_ERROR_NONE)) begin
         protocol_error_q <= OCP_PROTOCOL_ERROR_UNSUPPORTED_COMMAND;
@@ -812,6 +820,7 @@ module usb_ocp_recovery_top
       .payload_available (payload_available),
       .batch_aborted     (batch_aborted),
       .fifo_free_dwords  (fifo_free_dwords),
+      .fifo_image_remaining_dwords (fifo_image_remaining_dwords),
       .fifo_abort_i      (rec_ctrl_fifo_batch_abort),
       .fifo_reset_i      (rec_ctrl_fifo_batch_reset),
       .fifo_ctrl_cms        (fifo_ctrl_cms),
@@ -898,6 +907,7 @@ module usb_ocp_recovery_top
           && !$past(proto_err_rd_pulse)
           && !$past(decode_protocol_error_vld)
           && !$past(rec_ctrl_length_error)
+          && !$past(rec_ctrl_crc_error)
           && !$past(usb_protocol_error_set)) begin
         assert (protocol_error_q == OCP_PROTOCOL_ERROR_GENERAL)
           else $error("usb_ocp_recovery_top: firmware general error was not recorded");
@@ -908,6 +918,14 @@ module usb_ocp_recovery_top
           && !$past(proto_err_rd_pulse)) begin
         assert (protocol_error_q == $past(decode_protocol_error_code))
           else $error("usb_ocp_recovery_top: USB error lost first-error priority");
+      end
+      if ($past(rst_ni) && $past(rec_ctrl_crc_error)
+          && ($past(protocol_error_q) == OCP_PROTOCOL_ERROR_NONE)
+          && !$past(proto_err_rd_pulse)
+          && !$past(decode_protocol_error_vld)
+          && !$past(rec_ctrl_length_error)) begin
+        assert (protocol_error_q == OCP_PROTOCOL_ERROR_CRC)
+          else $error("usb_ocp_recovery_top: write DATA CRC error was not recorded");
       end
     end
   end

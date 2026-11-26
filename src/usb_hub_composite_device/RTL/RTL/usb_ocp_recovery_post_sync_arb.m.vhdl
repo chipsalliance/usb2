@@ -113,6 +113,7 @@ entity usb_ocp_recovery_post_sync_arb is
     fifo_batch_abort : out std_logic;
     fifo_batch_reset : out std_logic;
     ctrl_length_error : out std_logic;
+    ctrl_crc_error : out std_logic;
 
     ocp_path_disable_i : in  std_logic;
     ocp_claim_abort_i : in std_logic;
@@ -185,6 +186,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   -- OCP Recovery v1.1 Sec 8.5: class-specific control transfer bRequest.
   constant OCP_RECOVERY_TRANSFER : std_logic_vector(7 downto 0) := x"00";
   constant OCP_INDIRECT_FIFO_DATA : std_logic_vector(7 downto 0) := x"2F";
+  constant PIE_ERR_DATA_CRC : std_logic_vector(3 downto 0) := "0101";
 
   type t_trap_state is (T_IDLE, T_MIRROR, T_META_WAIT,
                         T_DATA, T_STATUS, T_PROT_STALL);
@@ -260,6 +262,7 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal rx_drain_active_c   : std_logic;
   signal rx_last_word_c      : std_logic;
   signal rx_length_error_r   : std_logic;
+  signal rx_crc_error_r      : std_logic;
   signal setup_length_error_c : std_logic;
   signal ctrl_out_data_c     : std_logic_vector(31 downto 0);
   signal ctrl_out_vld_c      : std_logic;
@@ -286,6 +289,8 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
   signal setup_pkt_ready_c : std_logic;
   signal setup_complete_c : std_logic;
   signal setup_valid_c : std_logic;
+  signal setup_success_c : std_logic;
+  signal setup_size_valid_c : std_logic;
   signal setup_claim_c : std_logic;
   signal dev0_dbg_setup_generation_r : unsigned(11 downto 0);
   signal dev0_dbg_setup_owner_ocp_r : std_logic;
@@ -418,15 +423,17 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     st_end_c <= sync_sieint_endtransfer_i and sync_sieint_success_i
                 and wire_ocp_r;
     setup_complete_c <= end_seen or sync_sieint_endtransfer_i;
+    setup_success_c <= succ_seen or
+                      (sync_sieint_endtransfer_i and sync_sieint_success_i);
+    setup_size_valid_c <= '1' when
+        (unsigned(cap_rx_nbytes) = to_unsigned(8, cap_rx_nbytes'length)) or
+        ((sync_sieint_endtransfer_i = '1') and
+         (unsigned(sync_sieint_rx_nbytes_i) =
+          to_unsigned(8, sync_sieint_rx_nbytes_i'length)))
+      else '0';
     setup_valid_c <= '1' when
         ((cap_done = '1') or (sync_sieint_rxdatavalid_i = '1')) and
-        ((succ_seen = '1') or (sync_sieint_success_i = '1')) and
-        ((unsigned(cap_rx_nbytes) =
-          to_unsigned(8, cap_rx_nbytes'length)) or
-         (((sync_sieint_success_i = '1') or
-           (sync_sieint_endtransfer_i = '1')) and
-          (unsigned(sync_sieint_rx_nbytes_i) =
-           to_unsigned(8, sync_sieint_rx_nbytes_i'length))))
+        (setup_success_c = '1') and (setup_size_valid_c = '1')
       else '0';
     setup_claim_c <= '1' when
         ((cap_done = '1') and (is_ocp = '1')) or
@@ -472,26 +479,14 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     setup_pkt_ready_c <= '1' when ((st = T_MIRROR) or (st = T_META_WAIT))
                              and (cap_done = '1')
                              and (is_ocp = '1') and (sp_sent = '0')
-                             and ((end_seen = '1') or
-                                  (sync_sieint_endtransfer_i = '1'))
-                             and ((succ_seen = '1') or
-                                  (sync_sieint_success_i = '1'))
-                             and ((unsigned(cap_rx_nbytes) =
-                                   to_unsigned(8, cap_rx_nbytes'length)) or
-                                  (((sync_sieint_success_i = '1') or
-                                    (sync_sieint_endtransfer_i = '1')) and
-                                   (unsigned(sync_sieint_rx_nbytes_i) =
-                                    to_unsigned(8,
-                                      sync_sieint_rx_nbytes_i'length))))
+                             and (setup_complete_c = '1')
+                             and (setup_success_c = '1')
+                             and (setup_size_valid_c = '1')
                          else '1' when (st = T_MIRROR) and (sp_sent = '0')
                              and (sync_sieint_rxdatavalid_i = '1')
                              and (incoming_is_ocp_c = '1')
-                             and ((end_seen = '1') or
-                                  (sync_sieint_endtransfer_i = '1'))
-                             and ((succ_seen = '1') or
-                                  (sync_sieint_success_i = '1'))
-                             and (unsigned(sync_sieint_rx_nbytes_i) =
-                                  to_unsigned(8, sync_sieint_rx_nbytes_i'length))
+                             and (setup_complete_c = '1')
+                             and (setup_valid_c = '1')
                          else '0';
     setup_pkt_vld_c <= setup_pkt_ready_c and not new_setup_c and not ocp_teardown_c
                        and not sync_busreset;
@@ -783,6 +778,28 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
     end process rx_data_good_comb_proc;
 
     ctrl_length_error <= rx_length_error_r or setup_length_error_c;
+    ctrl_crc_error <= rx_crc_error_r;
+
+    -- Report failed write DATA attempts, including retransmissions during
+    -- IN STATUS, without changing the PIE discard or response path.
+    rx_crc_error_clk_proc : process (hclk, hresetn)
+    begin
+      if hresetn = '0' then
+        rx_crc_error_r <= '0';
+      elsif rising_edge(hclk) then
+        rx_crc_error_r <= '0';
+        if (sync_busreset = '0') and (ocp_teardown_c = '0')
+           and (wire_ocp_r = '1') and (sync_sieint_endtransfer_i = '1')
+           and (sync_sieint_success_i = '0')
+           and (sync_sieint_errortype_i = PIE_ERR_DATA_CRC)
+           and (sync_sieint_epinfo_epdir_i = '0')
+           and (sync_sieint_epinfo_setup_i = '0')
+           and (xfer_dir_in_r = '0') and (nbytes_r /= 0)
+           and ((st = T_META_WAIT) or (st = T_DATA) or (st = T_STATUS)) then
+          rx_crc_error_r <= '1';
+        end if;
+      end if;
+    end process rx_crc_error_clk_proc;
 
     -- ------------------------------------------------------------------
     -- Recovery transfer FSM.
@@ -936,15 +953,12 @@ architecture rtl of usb_ocp_recovery_post_sync_arb is
             xfer_dir_in_r <= sync_sieint_rxdata_i(7);
             nbytes_r <= unsigned(sync_sieint_rxdata_i(63 downto 48));
           end if;
-          if (sync_sieint_success_i = '1') or
-             (sync_sieint_endtransfer_i = '1') then
-            cap_rx_nbytes <= sync_sieint_rx_nbytes_i;
-          end if;
           if sync_sieint_endtransfer_i = '1' then
+            cap_rx_nbytes <= sync_sieint_rx_nbytes_i;
             end_seen <= '1';
-          end if;
-          if sync_sieint_success_i = '1' then
-            succ_seen <= '1';
+            if sync_sieint_success_i = '1' then
+              succ_seen <= '1';
+            end if;
           end if;
         end if;
       end if;

@@ -48,7 +48,10 @@
 //   S_WAIT  - wait for ctrl_xfer_done after completion.
 //=============================================================================
 
-module usb_ocp_recovery_ctrl_decode (
+module usb_ocp_recovery_ctrl_decode #(
+  parameter int FIFO_DEPTH_DWORDS =
+      usb_ocp_recovery_pkg::OCP_FIFO_PHYSICAL_DEPTH_DWORDS
+) (
   input  logic        clk,
   input  logic        rst_ni,              // async active-low
 
@@ -72,6 +75,8 @@ module usb_ocp_recovery_ctrl_decode (
   input  logic        device_id_cmd_enabled,
   input  logic        device_reset_cmd_enabled,
   input  logic        vendor_cmd_enabled,
+  // Image DWORDs remaining before IMAGE_SIZE (CMS FIFO, saturated at depth).
+  input  logic [$clog2(FIFO_DEPTH_DWORDS+1)-1:0] fifo_image_remaining_dwords,
   output logic        proto_err_rd_pulse,
   output logic        protocol_error_vld,
   output logic [7:0]  protocol_error_code,
@@ -108,6 +113,8 @@ module usb_ocp_recovery_ctrl_decode (
   logic        cmd_supported_s;
   logic        direction_legal_s;
   logic        length_legal_s;
+  logic [15:0] write_dwords_s;
+  logic        image_fit_s;
   ocp_response_meta_t response_meta_s;
   logic [15:0]        read_length_s;
 
@@ -180,6 +187,15 @@ module usb_ocp_recovery_ctrl_decode (
   // OCP Recovery v1.1 Sec 8.5.1 requires every USB IN request to set wLength
   // to wMaxRdTransferSize so the device controls the returned length. OUT
   // requests retain command-specific payload constraints from Sec 9.2.
+  // INDIRECT_FIFO_DATA must also fit the IMAGE_SIZE remainder: a write past
+  // the image end is a length write error (Sec 9.2 DEVICE_STATUS code 03h)
+  // and is rejected at SETUP, before any DATA is accepted, instead of being
+  // held off by capacity NAKs that the remainder can never satisfy. The
+  // remainder saturates at the FIFO depth, which exceeds the largest legal
+  // payload, so the DWORD comparison is exact.
+  assign write_dwords_s = (wlength_s + 16'd3) >> 2;
+  assign image_fit_s    = (write_dwords_s <= 16'(fifo_image_remaining_dwords));
+
   always_comb begin
     length_legal_s = 1'b0;
     if (is_in_s) begin
@@ -199,7 +215,8 @@ module usb_ocp_recovery_ctrl_decode (
         OCP_CMD_INDIRECT_FIFO_DATA:
           length_legal_s =
               (wlength_s >= 16'(OCP_SPEC_MIN_LEN_INDIRECT_FIFO_DATA)) &&
-              (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE));
+              (wlength_s <= 16'(OCP_USB_MIN_TRANSFER_SIZE)) &&
+              image_fit_s;
         OCP_CMD_VENDOR:
           length_legal_s = (wlength_s == 16'(OCP_LEN_VENDOR));
         default: begin end

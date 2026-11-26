@@ -74,6 +74,9 @@ module usb_ocp_recovery_cms_fifo #(
   output logic        payload_available,
   output logic        batch_aborted,
   output logic [$clog2(FIFO_DEPTH+1)-1:0] fifo_free_dwords,
+  // Image DWORDs still accepted before IMAGE_SIZE is reached, saturated at
+  // FIFO_DEPTH. Zero when IMAGE_SIZE is zero or the image is complete.
+  output logic [$clog2(FIFO_DEPTH+1)-1:0] fifo_image_remaining_dwords,
 
   // Cancellation is sticky notification only. Bus/device teardown uses the
   // separate destructive reset; explicit INDIRECT_FIFO_CTRL reset is local.
@@ -275,8 +278,9 @@ module usb_ocp_recovery_cms_fifo #(
   assign terminal_image_push = push_accept && (image_size_q != '0)
                              && (accepted_push_count_next >= image_size_q);
   assign image_remaining_count = image_size_q - accepted_push_count_q;
+  // An unprogrammed (zero) IMAGE_SIZE admits no image data (OCP 1.1 Sec 9.2
+  // length write error), so it shares the complete-image zero remainder.
   assign image_remaining_dwords =
-      (image_size_q == '0) ? FIFO_DEPTH_W'(FIFO_DEPTH) :
       (accepted_push_count_q >= image_size_q) ? '0 :
       (image_remaining_count > 32'(FIFO_DEPTH))
         ? FIFO_DEPTH_W'(FIFO_DEPTH)
@@ -455,6 +459,7 @@ module usb_ocp_recovery_cms_fifo #(
     end else begin
       fifo_free_dwords = image_remaining_dwords;
     end
+    fifo_image_remaining_dwords = image_remaining_dwords;
     fifo_ctrl_cms        = fifo_cms_q;
     fifo_ctrl_reset      = region_reset_pulse_q;
     fifo_ctrl_image_size = image_size_q;
