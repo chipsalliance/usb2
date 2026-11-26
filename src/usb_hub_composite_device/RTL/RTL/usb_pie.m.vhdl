@@ -3873,7 +3873,7 @@ pie_txdata_fetched        <= txdata_fetched;
 pie_rxdata                <= data_fifo_rx_r;
 
 counter_packet_clk_proc : process (pie_clk, reset_n)
-
+variable var_epinfo_nbytes : unsigned(14 downto 0);
 begin
 
 if reset_n = '0' then
@@ -3899,11 +3899,14 @@ elsif pie_clk'event and pie_clk ='1'then
    if clear_iso_transact_cnt_down  = '1' then
       iso_transact_cnt_down  <= (others => '0');
    elsif load_iso_transact_cnt_down  = '1' then
-      if unsigned( epinfo_nbytes(11 downto 10)) = "11" then
-      -- special case: nr of bytes for this ep = 3072 bytes (3 transactions of 1024 bytes each)
+      if unsigned(epinfo_nbytes) > to_unsigned(3072,15) then
+         -- This part is only triggered if epinfo_nbytes contains a value greater than 3072
          iso_transact_cnt_down  <= "10"; -- 3 transactions only.
+      elsif unsigned(epinfo_nbytes(11 downto 0)) > to_unsigned(0,12) then
+         var_epinfo_nbytes      := unsigned(epinfo_nbytes(11 downto 0)) - to_unsigned(1,12);
+         iso_transact_cnt_down  <= var_epinfo_nbytes(11 downto 10);
       else
-         iso_transact_cnt_down  <= unsigned( epinfo_nbytes(11 downto 10));
+         iso_transact_cnt_down  <= "00";         
       end if;
    elsif decr_iso_transact_cnt_down  = '1' then
      if iso_transact_cnt_down  /= "00" then -- decr_iso_transact_cnt_down  = '1' and iso_transact_cnt_down  = "00" should never happend
