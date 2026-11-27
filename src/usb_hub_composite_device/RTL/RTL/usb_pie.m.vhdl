@@ -3581,7 +3581,7 @@ begin
         
         DevAddrEnabled      := FALSE;
         var_nb_physep       := (others => '0');
-        for i in 0 to C_NBDEV-1 loop
+        for i in C_NBDEV-1 downto 0 loop --In case FW makes a mistake and USB addresses are the same, make sure to select DEV0.
           for j in 0 to 6 loop
             var_address1(j) := usbreg_usbaddress(i*7+j);
             var_address2(j) := usbreg_usbaddress_tmp(i*7+j);
