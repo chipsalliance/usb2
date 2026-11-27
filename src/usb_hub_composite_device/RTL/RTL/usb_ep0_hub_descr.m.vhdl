@@ -24,7 +24,9 @@ use work.usb_ep_config_pkg.all;
 
 entity usb_ep0_hub_descr is
 generic(C_NWORDS : integer := 196; --Number of 32 bits words in hub descriptor table
-        C_HIGH_SPEED     : boolean := TRUE);
+        C_HIGH_SPEED     : boolean := TRUE;
+	C_UTMI_SUPPORT   : boolean := TRUE;
+	C_ULPI_SUPPORT   : boolean := TRUE);
 port (
       -- interface to AHB slave module
       sys_clk           : in  std_logic;
@@ -435,6 +437,12 @@ begin
   var_result(C_HUB_CS)(11) := '1'; --LPM supported by default
   var_result(C_HUB_CS)(16) := '0'; --Hub disconnected at reset
   var_result(C_HUB_CS)(18) := '0'; --Self-powered off at reset
+  
+  if not(C_UTMI_SUPPORT) and C_ULPI_SUPPORT then
+    var_result(C_HUB_PHY)(31) := '1';
+  else
+    var_result(C_HUB_PHY)(31) := '0';
+  end if;
 
   return var_result;
 end;
@@ -501,7 +509,7 @@ begin
         ep0_mem(to_integer(unsigned(reg_waddr))) <= reg_wdata;
       end if;
       if USB_EnableHub = '1' then --If the input signal USB_EnableHub is set to 1b, it overrules the hub register bits.
-        ep0_mem(C_HUB_CS)(0) <= '1';
+        ep0_mem(C_HUB_CS)(0)  <= '1';
         ep0_mem(C_HUB_CS)(16) <= '1';
       end if;
       if hub_phy_endtoggle = '1' then
@@ -511,6 +519,11 @@ begin
       ep0_mem(C_HUB_CS)(23 downto 22) <= pie_speed;
       ep0_mem(C_HUB_CS)(28)           <= hub_vbusdebounced;
       ep0_mem(C_HUB_LPM)(3 downto 0)  <= hub_lpm_hird_hw;
+      if not(C_UTMI_SUPPORT) and C_ULPI_SUPPORT then --Prevent that FW can select UTMI clock if UTMI is not supported.
+        ep0_mem(C_HUB_PHY)(31) <= '1';
+      elsif C_UTMI_SUPPORT and not(C_ULPI_SUPPORT) then --Prevent that FW can select ULPI clock if ULPI is not supported.
+        ep0_mem(C_HUB_PHY)(31) <= '0';	  
+      end if;
     end if;
   end process PROC_REG_WRITE;
 
