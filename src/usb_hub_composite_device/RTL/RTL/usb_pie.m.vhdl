@@ -830,15 +830,15 @@ function crc5_data16
          v_maxpacket := to_unsigned(1024,15);
       end case;
       if epinfo_maxpacket = "11" and iso_in_pending_r = '1' then  -- High-Bandwidth Iso IN
-         if epinfo_nbytes(11 downto 10) = "11" then -- corner case: 3 transactions of 1024 bytes each, lsb (9 downto 0) are ignored
+         if unsigned(epinfo_nbytes) >= to_unsigned(1024,15) then
             return v_maxpacket; --1024 bytes
-         elsif iso_transact_cnt_down = "00" then -- last transaction or single transaction
+         elsif iso_transact_cnt_down = "00" then -- last transaction or single transaction smaller than 1024
             return "00000" & unsigned(epinfo_nbytes(9 downto 0)); -- max 1023 bytes
          else   -- first transactions
             return v_maxpacket; --1024 bytes
          end if;
       elsif epinfo_maxpacket = "11" and iso_out_pending_r = '1' then  -- High-Bandwidth Iso OUT
-         if epinfo_nbytes(11 downto 10) = "11" then -- corner case: 3 transactions of 1024 bytes each, lsb (9 downto 0) are ignored
+         if unsigned(epinfo_nbytes) >= to_unsigned(1024,15) then
             return v_maxpacket; --1024 bytes
          elsif iso_transact_cnt_down = "00" and iso_mdata_cnt_up /="00"  then -- last transaction
             return "00000" & unsigned(epinfo_nbytes(9 downto 0)); -- max 1023 bytes
@@ -3873,7 +3873,7 @@ pie_txdata_fetched        <= txdata_fetched;
 pie_rxdata                <= data_fifo_rx_r;
 
 counter_packet_clk_proc : process (pie_clk, reset_n)
-variable var_epinfo_nbytes : unsigned(14 downto 0);
+variable var_epinfo_nbytes : unsigned(11 downto 0);
 begin
 
 if reset_n = '0' then
