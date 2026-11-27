@@ -438,7 +438,11 @@ begin
   var_result(C_HUB_CS)(16) := '0'; --Hub disconnected at reset
   var_result(C_HUB_CS)(18) := '0'; --Self-powered off at reset
   
-  var_result(C_HUB_PHY)(31) := not(C_UTMI_SUPPORT) and C_ULPI_SUPPORT; --Fix PHY_MODE to 1b if only ULPI is supported.
+  if not(C_UTMI_SUPPORT) and C_ULPI_SUPPORT then
+    var_result(C_HUB_PHY)(31) := '1';
+  else
+    var_result(C_HUB_PHY)(31) := '0';
+  end if;
 
   return var_result;
 end;
